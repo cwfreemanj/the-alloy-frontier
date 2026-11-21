@@ -5,9 +5,10 @@ const isCI = !!process.env.CI;
 /**
  * Browser tests run against the PRODUCTION build (vite preview).
  * Locally: the installed Chrome (no Playwright browser download). Set PW_CHANNEL=msedge to use Edge.
- * In CI (process.env.CI): Playwright's bundled Chromium, unless PW_CHANNEL is set.
+ * In CI (process.env.CI): Playwright's bundled full Chromium, unless PW_CHANNEL is set.
  */
-const channel = process.env.PW_CHANNEL ?? (isCI ? undefined : 'chrome');
+// 'chromium' = full Chromium in new headless mode; the default headless shell throttles animation frames.
+const channel = process.env.PW_CHANNEL ?? (isCI ? 'chromium' : 'chrome');
 
 // GPU flags tuned for Windows. ANGLE's d3d11 backend doesn't exist on Linux/macOS,
 // so there we let Chromium render WebGL with SwiftShader instead.
