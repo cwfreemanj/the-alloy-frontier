@@ -12,3 +12,6 @@ services:
     envVars:
       - key: NODE_VERSION
         value: 22
+      # Lets the copy of the game on Vercel join this world too.
+      - key: ALLOWED_ORIGINS
+        value: https://alloy-frontier.vercel.app
