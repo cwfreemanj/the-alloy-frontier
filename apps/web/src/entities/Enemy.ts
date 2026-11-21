@@ -1,11 +1,12 @@
-/** Enemy entity: rules-side EnemyBrain + movement + readable presentation. */
+/**
+ * Enemy entity: presentation for a shared EnemySim. Offline (and for the local training
+ * post) the browser runs the sim; online the server runs it and this mirrors its state.
+ */
 import * as THREE from 'three';
-import { ENEMIES, EnemyBrain, angleDelta, dist2, forwardPoint, turnToward, yawTo, type EnemyAttackDef, type Vec2 } from '@alloy/game-rules';
-import { Rng } from '@alloy/item-gen';
+import { angleDelta, forwardPoint, type EnemyAttackDef, type Vec2 } from '@alloy/game-rules';
+import type { EnemyNetState } from '@alloy/protocol';
+import { EnemySim, terrainHeight, type ColliderWorld, type EnemySpawn, type SimTarget } from '@alloy/world';
 import { Telegraph } from '../fx/Effects';
-import type { ColliderWorld } from '../world/Colliders';
-import type { EnemySpawn } from '../world/Layout';
-import { terrainHeight } from '../world/Terrain';
 import { ENEMY_POSES, POSE_DEAD, POSE_STAGGER, Rig, easeIn, easeOut, locomotionPose, mixPose, type Pose, type RigStyle } from './Rig';
 import { buildConstructArm, buildHatchet, buildShield } from './Weapons';
 
@@ -25,13 +26,10 @@ function poseFor(a: EnemyAttackDef): [Pose, Pose] {
 
 export class Enemy {
   readonly id: string;
-  readonly brain: EnemyBrain;
+  readonly sim: EnemySim;
   readonly rig: Rig;
   readonly object = new THREE.Group();
   position = new THREE.Vector3();
-  yaw: number;
-  readonly home: Vec2;
-  readonly patrol: Vec2[];
   readonly telegraphs = new Map<string, Telegraph>();
   private walkPhase = Math.random() * 6;
   private speedNow = 0;
@@ -39,24 +37,18 @@ export class Enemy {
   hitFlash = 0;
   private alertMarker: THREE.Mesh;
   private shield?: THREE.Group;
-  /** Committed circle centre for circle attacks. */
-  attackCenter: Vec2 | null = null;
 
   constructor(
     readonly spawn: EnemySpawn,
-    private colliders: ColliderWorld,
+    colliders: ColliderWorld,
     scene: THREE.Scene,
   ) {
-    const def = ENEMIES[spawn.type];
+    this.sim = new EnemySim(spawn, colliders);
     this.id = spawn.id;
-    const rng = new Rng(`enemy:${spawn.id}`);
-    this.brain = new EnemyBrain(def, () => rng.next());
+    const def = this.sim.def;
     this.rig = new Rig(STYLES[spawn.type]);
     this.rig.snapshotEmissive();
     this.object.add(this.rig.root);
-    this.home = { ...spawn.pos };
-    this.patrol = spawn.patrol ?? [];
-    this.yaw = spawn.yaw;
     if (spawn.type === 'scavenger') this.rig.rHand.add(buildHatchet());
     if (spawn.type === 'sentinel') {
       this.rig.rHand.add(buildConstructArm('#6c747c', 1));
@@ -87,72 +79,89 @@ export class Enemy {
     scene.add(this.object);
   }
 
-  get def() {
-    return this.brain.def;
+  get brain() {
+    return this.sim.brain;
   }
-
+  get def() {
+    return this.sim.brain.def;
+  }
+  get home(): Vec2 {
+    return this.sim.home;
+  }
+  get yaw(): number {
+    return this.sim.yaw;
+  }
+  set yaw(v: number) {
+    this.sim.yaw = v;
+  }
+  get attackCenter(): Vec2 | null {
+    return this.sim.attackCenter;
+  }
   get pos2(): Vec2 {
     return { x: this.position.x, z: this.position.z };
   }
 
   respawn(): void {
-    this.brain.reset();
-    this.position.set(this.home.x, terrainHeight(this.home.x, this.home.z), this.home.z);
-    this.yaw = this.spawn.yaw;
+    this.sim.reset();
+    this.position.set(this.sim.x, this.sim.y, this.sim.z);
     this.deadTime = 0;
     this.object.visible = true;
     this.rig.root.rotation.set(0, 0, 0);
+    this.rig.root.position.y = 0;
   }
 
-  update(dt: number, player: { pos: Vec2; alive: boolean }): void {
+  /** Local simulation (offline play and the training post). */
+  update(dt: number, target: SimTarget): void {
+    this.sim.step(dt, target);
+    this.position.set(this.sim.x, this.sim.y, this.sim.z);
+    this.speedNow = this.sim.speedNow;
+    this.object.position.copy(this.position);
+    this.object.rotation.y = this.yaw;
+    this.updateTelegraphs();
+    this.animate(dt);
+  }
+
+  // ---------------- Online (the server streams state; this mirrors it) ----------------
+  private net: EnemyNetState | null = null;
+
+  /** Receive the server's latest state for this enemy. */
+  applyNet(s: EnemyNetState): void {
     const b = this.brain;
-    const d = dist2(this.pos2, player.pos);
-    const ang = Math.abs(angleDelta(this.yaw, yawTo(this.pos2, player.pos)));
-    const wp = this.patrol.length > 0 ? this.patrol[b.waypointIndex % this.patrol.length] : this.home;
-    const intent = b.update(dt, {
-      distToPlayer: d,
-      angleToPlayer: ang,
-      playerAlive: player.alive,
-      distFromHome: dist2(this.pos2, this.home),
-      atWaypoint: dist2(this.pos2, wp) < 1.2,
-      hasPatrol: this.patrol.length > 0,
-    });
-
-    if (intent.facePlayer && intent.turnRate > 0) this.yaw = turnToward(this.yaw, yawTo(this.pos2, player.pos), intent.turnRate * dt);
-
-    let target: Vec2 | null = null;
-    if (intent.move === 'toPlayer') target = player.pos;
-    else if (intent.move === 'toHome') target = this.home;
-    else if (intent.move === 'toWaypoint') target = wp;
-    let speed = 0;
-    let dir = { x: 0, z: 0 };
-    if (target) {
-      const ty = yawTo(this.pos2, target);
-      if (!intent.facePlayer) this.yaw = turnToward(this.yaw, ty, intent.turnRate * dt);
-      dir = { x: Math.sin(this.yaw), z: Math.cos(this.yaw) };
-      speed = intent.speed;
-    } else if (intent.move === 'lunge') {
-      dir = { x: Math.sin(this.yaw), z: Math.cos(this.yaw) };
-      speed = d > this.def.radius + 0.6 ? intent.speed : 0;
+    const wasDead = !b.alive;
+    if (s.s !== b.state || s.a !== (b.attack?.id ?? null)) {
+      b.state = s.s as typeof b.state;
+      b.stateTime = s.st;
+      b.attack = s.a ? (this.def.attacks.find((a) => a.id === s.a) ?? null) : null;
+    } else if (Math.abs(b.stateTime - s.st) > 0.25) b.stateTime = s.st;
+    b.health = s.hp;
+    b.phase2 = s.p2;
+    this.sim.attackCenter = s.cx !== undefined && s.cz !== undefined ? { x: s.cx, z: s.cz } : null;
+    if (wasDead && b.alive) {
+      // Respawned on the server.
+      this.deadTime = 0;
+      this.object.visible = true;
+      this.rig.root.position.y = 0;
+      this.position.set(s.x, terrainHeight(s.x, s.z), s.z);
     }
-    this.speedNow += (speed - this.speedNow) * Math.min(1, dt * 10);
-    if (this.def.kind !== 'dummy' && b.alive) {
-      const nx = this.position.x + dir.x * this.speedNow * dt;
-      const nz = this.position.z + dir.z * this.speedNow * dt;
-      const r = this.colliders.resolve({ x: nx, z: nz }, this.def.radius, this.position.y);
-      // Do not walk into the player.
-      if (dist2(r, player.pos) > this.def.radius + 0.4 || dist2(r, player.pos) > d) {
-        this.position.x = r.x;
-        this.position.z = r.z;
-      }
+    if (wasDead === false && !b.alive) this.deadTime = 0;
+    if (!this.net || Math.hypot(this.net.x - s.x, this.net.z - s.z) > 10) this.position.set(s.x, terrainHeight(s.x, s.z), s.z);
+    this.net = s;
+  }
+
+  /** Mirror mode: smooth toward the server's state and animate; no AI runs here. */
+  puppetUpdate(dt: number): void {
+    const s = this.net;
+    if (s) {
+      const f = Math.min(1, dt * 12);
+      const prevX = this.position.x,
+        prevZ = this.position.z;
+      this.position.x += (s.x - this.position.x) * f;
+      this.position.z += (s.z - this.position.z) * f;
       this.position.y = terrainHeight(this.position.x, this.position.z);
+      this.yaw += angleDelta(this.yaw, s.yaw) * f;
+      this.speedNow = Math.hypot(this.position.x - prevX, this.position.z - prevZ) / Math.max(dt, 1e-3);
     }
-
-    // Commit circle-attack centre at the start of the active window.
-    if (b.state === 'telegraph' && b.attack?.shape === 'circle') {
-      this.attackCenter = forwardPoint(this.pos2, this.yaw, b.attack.circleOffset ?? 0);
-    }
-
+    this.brain.stateTime += dt;
     this.object.position.copy(this.position);
     this.object.rotation.y = this.yaw;
     this.updateTelegraphs();

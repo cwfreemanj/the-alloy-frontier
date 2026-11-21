@@ -3,8 +3,8 @@
  * Collision is analytic (terrain height + collider volumes) to avoid clipping.
  */
 import * as THREE from 'three';
-import { terrainHeight } from '../world/Terrain';
-import type { ColliderWorld } from '../world/Colliders';
+import { terrainHeight } from '@alloy/world';
+import type { ColliderWorld } from '@alloy/world';
 
 export interface CameraSettings {
   sensitivity: number;

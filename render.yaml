@@ -1,0 +1,14 @@
+# Render blueprint for the shared-world server (serves the game and the world socket).
+# Free plan: no cost; the server sleeps after ~15 minutes with nobody connected and takes
+# about a minute to wake on the next visit. No secrets are needed.
+services:
+  - type: web
+    name: alloy-frontier
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build -w @alloy/web
+    startCommand: npm run world:start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22

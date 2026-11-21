@@ -16,10 +16,20 @@ export default defineConfig({
     headless: process.env.PW_HEADED ? false : true,
     launchOptions: { args: ['--enable-gpu', '--ignore-gpu-blocklist', '--use-angle=d3d11', '--enable-unsafe-swiftshader'] },
   },
-  webServer: {
-    command: 'npm run build -w @alloy/web && npm run preview',
-    url: 'http://localhost:4178',
-    reuseExistingServer: true,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command: 'npm run build -w @alloy/web && npm run preview',
+      url: 'http://localhost:4178',
+      reuseExistingServer: true,
+      timeout: 120_000,
+    },
+    {
+      // Shared-world server (serves the same production build) for the multiplayer test.
+      command: 'npx tsx apps/server/src/worldMain.ts',
+      url: 'http://localhost:2569/world-info',
+      env: { PORT: '2569' },
+      reuseExistingServer: false,
+      timeout: 120_000,
+    },
+  ],
 });

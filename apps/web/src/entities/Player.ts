@@ -5,9 +5,9 @@
 import * as THREE from 'three';
 import { DODGE, PlayerCombat, STAMINA_CONFIG, canAfford, effectiveCost, turnToward } from '@alloy/game-rules';
 import type { ItemInstance } from '@alloy/item-gen';
-import { terrainHeight } from '../world/Terrain';
-import type { ColliderWorld } from '../world/Colliders';
-import { playableSdf } from '../world/Layout';
+import { terrainHeight } from '@alloy/world';
+import type { ColliderWorld } from '@alloy/world';
+import { playableSdf } from '@alloy/world';
 import { ATTACK_POSES, POSE_BLOCK, POSE_DEAD, POSE_DODGE, POSE_GATHER, POSE_GUARD, POSE_STAGGER, Rig, easeIn, easeOut, locomotionPose, mixPose, type Pose } from './Rig';
 import { buildSword, type SwordVisual } from './Weapons';
 

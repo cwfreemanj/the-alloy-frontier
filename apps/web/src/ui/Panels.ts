@@ -237,7 +237,14 @@ export function pausePanel(opts: {
 }
 
 // ---------------- Title ----------------
-export function titleScreen(opts: { hasSave: boolean; onNew: () => void; onContinue: () => void; loadError?: string }): HTMLElement {
+export function titleScreen(opts: { hasSave: boolean; onNew: () => void; onContinue: () => void; loadError?: string; name: string; onName: (n: string) => void }): HTMLElement {
+  const nameInput = h('input', { type: 'text', value: opts.name, maxlength: 20, 'aria-label': 'Your name', 'data-testid': 'player-name', class: 'name-input', spellcheck: 'false' }) as HTMLInputElement;
+  const commitName = () => opts.onName(nameInput.value);
+  nameInput.addEventListener('change', commitName);
+  const go = (fn: () => void) => () => {
+    commitName();
+    fn();
+  };
   return h(
     'div',
     { class: 'title-screen' },
@@ -247,11 +254,12 @@ export function titleScreen(opts: { hasSave: boolean; onNew: () => void; onConti
       h('div', { class: 'logo' }, 'ALLOY ', h('span', null, 'FRONTIER')),
       h('div', { class: 'sub' }, 'The First Forge · vertical slice'),
       h('div', { class: 'rule' }),
+      h('label', { class: 'name-row' }, h('span', { class: 'small muted' }, 'Your name (shown to other players)'), nameInput),
       h(
         'div',
         { class: 'btns' },
-        opts.hasSave ? h('button', { class: 'btn primary', 'data-testid': 'continue', onclick: opts.onContinue }, 'Continue') : null,
-        h('button', { class: `btn ${opts.hasSave ? '' : 'primary'}`, 'data-testid': 'new-game', onclick: opts.onNew }, opts.hasSave ? 'New game (overwrites save)' : 'New game'),
+        opts.hasSave ? h('button', { class: 'btn primary', 'data-testid': 'continue', onclick: go(opts.onContinue) }, 'Continue') : null,
+        h('button', { class: `btn ${opts.hasSave ? '' : 'primary'}`, 'data-testid': 'new-game', onclick: go(opts.onNew) }, opts.hasSave ? 'New game (overwrites save)' : 'New game'),
       ),
       opts.loadError ? h('div', { class: 'small bad', style: 'margin-top:10px' }, opts.loadError) : null,
       h('div', { class: 'foot' }, 'Prototype build · GDD v0.4 · Procedural placeholder art · Click the view to capture the mouse, Esc to release'),

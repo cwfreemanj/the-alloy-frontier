@@ -1,0 +1,36 @@
+/**
+ * `npm run world` — run the shared-world game server.
+ *
+ * Locally: http://localhost:2568 (add --lan for other devices on your network).
+ * On a cloud host: the platform sets PORT; the server listens on all interfaces.
+ * ALLOWED_ORIGINS (comma-separated) lets a separately hosted copy of the game connect.
+ */
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { startWorldServer } from './worldServer';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const dist = resolve(here, '../../web/dist');
+const cloud = process.env.PORT !== undefined;
+const lan = process.argv.includes('--lan');
+const port = Number(process.env.PORT ?? 2568);
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const staticDir = dist;
+if (!existsSync(resolve(dist, 'index.html'))) console.warn('No game build found yet (run "npm run build"); the page will 404 until it exists.');
+
+startWorldServer({ port, host: cloud || lan ? '0.0.0.0' : '127.0.0.1', staticDir, allowedOrigins }).then((s) => {
+  console.log(`Alloy Frontier world server listening on port ${s.port} (serving the game too).`);
+  if (!cloud) console.log(`Play: http://localhost:${s.port}`);
+  let last = -1;
+  setInterval(() => {
+    if (s.room.playerCount !== last) {
+      last = s.room.playerCount;
+      console.log(`[${new Date().toISOString()}] connections: ${last}${last ? ` (${s.room.playerNames().join(', ')})` : ''}`);
+    }
+  }, 2000);
+});

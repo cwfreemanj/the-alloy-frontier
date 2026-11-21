@@ -1,8 +1,8 @@
 /** NPCs and gatherable resource nodes. */
 import * as THREE from 'three';
 import { Rng, materialName, type MaterialId } from '@alloy/item-gen';
-import type { NodeDef } from '../world/Layout';
-import { terrainHeight } from '../world/Terrain';
+import type { NodeDef } from '@alloy/world';
+import { terrainHeight } from '@alloy/world';
 import { POSE_GUARD, Rig, locomotionPose, type RigStyle } from './Rig';
 
 export class Npc {

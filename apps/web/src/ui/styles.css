@@ -216,3 +216,16 @@ select, input[type=number] { background: var(--panel-2); color: var(--text); bor
 .explain { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 6px 10px; font-size: 12px; line-height: 1.4; }
 .explain summary { cursor: pointer; color: var(--ember); font-weight: 600; }
 .explain ul { margin: 6px 0 0; padding-left: 16px; display: grid; gap: 3px; }
+/* Shared world */
+.world-status { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-size: 12px; padding: 4px 12px 4px 22px; border-radius: 999px; background: rgba(14,15,18,0.72); border: 1px solid rgba(255,255,255,0.1); color: var(--muted); white-space: nowrap; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; pointer-events: auto; z-index: 5; }
+.world-status::before { content: ''; position: absolute; left: 9px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: #777; }
+.world-status.on { color: #cfeedd; }
+.world-status.on::before { background: #4fd07a; box-shadow: 0 0 6px #4fd07a; }
+.world-status.wait::before { background: #e0b040; }
+.player-label { position: absolute; transform: translate(-50%, -100%); text-align: center; pointer-events: none; text-shadow: 0 1px 2px #000; }
+.player-label .nm { font-size: 12px; font-weight: 600; color: #9fe6ff; }
+.player-label .bar { width: 64px; height: 4px; margin: 2px auto 0; background: rgba(0,0,0,0.55); border-radius: 2px; overflow: hidden; }
+.player-label .fill { height: 100%; background: linear-gradient(90deg, #2e8a52, #4fd07a); }
+.player-label.down .nm { color: #b0a8a0; text-decoration: line-through; }
+.name-row { display: grid; gap: 4px; margin: 4px 0 10px; text-align: left; }
+.name-input { background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.15); color: var(--text, #eee); padding: 7px 10px; border-radius: 6px; font: inherit; }

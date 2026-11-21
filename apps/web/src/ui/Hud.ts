@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { ATTACKS, QUEST_EDGE_YOU_MAKE, STAMINA_CONFIG, describeProgress, weaponXpToNext, type PlayerCombat } from '@alloy/game-rules';
 import { IMBUEMENTS, itemDisplayName, materialName, type ItemInstance, type MaterialId } from '@alloy/item-gen';
 import type { Session } from '../state/Session';
-import { PATH, ZONES, type Zone } from '../world/Layout';
+import { PATH, ZONES, type Zone } from '@alloy/world';
 import { h } from './dom';
 import { RARITY_COLORS } from '../entities/Weapons';
 

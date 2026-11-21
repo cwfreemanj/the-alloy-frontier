@@ -13,7 +13,8 @@
     "@alloy/game-rules": "*",
     "@alloy/item-gen": "*",
     "@alloy/protocol": "*",
-    "three": "^0.187.0"
+    "three": "^0.187.0",
+    "@alloy/world": "*"
   },
   "devDependencies": {
     "@types/three": "^0.187.0"

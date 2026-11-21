@@ -25,7 +25,7 @@ async function newGame(page: Page) {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-  await page.goto('/?debug');
+  await page.goto('/?debug&world=off'); // single-player checks: never join a running world server
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.getByTestId('new-game').click();
