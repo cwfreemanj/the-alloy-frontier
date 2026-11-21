@@ -212,6 +212,8 @@ export class EnemyBrain {
   phase2 = false;
   timeSinceHit = 99;
   guardUsedThisCycle = false;
+  /** Seconds during which poise damage is ignored (prevents stagger-locking). */
+  staggerImmunity = 0;
   readonly swing = new SwingTracker();
   private rng: () => number;
 
@@ -264,6 +266,7 @@ export class EnemyBrain {
     this.stateTime += dt;
     this.timeSinceHit += dt;
     this.cooldown = Math.max(0, this.cooldown - dt);
+    this.staggerImmunity = Math.max(0, this.staggerImmunity - dt);
     if (this.timeSinceHit > 2.5) this.poiseDamage = Math.max(0, this.poiseDamage - this.def.poise * 0.5 * dt);
     if (this.def.kind === 'dummy') {
       if (this.state === 'stagger' && this.stateTime >= this.def.staggerDuration) this.enter('idle');
@@ -368,6 +371,7 @@ export class EnemyBrain {
       case 'stagger':
         if (this.stateTime >= d.staggerDuration * (this.lastStaggerScale || 1)) {
           this.cooldown = Math.max(this.cooldown, 0.4);
+          this.staggerImmunity = d.kind === 'elite' ? 5 : 1;
           this.enter('chase');
         }
         return idle;
@@ -422,15 +426,15 @@ export class EnemyBrain {
       this.phase2 = true;
     }
 
-    this.poiseDamage += stagger;
+    if (this.staggerImmunity <= 0 && this.state !== 'stagger') this.poiseDamage += stagger;
     const armored = this.def.hyperArmorActive && this.state === 'attack';
-    if (forceStagger > 0 || (this.poiseDamage >= this.def.poise && !armored)) {
+    if ((forceStagger > 0 && this.state !== 'stagger') || (this.poiseDamage >= this.def.poise && !armored)) {
       this.poiseDamage = 0;
       this.attack = null;
       this.lastStaggerScale = forceStagger > 0 ? forceStagger : 1;
       this.enter('stagger');
       res.staggered = true;
-    } else if (this.state === 'idle' || this.state === 'patrol' || this.state === 'alert') {
+    } else if (this.def.kind !== 'dummy' && (this.state === 'idle' || this.state === 'patrol' || this.state === 'alert')) {
       this.enter('chase');
     }
     return res;

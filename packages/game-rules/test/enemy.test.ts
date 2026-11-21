@@ -102,4 +102,17 @@ describe('enemy state machine (Phase A)', () => {
     expect(r.killed).toBe(false);
     expect(b.alive).toBe(true);
   });
+
+  it('cannot be stagger-locked: poise is ignored briefly after a stagger', () => {
+    const b = new EnemyBrain(ENEMIES.warden, seq([0.1]));
+    b.state = 'chase';
+    expect(b.receiveHit({ damage: 1, stagger: 1000, guardBreak: false }).staggered).toBe(true);
+    expect(b.receiveHit({ damage: 1, stagger: 1000, guardBreak: false }).staggered).toBe(false);
+    run(b, near, ENEMIES.warden.staggerDuration + 0.05);
+    expect(b.state).not.toBe('stagger');
+    expect(b.receiveHit({ damage: 1, stagger: 1000, guardBreak: false }).staggered).toBe(false);
+    run(b, near, 5.2);
+    b.state = 'chase';
+    expect(b.receiveHit({ damage: 1, stagger: 1000, guardBreak: false }).staggered).toBe(true);
+  });
 });
