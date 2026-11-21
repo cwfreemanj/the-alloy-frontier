@@ -26,6 +26,10 @@ export default defineConfig({
     baseURL: 'http://localhost:4178',
     channel,
     viewport: { width: 1920, height: 1080 },
+    // CI has no GPU: SwiftShader at full resolution drops below the game's 20 fps
+    // time-step floor, so game time falls behind the tests' real-time waits.
+    // Half device scale makes the game render a quarter of the pixels (CSS layout unchanged).
+    deviceScaleFactor: isCI ? 0.5 : undefined,
     headless: process.env.PW_HEADED ? false : true,
     launchOptions: { args: gpuArgs },
     trace: isCI ? 'retain-on-failure' : 'off',
