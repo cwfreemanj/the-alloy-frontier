@@ -73,7 +73,8 @@ export function itemSeedFor(inv: InventoryState, blueprintId: string): string {
 }
 
 export function requestHash(req: ForgeRequest): string {
-  const { createdAt: _ignored, ...rest } = req;
+  // Only client-specified content: createdAt and the maker snapshot are supplied by the authority.
+  const { createdAt: _ignored, maker: _maker, ...rest } = req;
   return hashHex(stableStringify(rest));
 }
 

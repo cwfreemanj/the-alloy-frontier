@@ -39,7 +39,7 @@ export class PerfMonitor {
     const low1Ms = worst1.length ? worst1.reduce((a, b) => a + b, 0) / worst1.length : 0;
     const info = this.renderer.info;
     const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
-    const size = this.renderer.getSize({ x: 0, y: 0 } as THREE.Vector2);
+    const canvas = this.renderer.domElement;
     return {
       fps: avg > 0 ? 1000 / avg : 0,
       low1: low1Ms > 0 ? 1000 / low1Ms : 0,
@@ -53,7 +53,7 @@ export class PerfMonitor {
       loadMs: this.loadMs,
       samples: f.length,
       pixelRatio: this.renderer.getPixelRatio(),
-      resolution: `${Math.round(size.x * this.renderer.getPixelRatio())}×${Math.round(size.y * this.renderer.getPixelRatio())}`,
+      resolution: `${canvas.width}×${canvas.height}`,
     };
   }
 

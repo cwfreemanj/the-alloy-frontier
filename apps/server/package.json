@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/main.ts",
-    "proof": "tsx src/proof.ts"
+    "proof": "vitest run --root ../.. apps/server"
   },
   "dependencies": {
     "@alloy/crafting": "*",

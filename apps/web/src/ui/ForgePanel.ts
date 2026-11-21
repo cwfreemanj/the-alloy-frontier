@@ -92,7 +92,8 @@ export class ForgePanel {
   private selectBlueprint(id: string): void {
     this.blueprintId = id;
     const bp = getBlueprint(id)!;
-    this.buffer = Math.max(bp.buffer.min, Math.min(materialTotal(this.session.inventory, 'binding_flux'), bp.buffer.min + bp.buffer.standardBatch));
+    // Default to the required minimum; extra buffer is an explicit, previewed choice.
+    this.buffer = bp.buffer.min;
     this.resetMasterwork();
   }
 

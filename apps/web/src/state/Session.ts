@@ -69,7 +69,7 @@ export type SessionEvent =
 
 export function newSessionData(now: number): SessionData {
   let inventory = createInventory(PLAYER_ID, 40);
-  const flux = addMaterial(inventory, { materialId: 'binding_flux', quantity: 6, quality: 0.5, origin: 'starting-kit' });
+  const flux = addMaterial(inventory, { materialId: 'binding_flux', quantity: 12, quality: 0.5, origin: 'starting-kit' });
   if (flux.ok) inventory = flux.inventory;
   return {
     version: 1,
