@@ -237,14 +237,114 @@ export function pausePanel(opts: {
 }
 
 // ---------------- Title ----------------
-export function titleScreen(opts: { hasSave: boolean; onNew: () => void; onContinue: () => void; loadError?: string; name: string; onName: (n: string) => void }): HTMLElement {
-  const nameInput = h('input', { type: 'text', value: opts.name, maxlength: 20, 'aria-label': 'Your name', 'data-testid': 'player-name', class: 'name-input', spellcheck: 'false' }) as HTMLInputElement;
+export type AccountView =
+  | { state: 'checking' }
+  | { state: 'unavailable' }
+  | { state: 'signed_out'; busy?: boolean; error?: string }
+  | { state: 'signed_in'; username: string; hasCloudSave: boolean; canImport: boolean; busy?: boolean; error?: string };
+
+export interface TitleOptions {
+  /** Guest play (saves only in this browser). */
+  hasSave: boolean;
+  loadError?: string;
+  name: string;
+  onName: (n: string) => void;
+  onNew: () => void;
+  onContinue: () => void;
+  /** Accounts (character saved on the server). */
+  account: AccountView;
+  onSignIn: (username: string, password: string) => void;
+  onRegister: (username: string, password: string) => void;
+  onSignOut: () => void;
+  onAccountContinue: () => void;
+  onAccountNew: () => void;
+  onImport: () => void;
+}
+
+export function titleScreen(opts: TitleOptions): HTMLElement {
+  const a = opts.account;
+
+  // ---- Account section ----
+  let accountBlock: HTMLElement;
+  if (a.state === 'signed_in') {
+    let confirmNew = false;
+    const newBtn = h('button', { class: `btn ${a.hasCloudSave || a.canImport ? '' : 'primary'}`, 'data-testid': 'acct-new', disabled: !!a.busy }, a.hasCloudSave ? 'New character…' : 'New character');
+    newBtn.addEventListener('click', () => {
+      if (a.hasCloudSave && !confirmNew) {
+        confirmNew = true;
+        newBtn.textContent = 'Click again: replace your saved character';
+        return;
+      }
+      opts.onAccountNew();
+    });
+    accountBlock = h(
+      'div',
+      { class: 'acct' },
+      h('div', { class: 'acct-who' }, h('span', { class: 'small muted' }, 'Signed in as '), h('b', { 'data-testid': 'acct-name' }, a.username), h('button', { class: 'linkish', 'data-testid': 'acct-signout', onclick: opts.onSignOut }, 'Sign out')),
+      h(
+        'div',
+        { class: 'btns' },
+        a.hasCloudSave ? h('button', { class: 'btn primary', 'data-testid': 'acct-continue', disabled: !!a.busy, onclick: opts.onAccountContinue }, 'Continue') : null,
+        a.canImport ? h('button', { class: `btn ${a.hasCloudSave ? '' : 'primary'}`, 'data-testid': 'acct-import', disabled: !!a.busy, onclick: opts.onImport }, 'Bring this browser’s character into my account') : null,
+        newBtn,
+      ),
+      a.canImport ? h('div', { class: 'small dim' }, 'This browser has a guest character. You can move it into your account.') : null,
+      a.error ? h('div', { class: 'small bad', 'data-testid': 'acct-error' }, a.error) : null,
+    );
+  } else if (a.state === 'signed_out') {
+    const user = h('input', { type: 'text', class: 'name-input', placeholder: 'Username', autocomplete: 'username', maxlength: 20, spellcheck: 'false', 'aria-label': 'Username', 'data-testid': 'acct-username' }) as HTMLInputElement;
+    const pass = h('input', { type: 'password', class: 'name-input', placeholder: 'Password (8+ characters)', autocomplete: 'current-password', maxlength: 128, 'aria-label': 'Password', 'data-testid': 'acct-password' }) as HTMLInputElement;
+    const form = h(
+      'form',
+      { class: 'acct-form' },
+      user,
+      pass,
+      h(
+        'div',
+        { class: 'btns' },
+        h('button', { class: 'btn primary', type: 'submit', 'data-testid': 'acct-signin', disabled: !!a.busy }, a.busy ? 'Please wait…' : 'Sign in'),
+        h('button', { class: 'btn', type: 'button', 'data-testid': 'acct-register', disabled: !!a.busy, onclick: () => opts.onRegister(user.value.trim(), pass.value) }, 'Create account'),
+      ),
+      a.error ? h('div', { class: 'small bad', 'data-testid': 'acct-error' }, a.error) : null,
+      h('div', { class: 'small dim' }, 'An account keeps your character on the server, so you can play it from any computer.'),
+    ) as HTMLFormElement;
+    form.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      opts.onSignIn(user.value.trim(), pass.value);
+    });
+    accountBlock = h('div', { class: 'acct' }, form);
+  } else if (a.state === 'checking') {
+    accountBlock = h('div', { class: 'acct small muted' }, 'Connecting to the server…');
+  } else {
+    accountBlock = h('div', { class: 'acct small muted' }, 'Accounts are unavailable right now (offline). You can still play as a guest.');
+  }
+
+  // ---- Guest section ----
+  const nameInput = h('input', { type: 'text', value: opts.name, maxlength: 20, 'aria-label': 'Guest name', 'data-testid': 'player-name', class: 'name-input', spellcheck: 'false' }) as HTMLInputElement;
   const commitName = () => opts.onName(nameInput.value);
   nameInput.addEventListener('change', commitName);
   const go = (fn: () => void) => () => {
     commitName();
     fn();
   };
+  const guestBlock =
+    a.state === 'signed_in'
+      ? null
+      : h(
+          'div',
+          { class: 'guest' },
+          h('div', { class: 'or' }, h('span', null, 'or play as a guest')),
+          h('label', { class: 'name-row' }, h('span', { class: 'small muted' }, 'Guest name (shown to other players)'), nameInput),
+          h(
+            'div',
+            { class: 'btns' },
+            opts.hasSave ? h('button', { class: 'btn', 'data-testid': 'continue', onclick: go(opts.onContinue) }, 'Continue as guest') : null,
+            h('button', { class: 'btn', 'data-testid': 'new-game', onclick: go(opts.onNew) }, opts.hasSave ? 'New guest game (overwrites)' : 'Play as guest'),
+          ),
+          h('div', { class: 'small dim' }, 'Guest progress is saved in this browser only.'),
+          opts.loadError ? h('div', { class: 'small bad', style: 'margin-top:6px' }, opts.loadError) : null,
+        );
+
   return h(
     'div',
     { class: 'title-screen' },
@@ -254,14 +354,8 @@ export function titleScreen(opts: { hasSave: boolean; onNew: () => void; onConti
       h('div', { class: 'logo' }, 'ALLOY ', h('span', null, 'FRONTIER')),
       h('div', { class: 'sub' }, 'The First Forge · vertical slice'),
       h('div', { class: 'rule' }),
-      h('label', { class: 'name-row' }, h('span', { class: 'small muted' }, 'Your name (shown to other players)'), nameInput),
-      h(
-        'div',
-        { class: 'btns' },
-        opts.hasSave ? h('button', { class: 'btn primary', 'data-testid': 'continue', onclick: go(opts.onContinue) }, 'Continue') : null,
-        h('button', { class: `btn ${opts.hasSave ? '' : 'primary'}`, 'data-testid': 'new-game', onclick: go(opts.onNew) }, opts.hasSave ? 'New game (overwrites save)' : 'New game'),
-      ),
-      opts.loadError ? h('div', { class: 'small bad', style: 'margin-top:10px' }, opts.loadError) : null,
+      accountBlock,
+      guestBlock,
       h('div', { class: 'foot' }, 'Prototype build · GDD v0.4 · Procedural placeholder art · Click the view to capture the mouse, Esc to release'),
     ),
   );

@@ -72,6 +72,7 @@ export class WorldClient {
     readonly url: string,
     readonly name: string,
     private handlers: WorldHandlers,
+    private token: string | null = null,
   ) {
     this.open();
   }
@@ -81,7 +82,7 @@ export class WorldClient {
     this.handlers.status('connecting');
     const ws = new WebSocket(this.url);
     this.ws = ws;
-    ws.onopen = () => this.send({ t: 'hello', name: this.name, protocol: WORLD_PROTOCOL });
+    ws.onopen = () => this.send({ t: 'hello', name: this.name, protocol: WORLD_PROTOCOL, ...(this.token ? { token: this.token } : {}) });
     ws.onmessage = (ev) => {
       let m: WorldServerMsg;
       try {
