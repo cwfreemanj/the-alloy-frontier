@@ -102,7 +102,8 @@ export class Game {
   private lastSave = 'Not saved yet this session.';
   settings: Settings = loadSettings();
   private readonly ui: HTMLElement;
-  readonly debug = new URLSearchParams(location.search).has('debug');
+  /** Debug/cheat hooks: only with ?debug AND on a local machine, never on a hosted build. */
+  readonly debug = new URLSearchParams(location.search).has('debug') && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
   private started = false;
   /** Time spent constructing the scene (ms). */
   constructMs = 0;
