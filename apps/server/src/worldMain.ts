@@ -13,6 +13,11 @@ import { AccountService } from './accounts/service';
 import { kvFromEnv } from './accounts/kv';
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+// Local secrets (e.g. DATABASE_URL) live in .env.local at the project root, which git ignores.
+// On Render they come from the dashboard instead, so the file is simply absent there.
+const localEnv = resolve(here, '../../../.env.local');
+if (existsSync(localEnv)) process.loadEnvFile(localEnv);
 const dist = resolve(here, '../../web/dist');
 const cloud = process.env.PORT !== undefined;
 const lan = process.argv.includes('--lan');

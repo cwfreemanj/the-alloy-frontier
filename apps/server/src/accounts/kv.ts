@@ -77,23 +77,48 @@ export interface PgLike {
   end(): Promise<void>;
 }
 
+/**
+ * Always verify the server certificate and hostname. node-postgres treats sslmode=require as
+ * verify-full today but will weaken it to libpq semantics in its next major version.
+ */
+export function strictTls(url: string): string {
+  const u = new URL(url);
+  const mode = u.searchParams.get('sslmode');
+  if (!mode || mode === 'require' || mode === 'prefer' || mode === 'verify-ca') u.searchParams.set('sslmode', 'verify-full');
+  return u.toString();
+}
+
+const SCHEMA = `CREATE TABLE IF NOT EXISTS alloy_kv (
+  k TEXT PRIMARY KEY,
+  v TEXT NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)`;
+
 export class PostgresKV implements KV {
   readonly kind = 'postgres' as const;
   private ready: Promise<void>;
-  constructor(private db: PgLike) {
-    this.ready = db
-      .query(
-        `CREATE TABLE IF NOT EXISTS alloy_kv (
-          k TEXT PRIMARY KEY,
-          v TEXT NOT NULL,
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )`,
-      )
+  /**
+   * @param db     pool for normal traffic (Neon: the pooled DATABASE_URL)
+   * @param schema optional separate connection for creating the table; Neon advises the
+   *               direct (unpooled) connection for schema changes. Defaults to `db`.
+   */
+  constructor(
+    private db: PgLike,
+    schema: PgLike | null = null,
+  ) {
+    const s = schema ?? db;
+    this.ready = s
+      .query(SCHEMA)
+      .then(async () => {
+        if (schema) await schema.end();
+      })
       .then(() => undefined);
   }
-  static fromUrl(url: string): PostgresKV {
-    // Hosted databases require TLS; the connection string carries sslmode.
-    return new PostgresKV(new pg.Pool({ connectionString: url, max: 5, idleTimeoutMillis: 30_000 }));
+  /** Production: node-postgres over TLS (the connection strings carry sslmode). */
+  static fromUrls(pooledUrl: string, directUrl?: string): PostgresKV {
+    const pool = new pg.Pool({ connectionString: strictTls(pooledUrl), max: 5, idleTimeoutMillis: 30_000 });
+    const direct = directUrl ? new pg.Pool({ connectionString: strictTls(directUrl), max: 1 }) : null;
+    return new PostgresKV(pool, direct);
   }
   async get<T>(key: string): Promise<T | null> {
     await this.ready;
@@ -127,6 +152,6 @@ export class PostgresKV implements KV {
 
 /** Pick storage from the environment. */
 export function kvFromEnv(env: NodeJS.ProcessEnv, defaultFile: string): KV {
-  if (env.DATABASE_URL) return PostgresKV.fromUrl(env.DATABASE_URL);
+  if (env.DATABASE_URL) return PostgresKV.fromUrls(env.DATABASE_URL, env.DATABASE_URL_UNPOOLED || undefined);
   return new FileKV(env.DATA_FILE ?? defaultFile);
 }

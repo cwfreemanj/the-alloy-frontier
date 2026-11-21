@@ -28,7 +28,8 @@ export default defineConfig({
       command: 'npx tsx apps/server/src/worldMain.ts',
       url: 'http://localhost:2569/world-info',
       // Accounts for tests live in a throwaway file, never the dev data.
-      env: { PORT: '2569', DATA_FILE: '.tmp/e2e-accounts.json' },
+      // Empty DATABASE_URL wins over .env.local, so tests never touch the real database.
+      env: { PORT: '2569', DATA_FILE: '.tmp/e2e-accounts.json', DATABASE_URL: '', DATABASE_URL_UNPOOLED: '' },
       reuseExistingServer: false,
       timeout: 120_000,
     },

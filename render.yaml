@@ -20,3 +20,7 @@ services:
       # kept in a temporary file that Render wipes on every deploy.
       - key: DATABASE_URL
         sync: false
+      # Optional: Neon's direct (non-pooled) connection string, used once at startup to
+      # create the table. Also a secret, set in the dashboard.
+      - key: DATABASE_URL_UNPOOLED
+        sync: false

@@ -19,3 +19,4 @@ source-assets/
 
 # Local account/save storage for development
 data/
+.neon
