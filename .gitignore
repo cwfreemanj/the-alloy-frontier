@@ -16,3 +16,6 @@ source-assets/
 *.crdownload
 *.part
 *.blend1
+
+# Local account/save storage for development
+data/

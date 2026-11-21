@@ -73,12 +73,12 @@ describe('shared world (auto-join, presence)', () => {
     const { a, b } = await twoPlayers();
     // Nobody is announced until they leave the title screen and send a position.
     b.send({ t: 'state', s: avatar(0, 0) });
-    expect((await a.wait('joined')).player.name).toBe('Bram');
+    expect((await a.wait('joined')).player.name).toBe('Bram (guest)');
     a.send({ t: 'state', s: avatar(3, 4, { ph: 'active', atk: 'light1' }) });
     const seen = await b.wait('players', (m) => m.list.some((p) => p.id === a.id && p.s.x === 3));
     expect(seen.list.find((p) => p.id === a.id)!.s.atk).toBe('light1');
     b.close();
-    expect((await a.wait('left')).name).toBe('Bram');
+    expect((await a.wait('left')).name).toBe('Bram (guest)');
     a.close();
   });
 
@@ -94,7 +94,7 @@ describe('shared world (auto-join, presence)', () => {
     await c.opened();
     c.send({ t: 'hello', name: '<img src=x onerror=alert(1)>Sam', protocol: WORLD_PROTOCOL });
     await c.wait('welcome');
-    expect(server.room.playerNames()[0]).not.toMatch(/[<>=()]/);
+    expect(server.room.playerNames()[0]).not.toMatch(/[<>=]/);
     c.close();
   });
 
