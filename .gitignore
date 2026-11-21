@@ -8,3 +8,11 @@ playwright-report/
 .env.*
 .DS_Store
 .vite/
+.tmp/
+
+# Raw source assets stay out of git (keep them in the shared Drive folder)
+source-assets/
+*.zip
+*.crdownload
+*.part
+*.blend1
