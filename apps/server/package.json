@@ -1,0 +1,20 @@
+{
+  "name": "@alloy/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "proof": "tsx src/proof.ts"
+  },
+  "dependencies": {
+    "@alloy/crafting": "*",
+    "@alloy/game-rules": "*",
+    "@alloy/item-gen": "*",
+    "@alloy/protocol": "*",
+    "ws": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2"
+  }
+}

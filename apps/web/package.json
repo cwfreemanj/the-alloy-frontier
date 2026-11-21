@@ -1,0 +1,21 @@
+{
+  "name": "@alloy/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173 --strictPort"
+  },
+  "dependencies": {
+    "@alloy/crafting": "*",
+    "@alloy/game-rules": "*",
+    "@alloy/item-gen": "*",
+    "@alloy/protocol": "*",
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.187.0"
+  }
+}

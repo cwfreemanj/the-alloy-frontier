@@ -1,0 +1,29 @@
+{
+  "name": "alloy-frontier",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Alloy Frontier - First Forge vertical slice (GDD v0.4, browser-first prototype)",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @alloy/web",
+    "build": "npm run typecheck && npm run build -w @alloy/web",
+    "preview": "npm run preview -w @alloy/web",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "server": "npm run start -w @alloy/server",
+    "netproof": "npm run proof -w @alloy/server"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}
