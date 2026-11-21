@@ -337,7 +337,7 @@ export class ForgePanel {
         ),
       );
     } else if (this.stage === 'heat') {
-      wrap.append(h('div', { class: 'small muted' }, 'Choose how hot to work the ingot. Hotter metal gives you more strikes, but overworking relieved metal costs more.'));
+      wrap.append(h('div', { class: 'small muted' }, 'Choose how hot to work the ingot. Hotter metal gives you more strikes to relieve stress, but mistakes hurt more: an overwork (striking metal already at 0) counts as extra stress left in the blade.'));
       wrap.append(
         h(
           'div',
@@ -402,6 +402,52 @@ export class ForgePanel {
     return wrap;
   }
 
+  /** Plain-language rules for the hammer stage: what stress and overwork actually do. */
+  private hammerExplainer(): HTMLElement {
+    const penalty = HEAT_LEVELS[this.heat].overworkPenalty;
+    return h(
+      'details',
+      { class: 'explain', open: true },
+      h('summary', null, 'How hammering works'),
+      h(
+        'ul',
+        null,
+        h('li', null, h('b', null, 'Stress'), ' is tension trapped in the metal (the numbers). Every point you leave behind lowers ', h('b', null, 'structure quality'), '.'),
+        h('li', null, h('b', null, 'Spread'), ' takes 1 from a cell and its 4 neighbours. ', h('b', null, 'Focused'), ' takes 2 from one cell.'),
+        h(
+          'li',
+          null,
+          h('b', null, 'Overworking'),
+          ' means hitting metal that is already at 0 (including the 0-cells a spread strike touches, or a focused strike on a 1). ',
+          penalty > 0 ? `At ${HEAT_LEVELS[this.heat].name}, each one counts as ${penalty} extra stress against your quality.` : `At ${HEAT_LEVELS[this.heat].name} it costs nothing, it just wastes the strike.`,
+        ),
+        h('li', null, 'Quality = 1 − (stress left + overwork penalty) ÷ starting stress. It sets the weapon’s damage multiplier and whether hidden powers awaken.'),
+      ),
+    );
+  }
+
+  /** What the current structure quality means for the finished weapon. */
+  private qualityEffects(score: number): HTMLElement {
+    const ff = 0.95 + 0.3 * score;
+    const bp = getBlueprint(this.blueprintId);
+    const lines: Array<HTMLElement> = [h('div', null, `Damage multiplier ×${ff.toFixed(3)} `, h('span', { class: 'dim' }, '(×0.950 at 0% → ×1.250 at 100%)'))];
+    const imb = bp?.potentialImbuements[0];
+    if (imb) {
+      const catalyst = bp!.materials.some((r) => r.materialId === 'ironglass') ? averageQuality(this.session.inventory, 'ironglass') ?? 0 : 0;
+      const resonance = score * 0.7 + catalyst * 0.3;
+      const needed = Math.max(0, Math.min(1, (0.6 - catalyst * 0.3) / 0.7));
+      const name = IMBUEMENTS[imb]?.name ?? imb;
+      lines.push(
+        h(
+          'div',
+          { class: resonance >= 0.6 ? 'good' : 'bad' },
+          resonance >= 0.6 ? `⚡ ${name} will awaken (${Math.round(resonance * 100)}% resonance)` : `${name} dormant: reach about ${Math.ceil(needed * 100)}% quality to awaken it`,
+        ),
+      );
+    }
+    return h('div', { class: 'small', style: 'display:grid;gap:2px' }, ...lines);
+  }
+
   private renderHammer(): HTMLElement {
     const board = this.board!;
     const st = this.hammer!;
@@ -432,10 +478,11 @@ export class ForgePanel {
         grid.append(cell);
       }
     const left = st.strikesAllowed - st.strikesUsed;
+    const penalty = HEAT_LEVELS[this.heat].overworkPenalty;
     const side = h(
       'div',
       { style: 'display:grid;gap:8px' },
-      h('div', { class: 'small muted' }, 'Relieve stress in the ingot. Numbers show stress (also shown as dots). Striking relieved metal (0) overworks it.'),
+      this.hammerExplainer(),
       h(
         'div',
         { class: 'row' },
@@ -443,8 +490,15 @@ export class ForgePanel {
         h('button', { class: `btn small ${this.strikeKind === 'focused' ? 'primary' : ''}`, 'data-strike': 'focused', onclick: () => ((this.strikeKind = 'focused'), this.render()) }, 'Focused strike (−2 ●)'),
       ),
       h('div', { class: 'mono small' }, `Strikes left: `, h('b', { class: 'ember' }, String(left)), ` / ${st.strikesAllowed}`),
-      h('div', { class: 'mono small' }, `Stress: ${remaining}/${initial} · overworks: ${st.overworks} (×${HEAT_LEVELS[this.heat].overworkPenalty})`),
+      h('div', { class: 'mono small' }, `Stress left: ${remaining}/${initial}`),
+      h(
+        'div',
+        { class: 'mono small' },
+        `Overworks: ${st.overworks}`,
+        penalty > 0 ? h('span', { class: st.overworks ? 'bad' : 'dim' }, ` (each counts as ${penalty} extra stress)`) : h('span', { class: 'dim' }, ' (free at Dull Red)'),
+      ),
       h('div', null, h('div', { class: 'small dim' }, 'Structure quality'), h('div', { class: 'meter cyan' }, h('div', { style: `width:${score * 100}%` })), h('b', { class: 'mono' }, `${Math.round(score * 100)}%`)),
+      this.qualityEffects(score),
       h(
         'div',
         { class: 'row' },

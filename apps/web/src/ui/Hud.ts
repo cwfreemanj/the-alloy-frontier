@@ -180,9 +180,12 @@ export class Hud {
       const prog = describeProgress(QUEST_EDGE_YOU_MAKE, session.data.quest)
         .map((s) => {
           const [k, v] = s.includes(':') ? s.split(':') : ['', s];
-          return k ? `${materialName(k as MaterialId)} ${v}` : v;
+          const [have, need] = v.split('/').map(Number);
+          const done = have >= need;
+          const label = k ? `${materialName(k as MaterialId)} ` : 'Progress ';
+          return `<div class="pl${done ? ' done' : ''}">${done ? '✓' : '○'} ${label}<b>${have}</b>/${need}</div>`;
         })
-        .join(' · ');
+        .join('');
       const idx = session.data.quest.stepIndex + 1;
       objHtml = `<div class="q">${QUEST_EDGE_YOU_MAKE.name} · ${idx}/${QUEST_EDGE_YOU_MAKE.steps.length}</div><div class="t">${step.title}</div><div class="d">${step.description}</div>${prog ? `<div class="p">${prog}</div>` : ''}`;
     }

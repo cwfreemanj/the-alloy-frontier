@@ -30,7 +30,7 @@ import {
   type QuestEvent,
   type QuestState,
 } from '@alloy/game-rules';
-import { getBlueprint, type ItemInstance, type MaterialId } from '@alloy/item-gen';
+import { getBlueprint, materialName, type ItemInstance, type MaterialId } from '@alloy/item-gen';
 
 export const PLAYER_ID = 'player-01';
 export const PLAYER_NAME = 'You';
@@ -135,7 +135,26 @@ export class Session {
 
   quest(ev: QuestEvent): void {
     const u = applyQuestEvent(QUEST_EDGE_YOU_MAKE, this.data.quest, ev, Date.now());
-    if (u.completedSteps.length === 0) return;
+    if (u.completedSteps.length === 0) {
+      // Partial progress (e.g. 3/5 iron ore) must be kept so the tracker can show it.
+      const prev = this.data.quest.progress;
+      const next = u.state.progress;
+      const keys = new Set([...Object.keys(prev), ...Object.keys(next)]);
+      const changed = [...keys].some((k) => prev[k] !== next[k]);
+      if (changed) {
+        this.data.quest = u.state;
+        if (ev.type === 'inventory') {
+          const step = this.step();
+          if (step?.objective.type === 'have') {
+            const parts = Object.entries(step.objective.items)
+              .filter(([k]) => (prev[k] ?? 0) !== (next[k] ?? 0))
+              .map(([k, n]) => `${materialName(k as MaterialId)} ${next[k] ?? 0}/${n}`);
+            if (parts.length) this.emit({ type: 'toast', text: `Quest: ${parts.join(', ')}`, tone: 'info' });
+          }
+        }
+      }
+      return;
+    }
     this.data.quest = u.state;
     for (const s of u.completedSteps) {
       const next = this.step();

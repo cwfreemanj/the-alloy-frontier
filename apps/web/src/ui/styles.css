@@ -49,6 +49,9 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .objective .t { font-weight: 600; margin: 2px 0; }
 .objective .d { color: var(--muted); font-size: 12px; line-height: 1.35; }
 .objective .p { margin-top: 4px; font-size: 12px; color: var(--cyan); font-family: var(--mono); }
+.objective .p .pl { padding: 1px 0; }
+.objective .p .pl.done { color: var(--muted); text-decoration: line-through; text-decoration-color: rgba(255,255,255,0.25); }
+.objective .p .pl b { color: #fff; }
 .zone-label { font-size: 11px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
 
 .hud-bottom { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); display: grid; justify-items: center; gap: 8px; }
@@ -210,3 +213,6 @@ select, input[type=number] { background: var(--panel-2); color: var(--text); bor
 .summary { width: min(760px, 94vw); }
 .prov { font-family: var(--mono); font-size: 11px; color: var(--muted); background: #0e0f11; border: 1px solid var(--steel); padding: 8px; border-radius: 3px; max-height: 180px; overflow: auto; white-space: pre-wrap; }
 @media (prefers-reduced-motion: reduce) { .toast, .dmg { animation-duration: 0.01s; } .zone-banner { transition: none; } }
+.explain { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 6px 10px; font-size: 12px; line-height: 1.4; }
+.explain summary { cursor: pointer; color: var(--ember); font-weight: 600; }
+.explain ul { margin: 6px 0 0; padding-left: 16px; display: grid; gap: 3px; }

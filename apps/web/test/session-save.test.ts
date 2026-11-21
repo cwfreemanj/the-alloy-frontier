@@ -44,6 +44,21 @@ describe('session quest integration', () => {
     expect(s.equipped()!.result.rating).toBeGreaterThan(245);
   });
 
+  it('keeps partial gather progress so the tracker can show it', () => {
+    const s = new Session(newSessionData(1));
+    s.talk('orla');
+    s.recordKill('scavenger');
+    expect(s.step()?.id).toBe('gather');
+    const toasts: string[] = [];
+    s.on((e) => e.type === 'toast' && toasts.push(e.text));
+    s.gather('n1', 'iron_ore', 2, 0.6, {});
+    expect(s.data.quest.progress.iron_ore).toBe(2);
+    s.gather('n2', 'ironglass', 1, 0.7, {});
+    expect(s.data.quest.progress).toMatchObject({ iron_ore: 2, ironglass: 1 });
+    expect(toasts.some((t) => t.includes('Iron Ore 2/5'))).toBe(true);
+    expect(s.step()?.id).toBe('gather');
+  });
+
   it('gates quest events out of order (equip before step is retro-credited)', () => {
     const s = new Session(newSessionData(1));
     s.quest({ type: 'event', event: 'craft_quick' });
