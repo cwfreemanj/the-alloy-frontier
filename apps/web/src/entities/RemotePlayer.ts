@@ -7,6 +7,8 @@ import type { AvatarState } from '@alloy/protocol';
 import type { ItemInstance } from '@alloy/item-gen';
 import { ATTACK_POSES, POSE_BLOCK, POSE_DEAD, POSE_DODGE, POSE_GATHER, POSE_GUARD, POSE_STAGGER, Rig, easeIn, easeOut, locomotionPose, mixPose, type Pose } from './Rig';
 import { buildSword, type SwordVisual } from './Weapons';
+import { makePlayerBody, playerAnimRequest } from './Player';
+import { CharacterBody, DEFAULT_PLAYER_CHARACTER, isPlayerCharacter, type PlayerCharacterId } from './models/Characters';
 
 const PALETTES = [
   { body: '#5a3a52', armor: '#7a6a5a', accent: '#ffb03a' },
@@ -23,8 +25,15 @@ interface Sample {
 const INTERP_DELAY = 110; // ms
 
 export class RemotePlayer {
-  readonly rig: Rig;
+  body: Rig | CharacterBody;
+  private character: PlayerCharacterId = DEFAULT_PLAYER_CHARACTER;
+  private readonly palette: { body: string; armor: string; accent: string };
   readonly object = new THREE.Group();
+  private deadTime = 0;
+  private gatherTime = 0;
+  private airTime = 0;
+  private moveLocal = { x: 0, z: 1 };
+  private lastPos = new THREE.Vector3();
   readonly position = new THREE.Vector3();
   yaw = 0;
   state: AvatarState | null = null;
@@ -42,13 +51,24 @@ export class RemotePlayer {
     public name: string,
     index: number,
   ) {
-    const p = PALETTES[index % PALETTES.length];
-    this.rig = new Rig({ kind: 'organic', skin: '#c49478', body: p.body, armor: p.armor, legs: '#2e2a26', boots: '#241c16', accent: p.accent, scale: 1 });
-    this.rig.snapshotEmissive();
-    this.object.add(this.rig.root);
+    this.palette = PALETTES[index % PALETTES.length];
+    this.body = makePlayerBody(this.character, this.palette);
+    this.object.add(this.body.root);
     this.sword = buildSword(null);
-    this.rig.rHand.add(this.sword.group);
+    this.body.rHand.add(this.sword.group);
     this.object.visible = false;
+  }
+
+  /** Other players appear as the character they picked. */
+  private setCharacter(id: PlayerCharacterId): void {
+    if (id === this.character) return;
+    this.character = id;
+    this.body.rHand.remove(this.sword.group);
+    if (this.body instanceof CharacterBody) this.body.dispose();
+    else this.object.remove(this.body.root);
+    this.body = makePlayerBody(id, this.palette);
+    this.object.add(this.body.root);
+    this.body.rHand.add(this.sword.group);
   }
 
   get pos2() {
@@ -71,6 +91,8 @@ export class RemotePlayer {
     }
     this.state = s;
     this.object.visible = true;
+    const want = isPlayerCharacter(s.mdl) ? s.mdl : DEFAULT_PLAYER_CHARACTER;
+    if (want !== this.character) this.setCharacter(want);
   }
 
   update(dt: number, now: number): void {
@@ -116,15 +138,51 @@ export class RemotePlayer {
     const key = s.wpn ? `${s.wpn.bp}|${s.wpn.spec}|${s.wpn.imb}|${s.wpn.rar}` : '';
     if (key === this.swordKey) return;
     this.swordKey = key;
-    this.rig.rHand.remove(this.sword.group);
+    this.body.rHand.remove(this.sword.group);
     const look = s.wpn
       ? ({ blueprintId: s.wpn.bp, forge: { specialization: s.wpn.spec }, result: { imbuements: s.wpn.imb ? ['storm_arc'] : [], rarity: s.wpn.rar } } as unknown as ItemInstance)
       : null;
     this.sword = buildSword(look);
-    this.rig.rHand.add(this.sword.group);
+    this.body.rHand.add(this.sword.group);
   }
 
   private animate(dt: number, s: AvatarState, spd: number): void {
+    this.deadTime = s.ph === 'dead' ? this.deadTime + dt : 0;
+    this.gatherTime = s.ph === 'gather' ? this.gatherTime + dt : 0;
+    this.airTime = s.ph === 'air' ? this.airTime + dt : 0;
+    // Movement direction in the avatar's frame (for strafing / walking backwards while locked on).
+    const dx = this.position.x - this.lastPos.x;
+    const dz = this.position.z - this.lastPos.z;
+    this.lastPos.copy(this.position);
+    if (dx * dx + dz * dz > 1e-6) {
+      const sy = Math.sin(this.yaw);
+      const cy = Math.cos(this.yaw);
+      const L = Math.hypot(dx, dz);
+      this.moveLocal = { x: (dx * cy - dz * sy) / L, z: (dx * sy + dz * cy) / L };
+    }
+    if (this.body instanceof CharacterBody) {
+      const phase = s.ph === 'block' || s.ph === 'air' || s.ph === 'gather' ? 'idle' : s.ph;
+      this.body.update(
+        dt,
+        playerAnimRequest({
+          alive: s.ph !== 'dead' && s.hp > 0,
+          deadTime: this.deadTime,
+          gatherK: s.ph === 'gather' ? (this.gatherTime % 1) : null,
+          phase,
+          attackId: s.atk,
+          k: Math.max(0, Math.min(1, s.pr)),
+          t: s.pr * (s.ph === 'stagger' ? 0.6 : 1),
+          blocking: s.ph === 'block',
+          airTime: s.ph === 'air' ? this.airTime : null,
+          speed: spd,
+          dirX: this.moveLocal.x,
+          dirZ: this.moveLocal.z,
+        }),
+      );
+      if (this.sword.glow) this.sword.glow.emissiveIntensity = 1.2 + Math.sin(performance.now() / 160) * 0.4;
+      return;
+    }
+    const rig = this.body;
     let pose: Pose;
     let blend = Math.min(1, dt * 16);
     const k = Math.max(0, Math.min(1, s.pr));
@@ -151,7 +209,7 @@ export class RemotePlayer {
       if (running) pose.rShoulder = [0.35, 0, -0.2];
       if (s.ph === 'air') pose = { ...pose, lKnee: [0.9, 0, 0], rKnee: [0.4, 0, 0], lHip: [-0.6, 0, 0] };
     }
-    this.rig.apply(pose, blend);
+    rig.apply(pose, blend);
     if (this.sword.glow) this.sword.glow.emissiveIntensity = 1.2 + Math.sin(performance.now() / 160) * 0.4;
   }
 

@@ -41,6 +41,7 @@ import { orlaDialogue } from './Dialogue';
 import type { RemotePlayer } from '../entities/RemotePlayer';
 import { findWorld } from '../net/WorldClient';
 import { Online } from './Online';
+import { DEFAULT_PLAYER_CHARACTER, PLAYER_CHARACTERS, charactersReady, isPlayerCharacter, type PlayerCharacterId } from '../entities/models/Characters';
 
 const NAME_KEY = 'alloy-frontier.name.v1';
 function loadName(): string {
@@ -51,6 +52,17 @@ function loadName(): string {
     /* storage unavailable */
   }
   return `Smith-${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
+const CHARACTER_KEY = 'alloy-frontier.character.v1';
+function loadCharacter(): PlayerCharacterId {
+  try {
+    const c = localStorage.getItem(CHARACTER_KEY);
+    if (isPlayerCharacter(c)) return c;
+  } catch {
+    /* storage unavailable */
+  }
+  return DEFAULT_PLAYER_CHARACTER;
 }
 
 type Modal = null | 'title' | 'pause' | 'forge' | 'inventory' | 'merchant' | 'dialog' | 'summary';
@@ -128,6 +140,7 @@ export class Game {
   /** Shared-world connection (offline when no world server is reachable). */
   online!: Online;
   playerName = loadName();
+  character: PlayerCharacterId = loadCharacter();
   private worldStatusEl!: HTMLElement;
   private lastAvatarPos: Vec2 = { x: 0, z: 0 };
   private avatarSpeed = 0;
@@ -154,7 +167,7 @@ export class Game {
     this.hud = new Hud(uiRoot);
     this.applySettings();
 
-    this.player = new Player(this.world.colliders, null);
+    this.player = new Player(this.world.colliders, null, this.character);
     this.scene.add(this.player.object);
     for (const s of ENEMY_SPAWNS) this.enemies.push(new Enemy(s, this.world.colliders, this.scene));
     this.npcs.push(new Npc(NPCS.orla.id, NPCS.orla.name, NPCS.orla.pos, NPCS.orla.yaw, { kind: 'organic', skin: '#b98468', body: '#5a3a2a', armor: '#3a3430', legs: '#2a2420', boots: '#1e1812', accent: '#ff8a3d', scale: 1.02 }));
@@ -238,6 +251,17 @@ export class Game {
     if (this.online.client) this.online.connect(this.online.client.url, n);
   }
 
+  /** Pick the player character (title screen). Persists per browser; others see it online. */
+  setCharacter(id: PlayerCharacterId): void {
+    this.character = id;
+    try {
+      localStorage.setItem(CHARACTER_KEY, id);
+    } catch {
+      /* storage unavailable */
+    }
+    this.player.setCharacter(id);
+  }
+
   private updateWorldStatus(): void {
     const o = this.online;
     const others = [...o.remotes.values()].map((r) => r.name);
@@ -277,6 +301,7 @@ export class Game {
       hp: Math.round(c.health),
       mhp: c.maxHealth,
       wpn: w ? { bp: w.blueprintId, spec: w.forge.specialization, imb: w.result.imbuements.includes('storm_arc'), rar: w.result.rarity } : null,
+      mdl: this.character,
     };
   }
 
@@ -452,6 +477,9 @@ export class Game {
         onContinue: () => this.continueGame(),
         name: this.playerName,
         onName: (n) => this.setPlayerName(n),
+        characters: charactersReady() ? PLAYER_CHARACTERS : [],
+        character: this.character,
+        onCharacter: (id) => this.setCharacter(id as PlayerCharacterId),
       }),
     );
   }
@@ -578,6 +606,12 @@ export class Game {
     } else {
       // Keep the world alive behind menus (no simulation), and orbit slowly on the title.
       if (this.modal === 'title') this.cam.yaw += rawDt * 0.05;
+      if (!this.started) {
+        // Nothing is simulated behind the title screen; keep the characters breathing.
+        this.player.presentIdle(rawDt);
+        for (const n of this.npcs) n.update(rawDt, null);
+        for (const e of this.enemies) e.presentIdle(rawDt);
+      }
       this.cam.update(rawDt, this.player.position, null);
     }
     if (this.started) {
@@ -1136,7 +1170,7 @@ export class Game {
       }
       const npc = NPCS[n.id as 'orla' | 'bram'];
       const el = this.hud.label(id, () => h('div', { class: 'npc-label' }, h('div', { class: 'mk' }), h('div', { class: 'nm' }, npc.name), h('div', { class: 'rl' }, npc.role)));
-      const sp = this.hud.project(this.camera, n.object.position, 2.25, w, hgt);
+      const sp = this.hud.project(this.camera, n.object.position, n.labelHeight, w, hgt);
       el.style.display = sp.visible ? '' : 'none';
       el.style.left = `${sp.x}px`;
       el.style.top = `${sp.y}px`;
