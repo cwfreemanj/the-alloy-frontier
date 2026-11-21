@@ -637,8 +637,8 @@ export class Game {
     const v = new THREE.Vector2();
     if (this.input.held('forward')) v.add(f);
     if (this.input.held('back')) v.sub(f);
-    if (this.input.held('right')) v.sub(r);
-    if (this.input.held('left')) v.add(r);
+    if (this.input.held('right')) v.add(r);
+    if (this.input.held('left')) v.sub(r);
     return v.lengthSq() > 0 ? v.normalize() : v;
   }
 
