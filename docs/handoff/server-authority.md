@@ -1,0 +1,140 @@
+# Handoff: server-authoritative crafting and inventory
+
+- **Branch:** `server-transactions`, off `main` at 8e9cd64.
+- **Owner:** Neal (backend).
+- **Status:** in progress. See the checklist and "Current state".
+
+## Goal
+
+For **signed-in players**, the server, not the browser, decides everything that changes a character.
+This covers gathering, buying, forging, equipping, discarding, quest progress, kill rewards (coins,
+XP, loot) and the damage of the player's hits. A modified browser must not be able to give itself
+items, coins, XP, quest progress or extra damage.
+
+**Guests stay as they are:** local saves in the browser, applying the same rules locally. A guest
+can cheat their own local save, which is acceptable. Guests are labelled "(guest)" in the world.
+
+## Why (current holes, verified by reading the code)
+
+- `apps/web/src/state/Session.ts` applies every change in the browser, and the account save is uploaded
+  as a whole by `PUT /api/save`. The server only validates the format and checksums (`@alloy/save`
+  `deserialize`), and the checksums can be recomputed because the code is public.
+- On a kill, `Game.onEnemyKilled` rolls coins, flux drops and XP with `Math.random()` in the browser.
+- For hits, the browser sends `damage`. `worldRoom.hit` accepts anything up to 200 and only checks range and rate.
+
+## Design (decided; don't redo unless it proves wrong)
+
+### 1. Shared rules package: `packages/session` (`@alloy/session`)
+
+- Move `Session`, `newSessionData`, `PLAYER_ID` and the `SessionEvent` type out of
+  `apps/web/src/state/Session.ts` into this package.
+- Move the node rules out of `apps/web/src/entities/WorldObjects.ts` into it too:
+  `nodeTraits`, `nodeYield`, `NODE_MAX_CHARGES`, `NODE_RESPAWN_SECONDS`, `NodeRuntime`.
+  `WorldObjects.ts` keeps only rendering and imports these.
+- Add the interaction ranges as constants: NPC 3 m, anvil 2.8 m, node 2.6 m, all from `Game.nearestInteractable`.
+  The server allows `RANGE_SLACK = 1.5` m extra for latency.
+- Add one dispatcher used by **both** the server (authoritative) and the browser in guest mode:
+  ```ts
+  applyAction(session: Session, action: CharAction, ctx: ActionContext): ActionResult
+  // ctx: { now: number; pos: {x,z} | null; rng: () => number; playTime: number; mastery etc. from session }
+  // ActionResult: { ok: true; events: SessionEvent[] } | { ok: false; error: string; message: string }
+  ```
+  Each action's range and quest-gate checks live in `applyAction`, so guests and accounts behave the same.
+- Kill rewards become a function in the package: `rewardKill(session, enemyType, rng)`. It does
+  coins in `def.coins`, adventurer XP, the 50% scavenger flux drop and `recordKill`. Hit damage is
+  `computeOutgoingHit` + `weaponMasteryDamageBonus` from `@alloy/game-rules`, as in `Game.resolvePlayerHits`.
+- `apps/web/src/state/Session.ts` becomes a re-export so imports elsewhere keep working.
+
+### 2. Protocol (`packages/protocol/src/world.ts`, bump `WORLD_PROTOCOL` to 2)
+
+```ts
+type CharAction =
+  | { k: 'gather'; node: string }
+  | { k: 'buy'; stock: string; qty: number }
+  | { k: 'forge'; req: ClientForgeRequest }   // ForgeRequest minus maker/createdAt (server fills those)
+  | { k: 'equip'; item: string }
+  | { k: 'discard'; item: string }
+  | { k: 'talk'; npc: 'orla' }
+  | { k: 'event'; ev: 'open_merchant' };
+// client -> server
+{ t: 'act'; id: number; a: CharAction }
+// server -> client
+{ t: 'actResult'; id: number; ok: boolean; error?: string; message?: string; item?: ItemInstance }
+{ t: 'char'; data: SessionData; events: SessionEvent[] }   // authoritative character after changes
+```
+
+- Validate every `CharAction` field in `parseWorldClientMsg`, with string lengths, integer ranges and known
+  kinds. The forge request is checked further by `planForge`.
+- `hit` keeps its shape for compatibility. For account players the server **ignores** the client's
+  `damage`, `stagger` and `crit` and computes them itself. For guests the current clamp stays.
+
+### 3. Server: character host (`apps/server/src/characters.ts`)
+
+- When a signed-in player says `hello`, load their save from `AccountService.getSave` and `deserialize`
+  it. With no save, use `newSessionData`. Keep one `Session` per account in memory, attached to the world member.
+- `act` → `applyAction` with `pos` = the member's last `state` position, server time and server RNG.
+  Reply `actResult`, and send `char` if anything changed.
+- **Gather:** the node must exist and be in range. Charges and respawn are tracked in the
+  character's `world.nodes` using server play time, and there is a minimum of 0.9 s between gathers (the client
+  channels for 1 s). Quantity comes from `nodeYield` and quality from `nodeTraits`; the client never sends them.
+- **Forge:** must be within anvil range and past the `commission` quest step. `maker.mastery` comes from the server-side
+  session, `createdAt` is server time, and the hammer evidence is replayed by `planForge` as it is today.
+- **Kill:** for each contributor in `worldRoom.kill` who has a character, call `rewardKill` and send
+  `char`. Broadcast `kill` as today, so clients still play effects.
+- **Hit:** compute the damage from the equipped weapon in the server-side inventory. Grant weapon XP
+  (`weaponXpForHit`) server-side, and coalesce `char` updates to at most 4 per second.
+- **Deaths:** count a death when the member's `state.ph` changes to `'dead'`.
+- **Play time and position:** play time advances on the server clock while the player is joined; the save's
+  `player` position, yaw and health come from the latest `state`.
+- **Persistence:** the server writes the save itself (a new `AccountService.serverPutSave(accountId, data)`, which
+  bumps the revision without a client base revision). It writes at most every 5 s while changed, and
+  immediately on leave or disconnect.
+
+### 4. Locking down the HTTP save API
+
+- `PUT /api/save` stops accepting arbitrary saves. Replace it with:
+  - `POST /api/character/new`: the server creates `newSessionData` itself, overwriting after the confirm.
+  - `POST /api/character/import`: accepts a guest save once, only if the account has no character
+    yet. It's validated with `deserialize` and **capped**: coins ≤ 500 and an item count no higher than what's reachable.
+    - **Known, accepted gap:** a guest save can be crafted offline and imported. This is documented,
+      not fixed. Removing import is the full fix, if the owner decides to.
+- `GET /api/save` stays (read-only) so the title screen knows whether there's a character to continue.
+
+### 5. Client (account mode)
+
+- Add `apps/web/src/net/CharacterLink.ts`. In account mode, Game, ForgePanel, MerchantPanel and
+  InventoryPanel call `link.act(action)` instead of mutating `Session`.
+  - On `char`, replace `session.data`, replay the `events` through the existing `Session` listener (toasts,
+    level-ups, equip visuals), and re-render any open panel.
+  - In guest mode, `link.act` calls `applyAction` locally.
+- The 1 s gather channel stays client-side for feel. The result arrives from the server about 100 ms later.
+- Forge: the panel waits for `actResult` (show "Forging…"), then shows the item from the reply.
+- In account mode the browser no longer uploads saves (`CloudSaver` is used only for guest import), and
+  `Game.onEnemyKilled` only plays effects and toasts.
+- Debug hooks `__alloy.give` and `__alloy.coins` must not work on account characters. They're localhost-only already;
+  in account mode, make them refuse.
+
+## Checklist
+
+- [ ] Stage 1: create `@alloy/session` (move Session plus node rules, add `applyAction`, `rewardKill`); web uses it; no behaviour change. Unit tests for `applyAction` (range, gates, each action).
+- [ ] Stage 2: protocol v2 messages and parser tests.
+- [ ] Stage 3: server character host: load, act, kill rewards, server-side hit damage, persistence. Server tests drive `WorldRoom` directly, as `apps/server/test/world.test.ts` does.
+- [ ] Stage 4: HTTP API lock-down (`new` / `import`), plus updating `apps/server/test/accounts.test.ts`.
+- [ ] Stage 5: client `CharacterLink`, with panels routed through it in account mode.
+- [ ] Stage 6: browser tests. Update `tests/e2e/accounts.spec.ts`, and add a cheat test: in account mode, the debug give/coins and a forged `act` with out-of-range positions are refused, and edited saves can't be PUT.
+- [ ] Stage 7: README/AGENTS updates, then open the PR (don't merge; Neal decides).
+
+## Current state
+
+- Nothing implemented yet. Only `AGENTS.md`, `CLAUDE.md` and this file are added.
+- Baseline on `main` 8e9cd64: typecheck passes, `npm test` passes (120 tests), `npm run build` passes, and `npm run test:e2e` passes (10 tests).
+
+## How to verify
+
+```
+npm run typecheck && npm test && npm run build
+npm run test:e2e
+```
+
+Manual check: run `npm run world`, open http://localhost:2568 and sign in. Then gather, forge, kill a
+scavenger and reload: everything persists. In devtools, `__alloy.coins(999)` must be refused.
