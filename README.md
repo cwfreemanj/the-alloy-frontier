@@ -27,7 +27,7 @@ Open http://localhost:2568, and open it in a second window to see yourself as an
 | `npm run typecheck` | TypeScript checks |
 | `npm run build` | Typecheck + production build into `apps/web/dist` |
 
-Every pull request into `main` (and every push to `main`) runs the typecheck, unit tests, build and browser tests automatically on GitHub Actions.
+Every pull request into `main` (and every push to `main`) runs the typecheck, unit tests, build and browser tests automatically on GitHub Actions. The browser tests are informational there; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Add `?debug` to a localhost address for test shortcuts (`window.__alloy.teleport(x, z)`, `give`, `heal`).
 They never work on a hosted copy.

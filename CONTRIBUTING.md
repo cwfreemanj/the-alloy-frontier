@@ -10,6 +10,14 @@
 
 Before opening a pull request, run `npm test` (and `npm run test:e2e` if you changed gameplay or UI).
 
+Every pull request runs checks on GitHub automatically:
+
+- **Typecheck, unit tests, build:** required. A red check here means the PR is not ready to merge.
+- **Browser tests (Playwright, informational):** these also run, and their report is uploaded when they fail,
+  but a failure does not block the merge. GitHub's runners have no GPU and render too slowly for the game's
+  frame-rate floor, so these timing-based tests can fail there even when the game is fine.
+  **Run `npm run test:e2e` locally before merging any gameplay or UI change.**
+
 ## Staying out of each other's way
 
 The code is split by area so two people rarely edit the same file:
