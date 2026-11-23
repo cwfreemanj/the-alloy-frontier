@@ -629,12 +629,13 @@ export class Game {
 
   private moveDir(): THREE.Vector2 {
     const f = this.cam.forward();
-    const r = new THREE.Vector2(-f.y, f.x); // camera right in XZ (x,z)
+    // Screen-right in XZ (x, z): forward x up, i.e. (-f.z, f.x). Looking down +Z it is -X.
+    const r = new THREE.Vector2(-f.y, f.x);
     const v = new THREE.Vector2();
     if (this.input.held('forward')) v.add(f);
     if (this.input.held('back')) v.sub(f);
-    if (this.input.held('right')) v.sub(r);
-    if (this.input.held('left')) v.add(r);
+    if (this.input.held('right')) v.add(r); // D strafes right
+    if (this.input.held('left')) v.sub(r); // A strafes left
     return v.lengthSq() > 0 ? v.normalize() : v;
   }
 
