@@ -5,10 +5,9 @@
  * enemy targets, whether an enemy attack reached a player, and kill credit.
  * Client-owned for now: the player's own movement (sanity-checked) and progression.
  */
-import * as THREE from 'three';
 import { ATTACKS, dist2, forwardPoint, inArc, inCircle, type AttackId, type Vec2 } from '@alloy/game-rules';
 import { WORLD_LIMITS, WORLD_PROTOCOL, parseWorldClientMsg, type AvatarState, type EnemyNetState, type WorldPlayerInfo, type WorldServerMsg } from '@alloy/protocol';
-import { ENEMY_SPAWNS, EnemySim, buildWorld, type ColliderWorld } from '@alloy/world';
+import { ENEMY_SPAWNS, EnemySim, buildWorldColliders, type ColliderWorld } from '@alloy/world';
 
 const PLAYER_RADIUS = 0.4;
 const CREDIT_WINDOW_MS = 30_000;
@@ -21,6 +20,9 @@ const RESPAWN_CLEAR_RADIUS = 35;
 interface Member {
   id: string;
   name: string;
+  /** Signed-in account (null for guests). */
+  accountId: string | null;
+  close: () => void;
   state: AvatarState | null;
   send: (m: WorldServerMsg) => void;
   windowStart: number;
@@ -38,9 +40,9 @@ export interface WorldStats {
 }
 
 let sharedColliders: ColliderWorld | null = null;
-/** Same deterministic world the browser builds (meshes are discarded; colliders are kept). */
+/** Same deterministic colliders the browser builds from the baked Emberhold scene. */
 export function worldColliders(): ColliderWorld {
-  sharedColliders ??= buildWorld(new THREE.Scene()).colliders;
+  sharedColliders ??= buildWorldColliders();
   return sharedColliders;
 }
 
@@ -77,7 +79,8 @@ export class WorldRoom {
     }
     if (msg.t === 'hello') {
       if (connId && this.members.has(connId)) return connId;
-      return this.join(msg.name, send);
+      // Guests are marked so nobody can pass as a signed-in player.
+      return this.join(`${msg.name} (guest)`, send, null, () => {});
     }
     const me = connId ? this.members.get(connId) : undefined;
     if (!me) {
@@ -104,13 +107,25 @@ export class WorldRoom {
     return me.id;
   }
 
-  private join(name: string, send: (m: WorldServerMsg) => void): string | null {
+  /**
+   * Join the world. For a signed-in account, an older connection of the same account is
+   * signed out of the world first, so one character is never played twice at once.
+   */
+  join(name: string, send: (m: WorldServerMsg) => void, accountId: string | null, close: () => void): string | null {
+    if (accountId) {
+      for (const old of [...this.members.values()]) {
+        if (old.accountId !== accountId) continue;
+        old.send({ t: 'error', error: 'signed_in_elsewhere' });
+        this.leave(old.id);
+        old.close();
+      }
+    }
     if (this.members.size >= WORLD_LIMITS.maxPlayers) {
       send({ t: 'error', error: 'world_full' });
       return null;
     }
     const id = `p${this.nextId++}`;
-    const m: Member = { id, name, state: null, send, windowStart: this.now(), msgs: 0, hits: 0 };
+    const m: Member = { id, name, accountId, close, state: null, send, windowStart: this.now(), msgs: 0, hits: 0 };
     this.members.set(id, m);
     send({ t: 'welcome', id, players: this.infos(), enemies: this.enemies.map(netState), protocol: WORLD_PROTOCOL });
     return id;

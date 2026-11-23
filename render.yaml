@@ -15,3 +15,12 @@ services:
       # Lets the copy of the game on Vercel join this world too.
       - key: ALLOWED_ORIGINS
         value: https://alloy-frontier.vercel.app
+      # Postgres connection string for accounts and saves. Secret: set it in the
+      # Render dashboard (Environment), never in this file. Without it, accounts are
+      # kept in a temporary file that Render wipes on every deploy.
+      - key: DATABASE_URL
+        sync: false
+      # Optional: Neon's direct (non-pooled) connection string, used once at startup to
+      # create the table. Also a secret, set in the dashboard.
+      - key: DATABASE_URL_UNPOOLED
+        sync: false

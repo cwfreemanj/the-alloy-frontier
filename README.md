@@ -44,6 +44,7 @@ Q dodge · R Guardbreaker · G Storm Arc · Tab lock-on · E interact/gather · 
 apps/
   web/        the game client (Three.js scene, UI, input, entities, networking)
     src/entities/   player, other players, enemies, NPCs, weapons, procedural rig
+    src/entities/models/  character models + animation library; animSets.ts maps game states to clips
     src/game/       Game.ts (main loop), Online.ts (shared world glue), dialogue
     src/ui/         HUD, forge, inventory, menus, styles
   server/     world server (worldRoom = the shared world, worldServer = HTTP + WebSocket)
@@ -54,6 +55,7 @@ packages/     plain TypeScript, no rendering; shared by client and server
   protocol/   network message formats and validation
   world/      map layout, terrain height, colliders, enemy movement
 tests/e2e/    Playwright browser tests
+tools/asset-pipeline/  converts raw Mixamo packs into the game's models (not part of the game build)
 docs/         playtest guide, performance capture, screenshots
 ```
 
@@ -61,10 +63,13 @@ Gameplay rules live in `packages/` so the server can run them too. Rendering-onl
 
 ## Assets
 
-Everything in the game today is procedural (built in code), so there are no third-party assets yet.
+Characters are Mixamo models and animations converted by `tools/asset-pipeline` (see its README)
+into `apps/web/public/models/`; weapons, the Sentinel, terrain and buildings are still procedural.
+If the models fail to load, the game falls back to its procedural placeholder rigs.
 When adding models or animations:
 
-- Commit only the **converted files the game loads** (e.g. `.glb`) under `apps/web/public/assets/`.
+- Commit only the **converted files the game loads** (e.g. `.glb`) under `apps/web/public/models/`
+  (not `public/assets/`: the server caches that path forever under the same name).
 - Keep raw source packs (Mixamo zips, FBX, `.blend`) in the shared Drive folder, or in
   `source-assets/` locally, which git ignores. GitHub rejects files over 100 MB.
 - Record where each asset came from and its license in `ASSET_PROVENANCE.md` when you add it.

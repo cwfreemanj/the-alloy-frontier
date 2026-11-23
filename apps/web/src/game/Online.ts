@@ -21,6 +21,8 @@ export interface OnlineGameHooks {
   statusChanged(): void;
   /** The world became authoritative (or stopped being): reset local enemy state. */
   authorityChanged(online: boolean): void;
+  /** The server ended this session (signed in elsewhere, or the sign-in expired). */
+  kicked(reason: string): void;
 }
 
 export class Online {
@@ -40,12 +42,29 @@ export class Online {
     return this.client?.myId ?? null;
   }
 
-  connect(url: string, name: string): void {
+  connect(url: string, name: string, token: string | null = null): void {
     this.client?.stop();
-    this.client = new WorldClient(url, name, {
-      message: (m) => this.onMessage(m),
-      status: (s, reason) => this.onStatus(s, reason),
-    });
+    this.announced = false;
+    this.client = new WorldClient(
+      url,
+      name,
+      {
+        message: (m) => this.onMessage(m),
+        status: (s, reason) => this.onStatus(s, reason),
+      },
+      token,
+    );
+  }
+
+  disconnect(): void {
+    const c = this.client;
+    this.client = null;
+    c?.stop();
+    this.clearRemotes();
+    if (this.status === 'online') this.g.authorityChanged(false);
+    this.status = 'offline';
+    this.message = 'Offline';
+    this.g.statusChanged();
   }
 
   private onStatus(s: WorldStatus, reason?: string): void {
@@ -140,6 +159,10 @@ export class Online {
       }
       case 'error':
         if (m.error === 'world_full') this.g.toast('The world is full right now; playing offline.', 'warn');
+        if (m.error === 'signed_in_elsewhere' || m.error === 'signed_out') {
+          this.client?.stop();
+          this.g.kicked(m.error === 'signed_in_elsewhere' ? 'You signed in on another device, so this one was signed out of the world.' : 'Your sign-in expired. Please sign in again.');
+        }
         break;
     }
   }

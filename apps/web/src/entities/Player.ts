@@ -10,6 +10,56 @@ import type { ColliderWorld } from '@alloy/world';
 import { playableSdf } from '@alloy/world';
 import { ATTACK_POSES, POSE_BLOCK, POSE_DEAD, POSE_DODGE, POSE_GATHER, POSE_GUARD, POSE_STAGGER, Rig, easeIn, easeOut, locomotionPose, mixPose, type Pose } from './Rig';
 import { buildSword, type SwordVisual } from './Weapons';
+import { CharacterBody, DEFAULT_PLAYER_CHARACTER, clipMeta, createBody, phaseClipTime, type AnimRequest, type PlayerCharacterId } from './models/Characters';
+import { playerAnims } from './models/animSets';
+
+/** The local player's look: a skinned character model, or the procedural rig as a fallback. */
+export function makePlayerBody(character: PlayerCharacterId, palette?: { body: string; armor: string; accent: string }): Rig | CharacterBody {
+  const a = playerAnims(character);
+  const model = createBody(a.model, a.heightM, a.loco);
+  if (model) return model;
+  const rig = new Rig({ kind: 'organic', skin: '#c89a7a', body: palette?.body ?? '#3a4652', armor: palette?.armor ?? '#6b6f73', legs: '#2e2a26', boots: '#241c16', accent: palette?.accent ?? '#45e0ff', scale: 1 });
+  rig.snapshotEmissive();
+  return rig;
+}
+
+export interface PlayerAnimInput {
+  alive: boolean;
+  deadTime: number;
+  gatherK: number | null;
+  phase: string;
+  attackId: string | null;
+  /** 0..1 within the current phase. */
+  k: number;
+  /** Seconds in the current phase. */
+  t: number;
+  blocking: boolean;
+  airTime: number | null;
+  speed: number;
+  dirX: number;
+  dirZ: number;
+}
+
+/** Shared by the local player and remote players: game state -> animation request. */
+export function playerAnimRequest(i: PlayerAnimInput): AnimRequest {
+  const A = playerAnims('maria');
+  if (!i.alive) return { kind: 'clip', clip: A.death!, time: i.deadTime, fade: 0.12 };
+  if (i.gatherK !== null) {
+    // One chop per gather; the blow lands as the material is granted.
+    const m = clipMeta(A.gather!);
+    const peak = m?.peak ?? 0.8;
+    return { kind: 'clip', clip: A.gather!, time: peak - 0.7 + i.gatherK * 0.78, fade: 0.15 };
+  }
+  if (i.phase === 'dodge') return { kind: 'clip', clip: A.dodge!, time: i.k * (clipMeta(A.dodge!)?.duration ?? 0.5), fade: 0.05 };
+  if (i.phase === 'stagger') return { kind: 'clip', clip: A.stagger!, time: i.t, fade: 0.05 };
+  if ((i.phase === 'windup' || i.phase === 'active' || i.phase === 'recovery') && i.attackId) {
+    const a = A.attacks[i.attackId] ?? A.attacks.light1;
+    return { kind: 'clip', clip: a.clip, time: phaseClipTime(a.clip, i.phase, i.k, a.shape), fade: i.phase === 'windup' ? 0.06 : 0.04 };
+  }
+  if (i.blocking) return { kind: 'loop', clip: A.block!, fade: 0.1 };
+  if (i.airTime !== null) return { kind: 'clip', clip: A.jump!, time: 0.12 + i.airTime, fade: 0.1 };
+  return { kind: 'loco', speed: i.speed, dirX: i.dirX, dirZ: i.dirZ };
+}
 
 export const PLAYER_RADIUS = 0.4;
 export const WALK_SPEED = 4.6;
@@ -25,8 +75,12 @@ export interface MoveInput {
 
 export class Player {
   readonly combat = new PlayerCombat(200);
-  readonly rig: Rig;
+  body: Rig | CharacterBody;
+  character: PlayerCharacterId;
   readonly object = new THREE.Group();
+  private deadTime = 0;
+  private airTime = 0;
+  private moveLocal = { x: 0, z: 1 };
   position = new THREE.Vector3();
   yaw = 0;
   velocity = new THREE.Vector3();
@@ -43,27 +97,36 @@ export class Player {
   constructor(
     private colliders: ColliderWorld,
     weapon: ItemInstance | null,
+    character: PlayerCharacterId = DEFAULT_PLAYER_CHARACTER,
   ) {
-    this.rig = new Rig({
-      kind: 'organic',
-      skin: '#c89a7a',
-      body: '#3a4652',
-      armor: '#6b6f73',
-      legs: '#2e2a26',
-      boots: '#241c16',
-      accent: '#45e0ff',
-      scale: 1,
-    });
-    this.rig.snapshotEmissive();
-    this.object.add(this.rig.root);
+    this.character = character;
+    this.body = makePlayerBody(character);
+    this.object.add(this.body.root);
     this.sword = buildSword(weapon);
-    this.rig.rHand.add(this.sword.group);
+    this.body.rHand.add(this.sword.group);
+  }
+
+  /** Swap the character model (keeps the equipped weapon). */
+  setCharacter(id: PlayerCharacterId): void {
+    if (id === this.character && this.body instanceof CharacterBody) return;
+    this.character = id;
+    this.body.rHand.remove(this.sword.group);
+    if (this.body instanceof CharacterBody) this.body.dispose();
+    else this.object.remove(this.body.root);
+    this.body = makePlayerBody(id);
+    this.object.add(this.body.root);
+    this.body.rHand.add(this.sword.group);
+  }
+
+  /** Idle presentation while the game isn't simulating (title screen). */
+  presentIdle(dt: number): void {
+    if (this.body instanceof CharacterBody) this.body.update(dt, { kind: 'loco', speed: 0 });
   }
 
   setWeapon(item: ItemInstance | null): void {
-    this.rig.rHand.remove(this.sword.group);
+    this.body.rHand.remove(this.sword.group);
     this.sword = buildSword(item);
-    this.rig.rHand.add(this.sword.group);
+    this.body.rHand.add(this.sword.group);
   }
 
   get pos2() {
@@ -143,6 +206,11 @@ export class Player {
       speed = (DODGE.distance / DODGE.duration) * 1.6 * (1 - k * 0.8);
     }
 
+    if (move.lengthSq() > 0.01 && c.phase === 'idle') {
+      const sy = Math.sin(this.yaw);
+      const cy = Math.cos(this.yaw);
+      this.moveLocal = { x: move.x * cy - move.y * sy, z: move.x * sy + move.y * cy };
+    }
     // Integrate horizontal movement with acceleration smoothing.
     this.speedNow += (speed - this.speedNow) * Math.min(1, dt * (speed > this.speedNow ? 14 : 18));
     const vx = move.x * (c.phase === 'idle' ? this.speedNow : speed);
@@ -180,6 +248,31 @@ export class Player {
 
   private animate(dt: number): void {
     const c = this.combat;
+    this.deadTime = c.alive ? 0 : this.deadTime + dt;
+    this.airTime = this.grounded ? 0 : this.airTime + dt;
+    if (this.body instanceof CharacterBody) {
+      const dur = c.phase === 'windup' ? c.durations.windup : c.phase === 'active' ? c.durations.active : c.phase === 'recovery' ? c.durations.recovery : c.phase === 'dodge' ? DODGE.duration : 1;
+      this.body.update(
+        dt,
+        playerAnimRequest({
+          alive: c.alive,
+          deadTime: this.deadTime,
+          gatherK: this.gathering > 0 ? 1 - this.gathering / 1.0 : null,
+          phase: c.phase,
+          attackId: c.attack?.id ?? null,
+          k: c.t / Math.max(0.01, dur),
+          t: c.t,
+          blocking: c.blocking,
+          airTime: this.grounded ? null : this.airTime,
+          speed: this.speedNow,
+          dirX: this.moveLocal.x,
+          dirZ: this.moveLocal.z,
+        }),
+      );
+      this.flash(dt);
+      return;
+    }
+    const rig = this.body;
     const moving = this.speedNow > 0.3 && c.phase === 'idle';
     this.walkPhase += dt * (this.sprinting ? 11 : 8.5) * Math.min(1, this.speedNow / WALK_SPEED + 0.2);
     let pose: Pose;
@@ -212,12 +305,15 @@ export class Player {
       if (this.sprinting) pose.rShoulder = [0.35, 0, -0.2];
       if (!this.grounded) pose = { ...pose, lKnee: [0.9, 0, 0], rKnee: [0.4, 0, 0], lHip: [-0.6, 0, 0] };
     }
-    this.rig.apply(pose, blend);
+    rig.apply(pose, blend);
+    this.flash(dt);
+  }
 
+  private flash(dt: number): void {
     if (this.hitFlash > 0) {
       this.hitFlash = Math.max(0, this.hitFlash - dt);
-      this.rig.setTint(new THREE.Color('#ff4a2a'), this.hitFlash * 2);
-      if (this.hitFlash === 0) this.rig.setTint(null);
+      this.body.setTint(new THREE.Color('#ff4a2a'), this.hitFlash * 2);
+      if (this.hitFlash === 0) this.body.setTint(null);
     }
     if (this.sword.glow) this.sword.glow.emissiveIntensity = 1.2 + Math.sin(performance.now() / 160) * 0.4;
   }

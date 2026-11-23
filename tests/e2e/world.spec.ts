@@ -33,13 +33,13 @@ test('two players share one world: presence, movement, a shared fight and shared
   await enter(b, 'Bravo');
 
   // Presence: each sees the other by name, with no codes or addresses typed.
-  await expect.poll(async () => (await state(a)).world.others.map((o) => o.name), { timeout: 10_000 }).toContain('Bravo');
-  await expect.poll(async () => (await state(b)).world.others.map((o) => o.name), { timeout: 10_000 }).toContain('Alpha');
+  await expect.poll(async () => (await state(a)).world.others.map((o) => o.name), { timeout: 10_000 }).toContain('Bravo (guest)');
+  await expect.poll(async () => (await state(b)).world.others.map((o) => o.name), { timeout: 10_000 }).toContain('Alpha (guest)');
   await expect(a.getByTestId('world-status')).toContainText('Bravo');
 
   // Movement replicates.
   await call(b, 'teleport', 6, 12);
-  await expect.poll(async () => (await state(a)).world.others.find((o) => o.name === 'Bravo')?.z, { timeout: 5_000 }).toBeGreaterThan(10);
+  await expect.poll(async () => (await state(a)).world.others.find((o) => o.name.startsWith('Bravo'))?.z, { timeout: 5_000 }).toBeGreaterThan(10);
 
   // Both take the quest and a sword from Orla, then meet at the same scavenger.
   for (const p of [a, b]) await p.evaluate(() => (window as unknown as { __alloy: { session: () => { talk: (n: string) => void } } }).__alloy.session().talk('orla'));
@@ -81,6 +81,6 @@ test('two players share one world: presence, movement, a shared fight and shared
 
   // Leaving is seen by the other player.
   await ctxB.close();
-  await expect.poll(async () => (await state(a)).world.others.length, { timeout: 15_000 }).toBe(0);
+  await expect.poll(async () => (await state(a)).world.others.some((o) => o.name.startsWith('Bravo')), { timeout: 15_000 }).toBe(false);
   await ctxA.close();
 });

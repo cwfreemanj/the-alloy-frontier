@@ -34,13 +34,17 @@ import { ForgePanel } from '../ui/ForgePanel';
 import { Hud } from '../ui/Hud';
 import { InventoryPanel, MerchantPanel, dialogPanel, pausePanel, summaryPanel, titleScreen, type Settings } from '../ui/Panels';
 import { h } from '../ui/dom';
-import { ENEMY_SPAWNS, FORGE_ANVIL, NPCS, RESOURCE_NODES, RESPAWN_POINT, ZONES, zoneAt, type Zone } from '@alloy/world';
-import { buildTerrainMesh, terrainHeight } from '@alloy/world';
-import { buildWorld, type WorldVisuals } from '@alloy/world';
+import { ALL_RESOURCE_NODES, ENEMY_SPAWNS, FORGE_ANVIL, NPCS, RESPAWN_POINT, ZONES, zoneAt, type Zone } from '@alloy/world';
+import { terrainHeight } from '@alloy/world';
+import { EmberholdWorld } from '../world/EmberholdWorld';
 import { orlaDialogue } from './Dialogue';
 import type { RemotePlayer } from '../entities/RemotePlayer';
 import { findWorld } from '../net/WorldClient';
+import { AccountClient, CloudSaver, type ApiError } from '../net/Accounts';
+import { deserialize as parseSave, serialize as encodeSave } from '@alloy/save';
+import type { AccountView } from '../ui/Panels';
 import { Online } from './Online';
+import { DEFAULT_PLAYER_CHARACTER, PLAYER_CHARACTERS, charactersReady, isPlayerCharacter, type PlayerCharacterId } from '../entities/models/Characters';
 
 const NAME_KEY = 'alloy-frontier.name.v1';
 function loadName(): string {
@@ -51,6 +55,17 @@ function loadName(): string {
     /* storage unavailable */
   }
   return `Smith-${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
+const CHARACTER_KEY = 'alloy-frontier.character.v1';
+function loadCharacter(): PlayerCharacterId {
+  try {
+    const c = localStorage.getItem(CHARACTER_KEY);
+    if (isPlayerCharacter(c)) return c;
+  } catch {
+    /* storage unavailable */
+  }
+  return DEFAULT_PLAYER_CHARACTER;
 }
 
 type Modal = null | 'title' | 'pause' | 'forge' | 'inventory' | 'merchant' | 'dialog' | 'summary';
@@ -67,24 +82,6 @@ function loadSettings(): Settings {
   }
 }
 
-function skyTexture(): THREE.Texture {
-  const c = document.createElement('canvas');
-  c.width = 4;
-  c.height = 256;
-  const g = c.getContext('2d')!;
-  const grad = g.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, '#1c2430');
-  grad.addColorStop(0.45, '#3b4250');
-  grad.addColorStop(0.62, '#7a6656');
-  grad.addColorStop(0.75, '#a77850');
-  grad.addColorStop(1, '#2a2622');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 4, 256);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
 export class Game {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -95,7 +92,7 @@ export class Game {
   readonly effects: Effects;
   readonly hud: Hud;
   readonly saves = new SaveSystem(window.localStorage);
-  world!: WorldVisuals;
+  world!: EmberholdWorld;
   session!: Session;
   player!: Player;
   enemies: Enemy[] = [];
@@ -128,9 +125,18 @@ export class Game {
   /** Shared-world connection (offline when no world server is reachable). */
   online!: Online;
   playerName = loadName();
+  character: PlayerCharacterId = loadCharacter();
   private worldStatusEl!: HTMLElement;
   private lastAvatarPos: Vec2 = { x: 0, z: 0 };
   private avatarSpeed = 0;
+  /** World server address (null when playing offline). */
+  private worldUrl: string | null = null;
+  private accounts: AccountClient | null = null;
+  private cloud: CloudSaver | null = null;
+  /** 'account' = character saved on the server; 'guest' = saved in this browser. */
+  mode: 'guest' | 'account' = 'guest';
+  private accountView: AccountView = { state: 'checking' };
+  private cloudRaw: string | null = null;
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     const t0 = performance.now();
@@ -141,12 +147,9 @@ export class Game {
     this.renderer.toneMappingExposure = 1.3;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 600);
-    this.scene.background = skyTexture();
-    this.scene.fog = new THREE.Fog('#6a6260', 70, 240);
-
-    this.buildLighting();
-    this.scene.add(buildTerrainMesh());
-    this.world = buildWorld(this.scene);
+    // The Emberhold first area (Model Workshop scene): terrain, buildings, scatter, sky, light, fog, fx.
+    this.world = new EmberholdWorld(this.renderer, this.scene, this.camera, this.settings.quality);
+    this.sun = this.world.sun;
     this.input = new Input(canvas);
     this.cam = new CameraRig(this.camera, this.world.colliders);
     this.effects = new Effects(this.scene);
@@ -154,13 +157,13 @@ export class Game {
     this.hud = new Hud(uiRoot);
     this.applySettings();
 
-    this.player = new Player(this.world.colliders, null);
+    this.player = new Player(this.world.colliders, null, this.character);
     this.scene.add(this.player.object);
     for (const s of ENEMY_SPAWNS) this.enemies.push(new Enemy(s, this.world.colliders, this.scene));
     this.npcs.push(new Npc(NPCS.orla.id, NPCS.orla.name, NPCS.orla.pos, NPCS.orla.yaw, { kind: 'organic', skin: '#b98468', body: '#5a3a2a', armor: '#3a3430', legs: '#2a2420', boots: '#1e1812', accent: '#ff8a3d', scale: 1.02 }));
     this.npcs.push(new Npc(NPCS.bram.id, NPCS.bram.name, NPCS.bram.pos, NPCS.bram.yaw, { kind: 'organic', skin: '#d0a888', body: '#3a5a4a', armor: '#5a4a3a', legs: '#3a3026', boots: '#241c16', accent: '#45e0ff', scale: 0.98, bulk: 1.15 }));
     for (const n of this.npcs) this.scene.add(n.object);
-    for (const d of RESOURCE_NODES) {
+    for (const d of ALL_RESOURCE_NODES) {
       const n = new ResourceNode(d);
       this.nodes.push(n);
       this.scene.add(n.object);
@@ -181,6 +184,7 @@ export class Game {
         if (!online) for (const e of this.enemies) e.respawn();
         this.lockTarget = null;
       },
+      kicked: (reason) => this.endSession(reason),
     });
     this.worldStatusEl = h('div', { class: 'world-status', 'data-testid': 'world-status' });
     uiRoot.append(this.worldStatusEl);
@@ -217,12 +221,103 @@ export class Game {
     this.online.message = 'Looking for the world…';
     this.updateWorldStatus();
     const url = await findWorld();
+    this.worldUrl = url;
     if (!url) {
       this.online.message = 'Offline: no world server reachable';
       this.updateWorldStatus();
+      this.setAccountView({ state: 'unavailable' });
       return;
     }
-    this.online.connect(url, this.playerName);
+    this.online.message = 'Ready to join the world';
+    this.updateWorldStatus();
+    this.accounts = new AccountClient(url.replace(/^ws/, 'http').replace(/\/world$/, '/'));
+    const st = await this.accounts.check();
+    if (st === 'signed_in') await this.afterSignIn();
+    else this.setAccountView({ state: st });
+    // Already playing (e.g. a guest who started before the check finished): join now.
+    if (this.started && !this.online.client) this.connectWorld();
+  }
+
+  /** Join the shared world as the current account or guest. */
+  private connectWorld(): void {
+    if (!this.worldUrl) return;
+    if (this.mode === 'account' && this.accounts?.username) this.online.connect(this.worldUrl, this.accounts.username, this.accounts.token);
+    else this.online.connect(this.worldUrl, this.playerName);
+  }
+
+  private setAccountView(v: AccountView): void {
+    this.accountView = v;
+    if (this.modal === 'title') this.showTitle();
+  }
+
+  private async afterSignIn(): Promise<void> {
+    try {
+      this.cloudRaw = await this.accounts!.loadSave();
+    } catch (e) {
+      this.setAccountView({ state: 'signed_out', error: (e as ApiError).message });
+      return;
+    }
+    const guestSave = this.saves.hasSave() && this.saves.load().ok;
+    this.setAccountView({ state: 'signed_in', username: this.accounts!.username!, hasCloudSave: !!this.cloudRaw, canImport: guestSave && !this.cloudRaw });
+  }
+
+  private async accountAction(kind: 'login' | 'register', username: string, password: string): Promise<void> {
+    if (!this.accounts) return;
+    this.setAccountView({ state: 'signed_out', busy: true });
+    try {
+      if (kind === 'login') await this.accounts.login(username, password);
+      else await this.accounts.register(username, password);
+      await this.afterSignIn();
+    } catch (e) {
+      this.setAccountView({ state: 'signed_out', error: (e as ApiError).message });
+    }
+  }
+
+  private async signOut(): Promise<void> {
+    this.cloud?.stop();
+    this.cloud = null;
+    await this.accounts?.logout();
+    this.cloudRaw = null;
+    this.setAccountView({ state: 'signed_out' });
+  }
+
+  /** Start playing a character (from the title screen). */
+  private startPlaying(data: SessionData, mode: 'guest' | 'account', banner: 'new' | 'continue'): void {
+    this.mode = mode;
+    this.cloud?.stop();
+    this.cloud = null;
+    if (mode === 'account' && this.accounts) this.cloud = new CloudSaver(this.accounts, (e) => this.onCloudError(e));
+    this.loadSession(data);
+    this.started = true;
+    this.closeModal();
+    this.hud.zoneBanner(banner === 'new' ? ZONES[0] : this.zone);
+    if (banner === 'new') {
+      this.hud.toast('Find Master Smith Orla at the forge (orange marker on the minimap).', 'info');
+      this.hud.toast('Click the view to capture the mouse. Esc for menu and controls.', 'info');
+    }
+    this.connectWorld();
+  }
+
+  private onCloudError(e: ApiError): void {
+    if (e.code === 'conflict') this.endSession('This character was saved from another device. Continue again to load the latest version.');
+    else if (e.status === 401) this.endSession('Your sign-in expired. Please sign in again.');
+    else this.hud.toast(`Could not save to your account: ${e.message}`, 'warn');
+  }
+
+  /** Leave play and return to the title screen with a reason (no further saves from here). */
+  private endSession(reason: string): void {
+    this.cloud?.stop();
+    this.cloud = null;
+    this.online.disconnect();
+    this.started = false;
+    this.modal = null;
+    if (this.accounts?.username) {
+      this.cloudRaw = null;
+      void this.afterSignIn().then(() => {
+        if (this.accountView.state === 'signed_in') this.setAccountView({ ...this.accountView, error: reason });
+      });
+    } else this.setAccountView({ state: 'signed_out', error: reason });
+    this.showTitle();
   }
 
   setPlayerName(raw: string): void {
@@ -234,8 +329,19 @@ export class Game {
     }
     if (n === this.playerName) return;
     this.playerName = n;
-    // Re-introduce ourselves under the new name.
-    if (this.online.client) this.online.connect(this.online.client.url, n);
+    // Re-introduce ourselves under the new name (guests only; accounts use their username).
+    if (this.mode === 'guest' && this.started && this.online.client) this.online.connect(this.online.client.url, n);
+  }
+
+  /** Pick the player character (title screen). Persists per browser; others see it online. */
+  setCharacter(id: PlayerCharacterId): void {
+    this.character = id;
+    try {
+      localStorage.setItem(CHARACTER_KEY, id);
+    } catch {
+      /* storage unavailable */
+    }
+    this.player.setCharacter(id);
   }
 
   private updateWorldStatus(): void {
@@ -277,6 +383,7 @@ export class Game {
       hp: Math.round(c.health),
       mhp: c.maxHealth,
       wpn: w ? { bp: w.blueprintId, spec: w.forge.specialization, imb: w.result.imbuements.includes('storm_arc'), rar: w.result.rarity } : null,
+      mdl: this.character,
     };
   }
 
@@ -305,23 +412,6 @@ export class Game {
   }
 
   // ---------------- Setup ----------------
-  private buildLighting(): void {
-    const hemi = new THREE.HemisphereLight('#b8c8dc', '#5a4a38', 2.1);
-    this.scene.add(hemi);
-    this.sun = new THREE.DirectionalLight('#ffdcb4', 3.4);
-    this.sun.position.set(-40, 60, -30);
-    this.sun.castShadow = true;
-    this.sun.shadow.camera.left = -40;
-    this.sun.shadow.camera.right = 40;
-    this.sun.shadow.camera.top = 40;
-    this.sun.shadow.camera.bottom = -40;
-    this.sun.shadow.camera.near = 1;
-    this.sun.shadow.camera.far = 200;
-    this.sun.shadow.bias = -0.0005;
-    this.sun.shadow.normalBias = 0.03;
-    this.scene.add(this.sun, this.sun.target);
-  }
-
   applySettings(): void {
     const q = this.settings.quality;
     const dpr = window.devicePixelRatio || 1;
@@ -337,7 +427,7 @@ export class Game {
       const m = (o as THREE.Mesh).material as THREE.Material | undefined;
       if (m) m.needsUpdate = true;
     });
-    (this.scene.fog as THREE.Fog).far = q === 'low' ? 150 : 230;
+    this.world?.setQuality(q);
     this.camera.far = q === 'low' ? 200 : 600;
     this.camera.updateProjectionMatrix();
     this.cam.settings = { sensitivity: this.settings.sensitivity, invertY: this.settings.invertY };
@@ -356,6 +446,7 @@ export class Game {
     this.renderer.setSize(w, hgt, false);
     this.camera.aspect = w / hgt;
     this.camera.updateProjectionMatrix();
+    this.world?.setSize(w, hgt);
   }
 
   // ---------------- Session ----------------
@@ -402,7 +493,7 @@ export class Game {
         e.deadTime = 99;
       }
     }
-    for (const n of RESOURCE_NODES) data.world.nodes[n.id] ??= { charges: NODE_MAX_CHARGES, respawnAt: 0, gathers: 0 };
+    for (const n of ALL_RESOURCE_NODES) data.world.nodes[n.id] ??= { charges: NODE_MAX_CHARGES, respawnAt: 0, gathers: 0 };
     this.lockTarget = null;
     this.zone = zoneAt(this.player.pos2);
   }
@@ -411,8 +502,16 @@ export class Game {
     if (!this.started) return;
     const d = this.session.data;
     d.player = { x: this.player.position.x, z: this.player.position.z, yaw: this.player.yaw, health: this.player.combat.alive ? this.player.combat.health : this.player.combat.maxHealth };
+    if (this.mode === 'account') {
+      if (!this.cloud) return;
+      const raw = encodeSave(d, Date.now());
+      if (reason === 'exit') this.cloud.flushOnExit(raw);
+      else this.cloud.push(raw);
+      this.lastSave = this.cloud.lastResult;
+      return;
+    }
     const r = this.saves.save(d);
-    this.lastSave = r.ok ? `Saved (${reason}) at ${new Date().toLocaleTimeString()} · ${(r.bytes / 1024).toFixed(1)} KB` : `Save failed: ${r.error}`;
+    this.lastSave = r.ok ? `Saved in this browser (${reason}) at ${new Date().toLocaleTimeString()} · ${(r.bytes / 1024).toFixed(1)} KB` : `Save failed: ${r.error}`;
     if (!r.ok) this.hud.toast(this.lastSave, 'warn');
   }
 
@@ -452,31 +551,62 @@ export class Game {
         onContinue: () => this.continueGame(),
         name: this.playerName,
         onName: (n) => this.setPlayerName(n),
+        characters: charactersReady() ? PLAYER_CHARACTERS : [],
+        character: this.character,
+        onCharacter: (id) => this.setCharacter(id as PlayerCharacterId),
+        account: this.accountView,
+        onSignIn: (u, p) => void this.accountAction('login', u, p),
+        onRegister: (u, p) => void this.accountAction('register', u, p),
+        onSignOut: () => void this.signOut(),
+        onAccountContinue: () => {
+          const r = this.cloudRaw ? parseSave(this.cloudRaw) : null;
+          if (!r || !r.ok) {
+            this.setAccountView({ ...(this.accountView as Extract<AccountView, { state: 'signed_in' }>), error: `Your saved character could not be loaded${r && !r.ok ? `: ${r.reason}` : ''}.` });
+            return;
+          }
+          this.startPlaying(r.data, 'account', 'continue');
+        },
+        onAccountNew: () => {
+          this.startPlaying(newSessionData(Date.now()), 'account', 'new');
+          this.save('new');
+        },
+        onImport: () => {
+          const r = this.saves.load();
+          if (!r.ok) return;
+          this.startPlaying(r.data, 'account', 'continue');
+          this.save('import');
+          this.hud.toast('Your browser character now lives in your account.', 'good');
+        },
       }),
     );
   }
 
+  /** New guest game (saved in this browser). */
   newGame(): void {
     this.saves.clear();
-    this.loadSession(newSessionData(Date.now()));
-    this.started = true;
-    this.closeModal();
-    this.hud.zoneBanner(ZONES[0]);
-    this.hud.toast('Find Master Smith Orla at the forge (orange marker on the minimap).', 'info');
-    this.hud.toast('Click the view to capture the mouse. Esc for menu and controls.', 'info');
+    this.startPlaying(newSessionData(Date.now()), 'guest', 'new');
     this.save('new');
   }
 
+  /** Continue: the guest save in this browser, or (signed in) the latest save from the server. */
   continueGame(): void {
+    if (this.mode === 'account' && this.started && this.accounts) {
+      void this.accounts
+        .loadSave()
+        .then((raw) => {
+          const r = raw ? parseSave(raw) : null;
+          if (r?.ok) this.startPlaying(r.data, 'account', 'continue');
+          else this.hud.toast('No saved character on the server yet.', 'warn');
+        })
+        .catch((e: ApiError) => this.hud.toast(e.message, 'warn'));
+      return;
+    }
     const r = this.saves.load();
     if (!r.ok) {
       this.hud.toast(r.reason, 'warn');
       return;
     }
-    this.loadSession(r.data);
-    this.started = true;
-    this.closeModal();
-    this.hud.zoneBanner(this.zone);
+    this.startPlaying(r.data, 'guest', 'continue');
     if (r.source === 'backup') this.hud.toast('Primary save was invalid; restored the backup save.', 'warn');
   }
 
@@ -578,6 +708,12 @@ export class Game {
     } else {
       // Keep the world alive behind menus (no simulation), and orbit slowly on the title.
       if (this.modal === 'title') this.cam.yaw += rawDt * 0.05;
+      if (!this.started) {
+        // Nothing is simulated behind the title screen; keep the characters breathing.
+        this.player.presentIdle(rawDt);
+        for (const n of this.npcs) n.update(rawDt, null);
+        for (const e of this.enemies) e.presentIdle(rawDt);
+      }
       this.cam.update(rawDt, this.player.position, null);
     }
     if (this.started) {
@@ -585,10 +721,9 @@ export class Game {
       if (this.modal !== null && this.online.online) this.updateEnemies(rawDt);
       this.online.update(rawDt);
     }
-    this.world.update(this.time);
+    this.world.update(this.time, this.player.position);
     this.effects.update(rawDt);
-    this.updateSun();
-    this.renderer.render(this.scene, this.camera);
+    this.world.render(this.time);
     this.updateLabels();
     if (this.settings.showPerf) this.hud.perf.textContent = this.perf.text();
     this.input.endFrame();
@@ -633,12 +768,13 @@ export class Game {
 
   private moveDir(): THREE.Vector2 {
     const f = this.cam.forward();
-    const r = new THREE.Vector2(-f.y, f.x); // camera right in XZ (x,z)
+    // Screen-right in XZ (x, z): forward x up, i.e. (-f.z, f.x). Looking down +Z it is -X.
+    const r = new THREE.Vector2(-f.y, f.x);
     const v = new THREE.Vector2();
     if (this.input.held('forward')) v.add(f);
     if (this.input.held('back')) v.sub(f);
-    if (this.input.held('right')) v.sub(r);
-    if (this.input.held('left')) v.add(r);
+    if (this.input.held('right')) v.add(r); // D strafes right
+    if (this.input.held('left')) v.sub(r); // A strafes left
     return v.lengthSq() > 0 ? v.normalize() : v;
   }
 
@@ -1136,7 +1272,7 @@ export class Game {
       }
       const npc = NPCS[n.id as 'orla' | 'bram'];
       const el = this.hud.label(id, () => h('div', { class: 'npc-label' }, h('div', { class: 'mk' }), h('div', { class: 'nm' }, npc.name), h('div', { class: 'rl' }, npc.role)));
-      const sp = this.hud.project(this.camera, n.object.position, 2.25, w, hgt);
+      const sp = this.hud.project(this.camera, n.object.position, n.labelHeight, w, hgt);
       el.style.display = sp.visible ? '' : 'none';
       el.style.left = `${sp.x}px`;
       el.style.top = `${sp.y}px`;
@@ -1161,12 +1297,6 @@ export class Game {
     this.hud.setReticle(show && this.lockTarget ? this.hud.project(this.camera, this.lockTarget.position, 1.2 * this.lockTarget.def.scale, w, hgt) : null);
   }
 
-  private updateSun(): void {
-    const p = this.player.position;
-    this.sun.position.set(p.x - 40, p.y + 60, p.z - 30);
-    this.sun.target.position.set(p.x, p.y, p.z);
-  }
-
   // ---------------- Debug / automation hooks ----------------
   private exposeDebug(): void {
     const api = {
@@ -1189,7 +1319,7 @@ export class Game {
           mastery: { smith: this.session.smithMastery, longsword: this.session.weaponLevel },
           zone: this.zone.id,
           lock: this.lockTarget?.id ?? null,
-          world: { status: this.online.status, id: this.online.myId, name: this.playerName, others: [...this.online.remotes.values()].map((r) => ({ id: r.id, name: r.name, x: +r.position.x.toFixed(1), z: +r.position.z.toFixed(1), hp: r.state?.hp ?? null })) },
+          world: { status: this.online.status, id: this.online.myId, name: this.mode === 'account' ? (this.accounts?.username ?? '') : this.playerName, mode: this.mode, others: [...this.online.remotes.values()].map((r) => ({ id: r.id, name: r.name, x: +r.position.x.toFixed(1), z: +r.position.z.toFixed(1), hp: r.state?.hp ?? null })) },
           enemies: this.enemies.map((e) => ({ id: e.id, type: e.spawn.type, state: e.brain.state, hp: +e.brain.health.toFixed(1), x: +e.position.x.toFixed(1), z: +e.position.z.toFixed(1) })),
         };
       },

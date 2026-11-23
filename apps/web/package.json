@@ -14,7 +14,8 @@
     "@alloy/item-gen": "*",
     "@alloy/protocol": "*",
     "three": "^0.187.0",
-    "@alloy/world": "*"
+    "@alloy/world": "*",
+    "@alloy/save": "*"
   },
   "devDependencies": {
     "@types/three": "^0.187.0"

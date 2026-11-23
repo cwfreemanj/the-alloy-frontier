@@ -8,7 +8,9 @@ import type { EnemyNetState } from '@alloy/protocol';
 import { EnemySim, terrainHeight, type ColliderWorld, type EnemySpawn, type SimTarget } from '@alloy/world';
 import { Telegraph } from '../fx/Effects';
 import { ENEMY_POSES, POSE_DEAD, POSE_STAGGER, Rig, easeIn, easeOut, locomotionPose, mixPose, type Pose, type RigStyle } from './Rig';
-import { buildConstructArm, buildHatchet, buildShield } from './Weapons';
+import { buildConstructArm, buildHatchet, buildShield, buildSword } from './Weapons';
+import { CharacterBody, createBody, phaseClipTime, type AnimRequest } from './models/Characters';
+import { ENEMY_ANIMS, type RoleAnims } from './models/animSets';
 
 const STYLES: Record<string, RigStyle> = {
   scavenger: { kind: 'organic', skin: '#a77d62', body: '#5a3b2a', armor: '#4a4038', legs: '#3a2e24', boots: '#2a1e16', accent: '#c06030', scale: 1 },
@@ -27,7 +29,8 @@ function poseFor(a: EnemyAttackDef): [Pose, Pose] {
 export class Enemy {
   readonly id: string;
   readonly sim: EnemySim;
-  readonly rig: Rig;
+  readonly body: Rig | CharacterBody;
+  private readonly anims: RoleAnims | null;
   readonly object = new THREE.Group();
   position = new THREE.Vector3();
   readonly telegraphs = new Map<string, Telegraph>();
@@ -46,19 +49,34 @@ export class Enemy {
     this.sim = new EnemySim(spawn, colliders);
     this.id = spawn.id;
     const def = this.sim.def;
-    this.rig = new Rig(STYLES[spawn.type]);
-    this.rig.snapshotEmissive();
-    this.object.add(this.rig.root);
-    if (spawn.type === 'scavenger') this.rig.rHand.add(buildHatchet());
-    if (spawn.type === 'sentinel') {
-      this.rig.rHand.add(buildConstructArm('#6c747c', 1));
-      this.shield = buildShield();
-      this.rig.lHand.add(this.shield);
+    const roleAnims = ENEMY_ANIMS[spawn.type] ?? null;
+    const model = roleAnims ? createBody(roleAnims.model, roleAnims.heightM, roleAnims.loco) : null;
+    this.anims = model ? roleAnims : null;
+    if (model) {
+      this.body = model;
+      if (spawn.type === 'scavenger') this.body.rHand.add(buildHatchet());
+      if (spawn.type === 'warden') {
+        // A furnace-forged great blade sized to the Warden.
+        const blade = buildSword({ blueprintId: 'ironglass_longsword', forge: { specialization: 'heavy' }, result: { imbuements: [], rarity: 'common' } } as unknown as Parameters<typeof buildSword>[0]);
+        blade.group.scale.setScalar(1.7);
+        this.body.rHand.add(blade.group);
+      }
+    } else {
+      const rig = new Rig(STYLES[spawn.type]);
+      rig.snapshotEmissive();
+      this.body = rig;
+      if (spawn.type === 'scavenger') rig.rHand.add(buildHatchet());
+      if (spawn.type === 'sentinel') {
+        rig.rHand.add(buildConstructArm('#6c747c', 1));
+        this.shield = buildShield();
+        rig.lHand.add(this.shield);
+      }
+      if (spawn.type === 'warden') {
+        rig.rHand.add(buildConstructArm('#7a6a5a', 1.6));
+        rig.lHand.add(buildConstructArm('#7a6a5a', 1.3));
+      }
     }
-    if (spawn.type === 'warden') {
-      this.rig.rHand.add(buildConstructArm('#7a6a5a', 1.6));
-      this.rig.lHand.add(buildConstructArm('#7a6a5a', 1.3));
-    }
+    this.object.add(this.body.root);
     if (spawn.type === 'dummy') {
       // A post: hide legs by planting the rig in a stake.
       const post = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 1.2, 6), new THREE.MeshStandardMaterial({ color: '#4a3626' }));
@@ -106,8 +124,8 @@ export class Enemy {
     this.position.set(this.sim.x, this.sim.y, this.sim.z);
     this.deadTime = 0;
     this.object.visible = true;
-    this.rig.root.rotation.set(0, 0, 0);
-    this.rig.root.position.y = 0;
+    this.body.root.rotation.set(0, 0, 0);
+    this.body.root.position.y = 0;
   }
 
   /** Local simulation (offline play and the training post). */
@@ -140,7 +158,7 @@ export class Enemy {
       // Respawned on the server.
       this.deadTime = 0;
       this.object.visible = true;
-      this.rig.root.position.y = 0;
+      this.body.root.position.y = 0;
       this.position.set(s.x, terrainHeight(s.x, s.z), s.z);
     }
     if (wasDead === false && !b.alive) this.deadTime = 0;
@@ -185,18 +203,50 @@ export class Enemy {
     }
   }
 
+  /** Idle presentation while the game isn't simulating (title screen). */
+  presentIdle(dt: number): void {
+    if (this.body instanceof CharacterBody && this.brain.alive) this.body.update(dt, { kind: 'loco', speed: 0 });
+  }
+
+  /** Brain state -> animation request for a skinned model. */
+  private animRequest(A: RoleAnims): AnimRequest {
+    const b = this.brain;
+    if (b.state === 'dead') return { kind: 'clip', clip: A.death!, time: this.deadTime, fade: 0.1 };
+    if (b.state === 'stagger') return { kind: 'clip', clip: A.stagger!, time: b.stateTime, fade: 0.06 };
+    if (b.state === 'guard' && A.guard) return { kind: 'loop', clip: A.guard, fade: 0.12 };
+    if ((b.state === 'telegraph' || b.state === 'attack' || b.state === 'recover') && b.attack) {
+      const a = A.attacks[b.attack.id] ?? Object.values(A.attacks)[0];
+      const phase = b.state === 'telegraph' ? 'windup' : b.state === 'attack' ? 'active' : 'recovery';
+      const k = b.state === 'telegraph' ? b.telegraphProgress() : b.state === 'attack' ? b.stateTime / b.attack.active : b.stateTime / b.attack.recovery;
+      return { kind: 'clip', clip: a.clip, time: phaseClipTime(a.clip, phase, k, a.shape), fade: phase === 'windup' ? 0.12 : 0.05 };
+    }
+    return { kind: 'loco', speed: this.speedNow };
+  }
+
   private animate(dt: number): void {
     const b = this.brain;
+    if (b.state === 'dead') this.deadTime += dt;
+    if (this.body instanceof CharacterBody && this.anims) {
+      this.alertMarker.visible = b.state === 'alert' || (b.state === 'telegraph' && (b.attack?.heavy ?? false));
+      if (this.alertMarker.visible) this.alertMarker.rotation.y += dt * 6;
+      if (b.state === 'dead' && this.deadTime > 3) {
+        this.body.root.position.y = -Math.min(2, (this.deadTime - 3) * 0.8);
+        if (this.deadTime > 5.5) this.object.visible = false;
+      }
+      this.body.update(dt, this.animRequest(this.anims));
+      this.applyTint(dt);
+      return;
+    }
+    const rig = this.body as Rig;
     let pose: Pose;
     let blend = Math.min(1, dt * 14);
     this.alertMarker.visible = b.state === 'alert' || (b.state === 'telegraph' && (b.attack?.heavy ?? false));
     if (this.alertMarker.visible) this.alertMarker.rotation.y += dt * 6;
     if (b.state === 'dead') {
-      this.deadTime += dt;
       pose = POSE_DEAD;
       blend = Math.min(1, dt * 5);
       if (this.deadTime > 2.5) {
-        this.rig.root.position.y = -Math.min(1.5, (this.deadTime - 2.5) * 0.8);
+        rig.root.position.y = -Math.min(1.5, (this.deadTime - 2.5) * 0.8);
         if (this.deadTime > 4.5) this.object.visible = false;
       }
     } else if (b.state === 'stagger') {
@@ -226,21 +276,27 @@ export class Enemy {
     if (this.def.kind === 'dummy') {
       pose = { lShoulder: [0, 0, 1.4], rShoulder: [0, 0, -1.4], ...(b.state === 'stagger' ? { spine: [-0.3, 0, 0] } : {}) };
     }
-    this.rig.apply(pose, blend);
+    rig.apply(pose, blend);
+    this.applyTint(dt);
+    if (this.shield) this.shield.visible = true;
+  }
 
+  private applyTint(dt: number): void {
+    const b = this.brain;
     // Telegraph glow: weapon arms and core heat up as the attack approaches.
     const glow = b.state === 'telegraph' ? b.telegraphProgress() : b.state === 'attack' ? 1 : 0;
     if (this.hitFlash > 0) {
       this.hitFlash = Math.max(0, this.hitFlash - dt);
-      this.rig.setTint(new THREE.Color('#ffffff'), this.hitFlash * 3);
+      this.body.setTint(new THREE.Color('#ffffff'), this.hitFlash * 3);
     } else if (glow > 0) {
-      this.rig.setTint(new THREE.Color('#ff4a1a'), glow * 0.45);
+      this.body.setTint(new THREE.Color('#ff4a1a'), glow * 0.45);
     } else if (b.state === 'stagger') {
-      this.rig.setTint(new THREE.Color('#ffe08a'), 0.25 + Math.sin(b.stateTime * 18) * 0.1);
+      this.body.setTint(new THREE.Color('#ffe08a'), 0.25 + Math.sin(b.stateTime * 18) * 0.1);
+    } else if (b.phase2 && this.body instanceof CharacterBody) {
+      this.body.setTint(new THREE.Color('#ff5a1a'), 0.12 + Math.sin(b.stateTime * 4) * 0.05);
     } else {
-      this.rig.setTint(null);
+      this.body.setTint(null);
     }
-    if (this.rig.coreMaterial) this.rig.coreMaterial.emissiveIntensity = 1.2 + glow * 2.5 + (b.phase2 ? 0.8 : 0);
-    if (this.shield) this.shield.visible = true;
+    if (this.body.coreMaterial) this.body.coreMaterial.emissiveIntensity = 1.2 + glow * 2.5 + (b.phase2 ? 0.8 : 0);
   }
 }

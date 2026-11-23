@@ -52,6 +52,9 @@ export interface NodeDef {
   id: string;
   material: MaterialId;
   pos: Vec2;
+  /** Visual size (1 = standard node) and facing in degrees; generated seams vary these. */
+  scale?: number;
+  yaw?: number;
 }
 
 export const RESOURCE_NODES: NodeDef[] = [

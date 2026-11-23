@@ -7,8 +7,10 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { WORLD_LIMITS } from '@alloy/protocol';
+import { WORLD_LIMITS, parseWorldClientMsg } from '@alloy/protocol';
 import { WorldRoom } from './worldRoom';
+import { handleApi } from './accounts/http';
+import type { AccountService } from './accounts/service';
 
 export interface WorldServerOptions {
   port?: number;
@@ -19,6 +21,10 @@ export interface WorldServerOptions {
   netHz?: number;
   /** Browser origins allowed to open the world socket (besides this server itself). */
   allowedOrigins?: string[];
+  /** Accounts and server-side saves (omit to run guest-only). */
+  accounts?: AccountService | null;
+  /** Trust X-Forwarded-For (set when running behind a known proxy, e.g. Render). */
+  trustProxy?: boolean;
 }
 
 export interface RunningWorldServer {
@@ -35,6 +41,12 @@ const TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
+  '.glb': 'model/gltf-binary',
+  '.gltf': 'model/gltf+json',
+  '.bin': 'application/octet-stream',
+  '.webp': 'image/webp',
+  '.ktx2': 'image/ktx2',
+  '.wasm': 'application/wasm',
 };
 
 function serveStatic(root: string, req: IncomingMessage, res: ServerResponse): void {
@@ -57,7 +69,10 @@ function serveStatic(root: string, req: IncomingMessage, res: ServerResponse): v
     return;
   }
   const type = TYPES[extname(file)] ?? 'application/octet-stream';
-  const cache = file.includes(`${sep}assets${sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache';
+  // Hashed build output (/assets/) and content-versioned files (?v=<hash>, e.g. character models)
+  // never change under the same URL; everything else is revalidated.
+  const immutable = file.includes(`${sep}assets${sep}`) || url.searchParams.has('v');
+  const cache = immutable ? 'public, max-age=31536000, immutable' : 'no-cache';
   res.writeHead(200, { 'content-type': type, 'cache-control': cache, 'x-content-type-options': 'nosniff' });
   createReadStream(file).pipe(res);
 }
@@ -66,11 +81,20 @@ export function startWorldServer(opts: WorldServerOptions = {}): Promise<Running
   const room = new WorldRoom();
   const root = opts.staticDir ? resolve(opts.staticDir) : null;
   const allowed = new Set(opts.allowedOrigins ?? []);
+  const accounts = opts.accounts ?? null;
   const http = createServer((req, res) => {
     const path = (req.url ?? '/').split('?')[0];
     if (path === '/world-info' || path === '/healthz') {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', 'access-control-allow-origin': '*' });
-      res.end(JSON.stringify({ ok: true, game: 'alloy-frontier', players: room.activeCount }));
+      res.end(JSON.stringify({ ok: true, game: 'alloy-frontier', players: room.activeCount, accounts: accounts ? accounts.kv.kind : 'off' }));
+      return;
+    }
+    if (path.startsWith('/api/')) {
+      if (!accounts) {
+        res.writeHead(503, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'accounts_off', message: 'Accounts are not enabled on this server.' }));
+        return;
+      }
+      void handleApi(accounts, { allowedOrigins: allowed, trustProxy: !!opts.trustProxy }, req, res);
       return;
     }
     if (root) serveStatic(root, req, res);
@@ -101,8 +125,32 @@ export function startWorldServer(opts: WorldServerOptions = {}): Promise<Running
       if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m));
     };
     ws.on('pong', () => alive.set(ws, true));
+    // A signed-in hello needs an async account lookup; hold later messages until it's done.
+    let joining: Promise<void> | null = null;
+    const close = () => ws.close(4001, 'signed in elsewhere');
     ws.on('message', (data) => {
-      id = room.handle(id, data.toString(), send);
+      const raw = data.toString();
+      if (joining) {
+        void joining.then(() => {
+          id = room.handle(id, raw, send);
+        });
+        return;
+      }
+      const hello = id === null && raw.length < 1000 ? parseWorldClientMsg(raw) : null;
+      if (hello?.t === 'hello' && hello.token && accounts) {
+        joining = accounts
+          .accountFor(hello.token)
+          .then((acct) => {
+            if (acct) id = room.join(acct.username, send, acct.id, close);
+            else send({ t: 'error', error: 'signed_out' });
+          })
+          .catch(() => send({ t: 'error', error: 'server_error' }))
+          .finally(() => {
+            joining = null;
+          });
+        return;
+      }
+      id = room.handle(id, raw, send);
     });
     ws.on('close', () => room.leave(id));
     ws.on('error', () => ws.terminate());
