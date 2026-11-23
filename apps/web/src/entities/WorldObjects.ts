@@ -1,6 +1,6 @@
 /** NPCs and gatherable resource nodes. */
 import * as THREE from 'three';
-import { Rng, materialName, type MaterialId } from '@alloy/item-gen';
+import { Rng, type MaterialId } from '@alloy/item-gen';
 import type { NodeDef } from '@alloy/world';
 import { terrainHeight } from '@alloy/world';
 import { POSE_GUARD, Rig, locomotionPose, type RigStyle } from './Rig';
@@ -55,28 +55,8 @@ export class Npc {
   }
 }
 
-export interface NodeRuntime {
-  charges: number;
-  respawnAt: number;
-}
-
-export const NODE_MAX_CHARGES = 3;
-export const NODE_RESPAWN_SECONDS = 120;
-
-/** Procedural deposit traits from the node seed (GDD 4.10; stretch: one variable ore property). */
-export function nodeTraits(def: NodeDef): { quality: number; rich: boolean; label: string; traits: Record<string, number> } {
-  const rng = new Rng(`node:${def.id}`);
-  const r = rng.next();
-  const rich = rng.next() < 0.2;
-  const quality = Math.round((rich ? 0.85 + r * 0.15 : 0.32 + r * 0.46) * 1000) / 1000;
-  const traitName = def.material === 'iron_ore' ? 'purity' : def.material === 'ironglass' ? 'conductivity' : 'grain';
-  const label = `${rich ? 'Rich ' : ''}${materialName(def.material)} · ${traitName} ${Math.round(quality * 100)}%`;
-  return { quality, rich, label, traits: { [traitName]: quality } };
-}
-
-export function nodeYield(def: NodeDef, gatherIndex: number): number {
-  return new Rng(`yield:${def.id}:${gatherIndex}`).int(1, 2);
-}
+export { NODE_MAX_CHARGES, NODE_RESPAWN_SECONDS, nodeTraits, nodeYield, type NodeRuntime } from '@alloy/session';
+import { NODE_MAX_CHARGES, nodeTraits, type NodeRuntime } from '@alloy/session';
 
 /** Workshop model, size and ground offset per node material (matches the World view). */
 const NODE_MODELS: Record<MaterialId, { model: string; scale: number; y: number }> = {

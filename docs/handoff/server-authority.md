@@ -116,7 +116,7 @@ type CharAction =
 
 ## Checklist
 
-- [ ] Stage 1: create `@alloy/session` (move Session plus node rules, add `applyAction`, `rewardKill`); web uses it; no behaviour change. Unit tests for `applyAction` (range, gates, each action).
+- [x] Stage 1: `@alloy/session` created (Session and node rules moved; `applyAction`, `rewardKill`, `playerHit` and `rewardHit` added; `packages/session/test/actions.test.ts` has 9 tests). The web client imports through `apps/web/src/state/Session.ts` (a re-export) and still applies changes itself. It is routed through `applyAction` in stage 5.
 - [ ] Stage 2: protocol v2 messages and parser tests.
 - [ ] Stage 3: server character host: load, act, kill rewards, server-side hit damage, persistence. Server tests drive `WorldRoom` directly, as `apps/server/test/world.test.ts` does.
 - [ ] Stage 4: HTTP API lock-down (`new` / `import`), plus updating `apps/server/test/accounts.test.ts`.
@@ -126,8 +126,15 @@ type CharAction =
 
 ## Current state
 
-- Nothing implemented yet. Only `AGENTS.md`, `CLAUDE.md` and this file are added.
-- Baseline on `main` 8e9cd64: typecheck passes, `npm test` passes (120 tests), `npm run build` passes, and `npm run test:e2e` passes (10 tests).
+- Stage 1 is done and committed. Verified: typecheck passes, `npm test` passes (129 tests), and `npm run build` passes.
+  `npm run test:e2e` was not rerun for stage 1 (no client behaviour changed).
+- API in `packages/session/src/actions.ts`:
+  - `applyAction(session, action, { pos, slack })`
+  - `rewardKill(session, enemyType, enemyId, rng)`
+  - `playerHit(session, attackId, rng)`, which returns outgoing damage before the target's defense
+  - `rewardHit(session, enemyType, damage)`
+  - `RANGE`, `RANGE_SLACK` and the `CharAction` type
+- Next: stage 2 (protocol v2).
 
 ## How to verify
 
