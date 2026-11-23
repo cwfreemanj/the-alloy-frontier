@@ -2,5 +2,6 @@
 export * from './Layout';
 export * from './Colliders';
 export * from './Terrain';
-export * from './WorldBuilder';
+export * from './Emberhold';
+export { fbm, smoothstep, valueNoise } from './noise';
 export * from './enemySim';

@@ -45,3 +45,20 @@ The game rebuilds each clip for each character's own rest pose at load
   Re-download them as FBX 2013/2014 or DAE if you want them.
 - `render.mjs` can draw CPU-skinned contact sheets of a character playing clips (no GPU needed),
   handy for checking poses and the sword grip.
+
+## World bake (Model Workshop → game)
+
+The Emberhold first area is authored in the Model Workshop's World view. `workshop/world.js` and
+`workshop/terrain.js` are the workshop's scene + generator sources; the model recipes, materials and
+atmosphere kit the game renders with live in `apps/web/src/world/workshop/` (`core.js`, `fx.js`).
+
+```
+node tools/asset-pipeline/workshop/bake-world.mjs              # bake the default scene
+node tools/asset-pipeline/workshop/bake-world.mjs scene.json   # bake a scene exported from the World view
+```
+
+This regenerates `packages/world/src/emberholdData.ts` (every placement and generated tree, rock,
+shrub and ore seam). The browser renders it (`apps/web/src/world/EmberholdWorld.ts`) and both the
+browser and the world server build their colliders from it (`packages/world/src/Emberhold.ts`), so
+they always agree. Gameplay positions (NPCs, quest nodes, enemy spawns and patrols, the anvil) stay
+in `packages/world/src/Layout.ts`; the generator keeps scatter clear of them.

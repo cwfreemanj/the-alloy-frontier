@@ -34,9 +34,9 @@ import { ForgePanel } from '../ui/ForgePanel';
 import { Hud } from '../ui/Hud';
 import { InventoryPanel, MerchantPanel, dialogPanel, pausePanel, summaryPanel, titleScreen, type Settings } from '../ui/Panels';
 import { h } from '../ui/dom';
-import { ENEMY_SPAWNS, FORGE_ANVIL, NPCS, RESOURCE_NODES, RESPAWN_POINT, ZONES, zoneAt, type Zone } from '@alloy/world';
-import { buildTerrainMesh, terrainHeight } from '@alloy/world';
-import { buildWorld, type WorldVisuals } from '@alloy/world';
+import { ALL_RESOURCE_NODES, ENEMY_SPAWNS, FORGE_ANVIL, NPCS, RESPAWN_POINT, ZONES, zoneAt, type Zone } from '@alloy/world';
+import { terrainHeight } from '@alloy/world';
+import { EmberholdWorld } from '../world/EmberholdWorld';
 import { orlaDialogue } from './Dialogue';
 import type { RemotePlayer } from '../entities/RemotePlayer';
 import { findWorld } from '../net/WorldClient';
@@ -79,24 +79,6 @@ function loadSettings(): Settings {
   }
 }
 
-function skyTexture(): THREE.Texture {
-  const c = document.createElement('canvas');
-  c.width = 4;
-  c.height = 256;
-  const g = c.getContext('2d')!;
-  const grad = g.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, '#1c2430');
-  grad.addColorStop(0.45, '#3b4250');
-  grad.addColorStop(0.62, '#7a6656');
-  grad.addColorStop(0.75, '#a77850');
-  grad.addColorStop(1, '#2a2622');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 4, 256);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
 export class Game {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
@@ -107,7 +89,7 @@ export class Game {
   readonly effects: Effects;
   readonly hud: Hud;
   readonly saves = new SaveSystem(window.localStorage);
-  world!: WorldVisuals;
+  world!: EmberholdWorld;
   session!: Session;
   player!: Player;
   enemies: Enemy[] = [];
@@ -154,12 +136,9 @@ export class Game {
     this.renderer.toneMappingExposure = 1.3;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.camera = new THREE.PerspectiveCamera(60, 16 / 9, 0.1, 600);
-    this.scene.background = skyTexture();
-    this.scene.fog = new THREE.Fog('#6a6260', 70, 240);
-
-    this.buildLighting();
-    this.scene.add(buildTerrainMesh());
-    this.world = buildWorld(this.scene);
+    // The Emberhold first area (Model Workshop scene): terrain, buildings, scatter, sky, light, fog, fx.
+    this.world = new EmberholdWorld(this.renderer, this.scene, this.camera, this.settings.quality);
+    this.sun = this.world.sun;
     this.input = new Input(canvas);
     this.cam = new CameraRig(this.camera, this.world.colliders);
     this.effects = new Effects(this.scene);
@@ -173,7 +152,7 @@ export class Game {
     this.npcs.push(new Npc(NPCS.orla.id, NPCS.orla.name, NPCS.orla.pos, NPCS.orla.yaw, { kind: 'organic', skin: '#b98468', body: '#5a3a2a', armor: '#3a3430', legs: '#2a2420', boots: '#1e1812', accent: '#ff8a3d', scale: 1.02 }));
     this.npcs.push(new Npc(NPCS.bram.id, NPCS.bram.name, NPCS.bram.pos, NPCS.bram.yaw, { kind: 'organic', skin: '#d0a888', body: '#3a5a4a', armor: '#5a4a3a', legs: '#3a3026', boots: '#241c16', accent: '#45e0ff', scale: 0.98, bulk: 1.15 }));
     for (const n of this.npcs) this.scene.add(n.object);
-    for (const d of RESOURCE_NODES) {
+    for (const d of ALL_RESOURCE_NODES) {
       const n = new ResourceNode(d);
       this.nodes.push(n);
       this.scene.add(n.object);
@@ -330,23 +309,6 @@ export class Game {
   }
 
   // ---------------- Setup ----------------
-  private buildLighting(): void {
-    const hemi = new THREE.HemisphereLight('#b8c8dc', '#5a4a38', 2.1);
-    this.scene.add(hemi);
-    this.sun = new THREE.DirectionalLight('#ffdcb4', 3.4);
-    this.sun.position.set(-40, 60, -30);
-    this.sun.castShadow = true;
-    this.sun.shadow.camera.left = -40;
-    this.sun.shadow.camera.right = 40;
-    this.sun.shadow.camera.top = 40;
-    this.sun.shadow.camera.bottom = -40;
-    this.sun.shadow.camera.near = 1;
-    this.sun.shadow.camera.far = 200;
-    this.sun.shadow.bias = -0.0005;
-    this.sun.shadow.normalBias = 0.03;
-    this.scene.add(this.sun, this.sun.target);
-  }
-
   applySettings(): void {
     const q = this.settings.quality;
     const dpr = window.devicePixelRatio || 1;
@@ -362,7 +324,7 @@ export class Game {
       const m = (o as THREE.Mesh).material as THREE.Material | undefined;
       if (m) m.needsUpdate = true;
     });
-    (this.scene.fog as THREE.Fog).far = q === 'low' ? 150 : 230;
+    this.world?.setQuality(q);
     this.camera.far = q === 'low' ? 200 : 600;
     this.camera.updateProjectionMatrix();
     this.cam.settings = { sensitivity: this.settings.sensitivity, invertY: this.settings.invertY };
@@ -381,6 +343,7 @@ export class Game {
     this.renderer.setSize(w, hgt, false);
     this.camera.aspect = w / hgt;
     this.camera.updateProjectionMatrix();
+    this.world?.setSize(w, hgt);
   }
 
   // ---------------- Session ----------------
@@ -427,7 +390,7 @@ export class Game {
         e.deadTime = 99;
       }
     }
-    for (const n of RESOURCE_NODES) data.world.nodes[n.id] ??= { charges: NODE_MAX_CHARGES, respawnAt: 0, gathers: 0 };
+    for (const n of ALL_RESOURCE_NODES) data.world.nodes[n.id] ??= { charges: NODE_MAX_CHARGES, respawnAt: 0, gathers: 0 };
     this.lockTarget = null;
     this.zone = zoneAt(this.player.pos2);
   }
@@ -619,10 +582,9 @@ export class Game {
       if (this.modal !== null && this.online.online) this.updateEnemies(rawDt);
       this.online.update(rawDt);
     }
-    this.world.update(this.time);
+    this.world.update(this.time, this.player.position);
     this.effects.update(rawDt);
-    this.updateSun();
-    this.renderer.render(this.scene, this.camera);
+    this.world.render(this.time);
     this.updateLabels();
     if (this.settings.showPerf) this.hud.perf.textContent = this.perf.text();
     this.input.endFrame();
@@ -1193,12 +1155,6 @@ export class Game {
       el.classList.toggle('down', !r.alive);
     }
     this.hud.setReticle(show && this.lockTarget ? this.hud.project(this.camera, this.lockTarget.position, 1.2 * this.lockTarget.def.scale, w, hgt) : null);
-  }
-
-  private updateSun(): void {
-    const p = this.player.position;
-    this.sun.position.set(p.x - 40, p.y + 60, p.z - 30);
-    this.sun.target.position.set(p.x, p.y, p.z);
   }
 
   // ---------------- Debug / automation hooks ----------------
