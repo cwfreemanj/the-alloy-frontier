@@ -27,6 +27,8 @@ export interface AvatarState {
   mhp: number;
   /** Equipped weapon look. */
   wpn: { bp: string; spec: string; imb: boolean; rar: string } | null;
+  /** Chosen character model (e.g. 'maria', 'exo'). Optional: older clients omit it. */
+  mdl?: string;
 }
 
 export interface EnemyNetState {
@@ -107,7 +109,8 @@ function avatar(v: unknown): v is AvatarState {
     num(s.pr, 10) &&
     num(s.hp, 1e4) &&
     num(s.mhp, 1e4) &&
-    (w === null || (!!w && str(w.bp, 64) && str(w.spec, 32) && bool(w.imb) && str(w.rar, 16)))
+    (w === null || (!!w && str(w.bp, 64) && str(w.spec, 32) && bool(w.imb) && str(w.rar, 16))) &&
+    (s.mdl === undefined || (str(s.mdl, 16) && /^[a-z]+$/.test(s.mdl)))
   );
 }
 

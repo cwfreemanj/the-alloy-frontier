@@ -4,9 +4,12 @@ import { Rng, materialName, type MaterialId } from '@alloy/item-gen';
 import type { NodeDef } from '@alloy/world';
 import { terrainHeight } from '@alloy/world';
 import { POSE_GUARD, Rig, locomotionPose, type RigStyle } from './Rig';
+import { CharacterBody, createBody } from './models/Characters';
+import { NPC_ANIMS } from './models/animSets';
 
 export class Npc {
-  readonly rig: Rig;
+  readonly body: Rig | CharacterBody;
+  private readonly idleClip: string | null = null;
   readonly object = new THREE.Group();
   private t = Math.random() * 10;
   constructor(
@@ -16,19 +19,31 @@ export class Npc {
     yaw: number,
     style: RigStyle,
   ) {
-    this.rig = new Rig(style);
-    this.object.add(this.rig.root);
+    const look = NPC_ANIMS[id];
+    const model = look ? createBody(look.model, look.heightM, { idle: look.idle, walk: look.idle, run: look.idle }) : null;
+    if (model && look) {
+      this.body = model;
+      this.idleClip = look.idle;
+    } else this.body = new Rig(style);
+    this.object.add(this.body.root);
     this.object.position.set(pos.x, terrainHeight(pos.x, pos.z), pos.z);
     this.object.rotation.y = yaw;
   }
   get pos2() {
     return { x: this.object.position.x, z: this.object.position.z };
   }
+  /** Name label height above the feet (m). */
+  get labelHeight(): number {
+    return this.body instanceof CharacterBody ? this.body.heightM + 0.35 : 2.25;
+  }
   update(dt: number, lookAt: THREE.Vector3 | null): void {
     this.t += dt;
-    const p = locomotionPose(0, 0, false);
-    const breath = Math.sin(this.t * 1.4) * 0.04;
-    this.rig.apply({ ...POSE_GUARD, ...p, rShoulder: [-0.1, 0, -0.1], rElbow: [-0.3, 0, 0], chest: [breath, 0, 0], head: lookAt ? [0, 0, 0] : [0, Math.sin(this.t * 0.4) * 0.4, 0] }, Math.min(1, dt * 4));
+    if (this.body instanceof CharacterBody) this.body.update(dt, { kind: 'loop', clip: this.idleClip! });
+    else {
+      const p = locomotionPose(0, 0, false);
+      const breath = Math.sin(this.t * 1.4) * 0.04;
+      this.body.apply({ ...POSE_GUARD, ...p, rShoulder: [-0.1, 0, -0.1], rElbow: [-0.3, 0, 0], chest: [breath, 0, 0], head: lookAt ? [0, 0, 0] : [0, Math.sin(this.t * 0.4) * 0.4, 0] }, Math.min(1, dt * 4));
+    }
     if (lookAt) {
       const ty = Math.atan2(lookAt.x - this.object.position.x, lookAt.z - this.object.position.z);
       let d = ty - this.object.rotation.y;
