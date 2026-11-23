@@ -26,38 +26,15 @@ import {
   createProgression,
   createQuestState,
   currentStep,
-  type ProgressionState,
   type QuestEvent,
-  type QuestState,
 } from '@alloy/game-rules';
 import { getBlueprint, materialName, type ItemInstance, type MaterialId } from '@alloy/item-gen';
 
 export const PLAYER_ID = 'player-01';
 export const PLAYER_NAME = 'You';
 
-export interface NodeState {
-  charges: number;
-  respawnAt: number;
-  gathers: number;
-}
-
-export interface SessionData {
-  version: 1;
-  createdAt: number;
-  playTime: number;
-  player: { x: number; z: number; yaw: number; health: number };
-  inventory: InventoryState;
-  progression: ProgressionState;
-  quest: QuestState;
-  world: {
-    wardenDefeated: boolean;
-    nodes: Record<string, NodeState>;
-    introSeen: boolean;
-  };
-  stats: { kills: Record<string, number>; crafted: number; deaths: number; startedAt: number; completedAt: number | null };
-  /** Snapshot taken when the quest ends (for the summary screen). */
-  summary: { itemId: string | null; masteryAtStart: number; weaponLevelAtStart: number } | null;
-}
+export type { NodeState, SessionData } from '@alloy/save';
+import type { SessionData } from '@alloy/save';
 
 export type SessionEvent =
   | { type: 'inventory' }

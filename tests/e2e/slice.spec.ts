@@ -63,6 +63,28 @@ test('WASD movement, sprint stamina drain and jump', async ({ page }) => {
   expect(s2.stamina).toBeGreaterThan(99); // ~0.333/s: long-duration endurance
 });
 
+test('A and D strafe toward screen left and right', async ({ page }) => {
+  await newGame(page);
+  // Where the player is on screen (0 = left edge, 1 = right edge).
+  const screenX = () =>
+    page.evaluate(() => {
+      const g = (window as unknown as { __alloy: { game: { camera: import('three').Camera; player: { position: import('three').Vector3 } } } }).__alloy.game;
+      return (g.player.position.clone().project(g.camera).x + 1) / 2;
+    });
+  for (const [key, dir] of [
+    ['KeyD', 1],
+    ['KeyA', -1],
+  ] as const) {
+    const x0 = await screenX();
+    await page.keyboard.down(key);
+    await page.waitForTimeout(500);
+    const x1 = await screenX();
+    await page.keyboard.up(key);
+    await page.waitForTimeout(1200); // let the camera settle behind again
+    expect(Math.sign(x1 - x0), `${key} should move the player ${dir > 0 ? 'right' : 'left'} on screen`).toBe(dir);
+  }
+});
+
 test('combat: combo damages the training post exactly once per swing', async ({ page }) => {
   await newGame(page);
   await call(page, 'teleport', -8, 4.5);

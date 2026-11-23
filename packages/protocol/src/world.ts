@@ -63,7 +63,7 @@ export interface HitVerdict {
 }
 
 export type WorldClientMsg =
-  | { t: 'hello'; name: string; protocol: number }
+  | { t: 'hello'; name: string; protocol: number; token?: string }
   | { t: 'state'; s: AvatarState }
   | { t: 'hit'; enemyId: string; attackId: string; damage: number; stagger: number; guardBreak: boolean; crit: boolean };
 
@@ -139,7 +139,9 @@ export function parseWorldClientMsg(raw: unknown): WorldClientMsg | null {
   const o = m as Record<string, unknown>;
   switch (o.t) {
     case 'hello':
-      return str(o.name, 64) && o.protocol === WORLD_PROTOCOL ? { t: 'hello', name: cleanName(o.name), protocol: WORLD_PROTOCOL } : null;
+      return str(o.name, 64) && o.protocol === WORLD_PROTOCOL && (o.token === undefined || str(o.token, 100))
+        ? { t: 'hello', name: cleanName(o.name), protocol: WORLD_PROTOCOL, ...(o.token ? { token: o.token as string } : {}) }
+        : null;
     case 'state':
       return avatar(o.s) ? { t: 'state', s: o.s } : null;
     case 'hit':

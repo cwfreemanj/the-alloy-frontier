@@ -236,3 +236,14 @@ select, input[type=number] { background: var(--panel-2); color: var(--text); bor
 .char-card.selected b::after { content: ' ✓'; color: #ff8a3d; }
 .char-card:focus-visible { outline: 2px solid #4fe3ff; outline-offset: 2px; }
 .name-input { background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.15); color: var(--text, #eee); padding: 7px 10px; border-radius: 6px; font: inherit; }
+
+/* Accounts on the title screen */
+.acct { display: grid; gap: 8px; margin: 4px 0 6px; text-align: left; }
+.acct-form { display: grid; gap: 8px; }
+.acct-who { display: flex; align-items: baseline; gap: 6px; }
+.acct-who .linkish { margin-left: auto; }
+.linkish { background: none; border: 0; color: var(--cyan, #45e0ff); cursor: pointer; font: inherit; font-size: 12px; text-decoration: underline; padding: 0; }
+.guest { display: grid; gap: 6px; margin-top: 6px; text-align: left; }
+.guest .or { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.guest .or::before, .guest .or::after { content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
+.title-card .btns { flex-wrap: wrap; }

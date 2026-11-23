@@ -40,6 +40,9 @@ import { EmberholdWorld } from '../world/EmberholdWorld';
 import { orlaDialogue } from './Dialogue';
 import type { RemotePlayer } from '../entities/RemotePlayer';
 import { findWorld } from '../net/WorldClient';
+import { AccountClient, CloudSaver, type ApiError } from '../net/Accounts';
+import { deserialize as parseSave, serialize as encodeSave } from '@alloy/save';
+import type { AccountView } from '../ui/Panels';
 import { Online } from './Online';
 import { DEFAULT_PLAYER_CHARACTER, PLAYER_CHARACTERS, charactersReady, isPlayerCharacter, type PlayerCharacterId } from '../entities/models/Characters';
 
@@ -126,6 +129,14 @@ export class Game {
   private worldStatusEl!: HTMLElement;
   private lastAvatarPos: Vec2 = { x: 0, z: 0 };
   private avatarSpeed = 0;
+  /** World server address (null when playing offline). */
+  private worldUrl: string | null = null;
+  private accounts: AccountClient | null = null;
+  private cloud: CloudSaver | null = null;
+  /** 'account' = character saved on the server; 'guest' = saved in this browser. */
+  mode: 'guest' | 'account' = 'guest';
+  private accountView: AccountView = { state: 'checking' };
+  private cloudRaw: string | null = null;
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     const t0 = performance.now();
@@ -173,6 +184,7 @@ export class Game {
         if (!online) for (const e of this.enemies) e.respawn();
         this.lockTarget = null;
       },
+      kicked: (reason) => this.endSession(reason),
     });
     this.worldStatusEl = h('div', { class: 'world-status', 'data-testid': 'world-status' });
     uiRoot.append(this.worldStatusEl);
@@ -209,12 +221,103 @@ export class Game {
     this.online.message = 'Looking for the world…';
     this.updateWorldStatus();
     const url = await findWorld();
+    this.worldUrl = url;
     if (!url) {
       this.online.message = 'Offline: no world server reachable';
       this.updateWorldStatus();
+      this.setAccountView({ state: 'unavailable' });
       return;
     }
-    this.online.connect(url, this.playerName);
+    this.online.message = 'Ready to join the world';
+    this.updateWorldStatus();
+    this.accounts = new AccountClient(url.replace(/^ws/, 'http').replace(/\/world$/, '/'));
+    const st = await this.accounts.check();
+    if (st === 'signed_in') await this.afterSignIn();
+    else this.setAccountView({ state: st });
+    // Already playing (e.g. a guest who started before the check finished): join now.
+    if (this.started && !this.online.client) this.connectWorld();
+  }
+
+  /** Join the shared world as the current account or guest. */
+  private connectWorld(): void {
+    if (!this.worldUrl) return;
+    if (this.mode === 'account' && this.accounts?.username) this.online.connect(this.worldUrl, this.accounts.username, this.accounts.token);
+    else this.online.connect(this.worldUrl, this.playerName);
+  }
+
+  private setAccountView(v: AccountView): void {
+    this.accountView = v;
+    if (this.modal === 'title') this.showTitle();
+  }
+
+  private async afterSignIn(): Promise<void> {
+    try {
+      this.cloudRaw = await this.accounts!.loadSave();
+    } catch (e) {
+      this.setAccountView({ state: 'signed_out', error: (e as ApiError).message });
+      return;
+    }
+    const guestSave = this.saves.hasSave() && this.saves.load().ok;
+    this.setAccountView({ state: 'signed_in', username: this.accounts!.username!, hasCloudSave: !!this.cloudRaw, canImport: guestSave && !this.cloudRaw });
+  }
+
+  private async accountAction(kind: 'login' | 'register', username: string, password: string): Promise<void> {
+    if (!this.accounts) return;
+    this.setAccountView({ state: 'signed_out', busy: true });
+    try {
+      if (kind === 'login') await this.accounts.login(username, password);
+      else await this.accounts.register(username, password);
+      await this.afterSignIn();
+    } catch (e) {
+      this.setAccountView({ state: 'signed_out', error: (e as ApiError).message });
+    }
+  }
+
+  private async signOut(): Promise<void> {
+    this.cloud?.stop();
+    this.cloud = null;
+    await this.accounts?.logout();
+    this.cloudRaw = null;
+    this.setAccountView({ state: 'signed_out' });
+  }
+
+  /** Start playing a character (from the title screen). */
+  private startPlaying(data: SessionData, mode: 'guest' | 'account', banner: 'new' | 'continue'): void {
+    this.mode = mode;
+    this.cloud?.stop();
+    this.cloud = null;
+    if (mode === 'account' && this.accounts) this.cloud = new CloudSaver(this.accounts, (e) => this.onCloudError(e));
+    this.loadSession(data);
+    this.started = true;
+    this.closeModal();
+    this.hud.zoneBanner(banner === 'new' ? ZONES[0] : this.zone);
+    if (banner === 'new') {
+      this.hud.toast('Find Master Smith Orla at the forge (orange marker on the minimap).', 'info');
+      this.hud.toast('Click the view to capture the mouse. Esc for menu and controls.', 'info');
+    }
+    this.connectWorld();
+  }
+
+  private onCloudError(e: ApiError): void {
+    if (e.code === 'conflict') this.endSession('This character was saved from another device. Continue again to load the latest version.');
+    else if (e.status === 401) this.endSession('Your sign-in expired. Please sign in again.');
+    else this.hud.toast(`Could not save to your account: ${e.message}`, 'warn');
+  }
+
+  /** Leave play and return to the title screen with a reason (no further saves from here). */
+  private endSession(reason: string): void {
+    this.cloud?.stop();
+    this.cloud = null;
+    this.online.disconnect();
+    this.started = false;
+    this.modal = null;
+    if (this.accounts?.username) {
+      this.cloudRaw = null;
+      void this.afterSignIn().then(() => {
+        if (this.accountView.state === 'signed_in') this.setAccountView({ ...this.accountView, error: reason });
+      });
+    } else this.setAccountView({ state: 'signed_out', error: reason });
+    this.showTitle();
   }
 
   setPlayerName(raw: string): void {
@@ -226,8 +329,8 @@ export class Game {
     }
     if (n === this.playerName) return;
     this.playerName = n;
-    // Re-introduce ourselves under the new name.
-    if (this.online.client) this.online.connect(this.online.client.url, n);
+    // Re-introduce ourselves under the new name (guests only; accounts use their username).
+    if (this.mode === 'guest' && this.started && this.online.client) this.online.connect(this.online.client.url, n);
   }
 
   /** Pick the player character (title screen). Persists per browser; others see it online. */
@@ -399,8 +502,16 @@ export class Game {
     if (!this.started) return;
     const d = this.session.data;
     d.player = { x: this.player.position.x, z: this.player.position.z, yaw: this.player.yaw, health: this.player.combat.alive ? this.player.combat.health : this.player.combat.maxHealth };
+    if (this.mode === 'account') {
+      if (!this.cloud) return;
+      const raw = encodeSave(d, Date.now());
+      if (reason === 'exit') this.cloud.flushOnExit(raw);
+      else this.cloud.push(raw);
+      this.lastSave = this.cloud.lastResult;
+      return;
+    }
     const r = this.saves.save(d);
-    this.lastSave = r.ok ? `Saved (${reason}) at ${new Date().toLocaleTimeString()} · ${(r.bytes / 1024).toFixed(1)} KB` : `Save failed: ${r.error}`;
+    this.lastSave = r.ok ? `Saved in this browser (${reason}) at ${new Date().toLocaleTimeString()} · ${(r.bytes / 1024).toFixed(1)} KB` : `Save failed: ${r.error}`;
     if (!r.ok) this.hud.toast(this.lastSave, 'warn');
   }
 
@@ -443,31 +554,59 @@ export class Game {
         characters: charactersReady() ? PLAYER_CHARACTERS : [],
         character: this.character,
         onCharacter: (id) => this.setCharacter(id as PlayerCharacterId),
+        account: this.accountView,
+        onSignIn: (u, p) => void this.accountAction('login', u, p),
+        onRegister: (u, p) => void this.accountAction('register', u, p),
+        onSignOut: () => void this.signOut(),
+        onAccountContinue: () => {
+          const r = this.cloudRaw ? parseSave(this.cloudRaw) : null;
+          if (!r || !r.ok) {
+            this.setAccountView({ ...(this.accountView as Extract<AccountView, { state: 'signed_in' }>), error: `Your saved character could not be loaded${r && !r.ok ? `: ${r.reason}` : ''}.` });
+            return;
+          }
+          this.startPlaying(r.data, 'account', 'continue');
+        },
+        onAccountNew: () => {
+          this.startPlaying(newSessionData(Date.now()), 'account', 'new');
+          this.save('new');
+        },
+        onImport: () => {
+          const r = this.saves.load();
+          if (!r.ok) return;
+          this.startPlaying(r.data, 'account', 'continue');
+          this.save('import');
+          this.hud.toast('Your browser character now lives in your account.', 'good');
+        },
       }),
     );
   }
 
+  /** New guest game (saved in this browser). */
   newGame(): void {
     this.saves.clear();
-    this.loadSession(newSessionData(Date.now()));
-    this.started = true;
-    this.closeModal();
-    this.hud.zoneBanner(ZONES[0]);
-    this.hud.toast('Find Master Smith Orla at the forge (orange marker on the minimap).', 'info');
-    this.hud.toast('Click the view to capture the mouse. Esc for menu and controls.', 'info');
+    this.startPlaying(newSessionData(Date.now()), 'guest', 'new');
     this.save('new');
   }
 
+  /** Continue: the guest save in this browser, or (signed in) the latest save from the server. */
   continueGame(): void {
+    if (this.mode === 'account' && this.started && this.accounts) {
+      void this.accounts
+        .loadSave()
+        .then((raw) => {
+          const r = raw ? parseSave(raw) : null;
+          if (r?.ok) this.startPlaying(r.data, 'account', 'continue');
+          else this.hud.toast('No saved character on the server yet.', 'warn');
+        })
+        .catch((e: ApiError) => this.hud.toast(e.message, 'warn'));
+      return;
+    }
     const r = this.saves.load();
     if (!r.ok) {
       this.hud.toast(r.reason, 'warn');
       return;
     }
-    this.loadSession(r.data);
-    this.started = true;
-    this.closeModal();
-    this.hud.zoneBanner(this.zone);
+    this.startPlaying(r.data, 'guest', 'continue');
     if (r.source === 'backup') this.hud.toast('Primary save was invalid; restored the backup save.', 'warn');
   }
 
@@ -1180,7 +1319,7 @@ export class Game {
           mastery: { smith: this.session.smithMastery, longsword: this.session.weaponLevel },
           zone: this.zone.id,
           lock: this.lockTarget?.id ?? null,
-          world: { status: this.online.status, id: this.online.myId, name: this.playerName, others: [...this.online.remotes.values()].map((r) => ({ id: r.id, name: r.name, x: +r.position.x.toFixed(1), z: +r.position.z.toFixed(1), hp: r.state?.hp ?? null })) },
+          world: { status: this.online.status, id: this.online.myId, name: this.mode === 'account' ? (this.accounts?.username ?? '') : this.playerName, mode: this.mode, others: [...this.online.remotes.values()].map((r) => ({ id: r.id, name: r.name, x: +r.position.x.toFixed(1), z: +r.position.z.toFixed(1), hp: r.state?.hp ?? null })) },
           enemies: this.enemies.map((e) => ({ id: e.id, type: e.spawn.type, state: e.brain.state, hp: +e.brain.health.toFixed(1), x: +e.position.x.toFixed(1), z: +e.position.z.toFixed(1) })),
         };
       },

@@ -27,7 +27,9 @@ export default defineConfig({
       // Shared-world server (serves the same production build) for the multiplayer test.
       command: 'npx tsx apps/server/src/worldMain.ts',
       url: 'http://localhost:2569/world-info',
-      env: { PORT: '2569' },
+      // Accounts for tests live in a throwaway file, never the dev data.
+      // Empty DATABASE_URL wins over .env.local, so tests never touch the real database.
+      env: { PORT: '2569', DATA_FILE: '.tmp/e2e-accounts.json', DATABASE_URL: '', DATABASE_URL_UNPOOLED: '' },
       reuseExistingServer: false,
       timeout: 120_000,
     },

@@ -1,66 +1,17 @@
 /**
- * Versioned local save/load (GDD 6.11 stage 1, 8.4 #6). Saves are validated on load,
- * integrity-checked per item, and a backup of the previous good save is kept.
+ * Browser save slot (guest play) on top of the shared save format in @alloy/save.
+ * A backup of the previous good save is kept.
  */
-import { validateInventory } from '@alloy/crafting';
-import { QUESTS } from '@alloy/game-rules';
-import { hashHex, stableStringify } from '@alloy/item-gen';
-import type { SessionData } from './Session';
+import { deserialize, serialize, type LoadResult, type SessionData } from '@alloy/save';
 
+export { SAVE_FORMAT, deserialize, serialize, type LoadResult } from '@alloy/save';
 export const SAVE_KEY = 'alloy-frontier.save.v1';
 export const BACKUP_KEY = 'alloy-frontier.save.v1.bak';
-export const SAVE_FORMAT = 1;
 
 export interface KeyValueStore {
   getItem(k: string): string | null;
   setItem(k: string, v: string): void;
   removeItem(k: string): void;
-}
-
-interface SaveEnvelope {
-  format: number;
-  savedAt: number;
-  checksum: string;
-  data: SessionData;
-}
-
-export type LoadResult = { ok: true; data: SessionData; source: 'primary' | 'backup' } | { ok: false; reason: string };
-
-export function serialize(data: SessionData, now: number): string {
-  const env: SaveEnvelope = { format: SAVE_FORMAT, savedAt: now, checksum: hashHex(stableStringify(data)), data };
-  return JSON.stringify(env);
-}
-
-/** Migration hook: upgrade older formats here as the schema evolves. */
-function migrate(env: SaveEnvelope): SaveEnvelope {
-  return env;
-}
-
-export function deserialize(raw: string): LoadResult {
-  let env: SaveEnvelope;
-  try {
-    env = JSON.parse(raw) as SaveEnvelope;
-  } catch {
-    return { ok: false, reason: 'Save is not valid JSON' };
-  }
-  if (!env || typeof env !== 'object' || typeof env.format !== 'number') return { ok: false, reason: 'Save envelope missing' };
-  if (env.format > SAVE_FORMAT) return { ok: false, reason: `Save format ${env.format} is newer than this build` };
-  env = migrate(env);
-  const d = env.data;
-  if (!d || d.version !== 1) return { ok: false, reason: 'Unsupported session version' };
-  if (hashHex(stableStringify(d)) !== env.checksum) return { ok: false, reason: 'Save checksum mismatch (corrupted or edited)' };
-  const inv = validateInventory(d.inventory);
-  if (!inv.ok) return { ok: false, reason: `Inventory invalid: ${inv.message}` };
-  const q = QUESTS[d.quest?.questId];
-  if (!q || !Number.isInteger(d.quest.stepIndex) || d.quest.stepIndex < 0 || d.quest.stepIndex > q.steps.length) {
-    return { ok: false, reason: 'Quest state invalid' };
-  }
-  const p = d.progression;
-  if (!p || !Number.isFinite(p.professions?.blacksmithing?.mastery) || !Number.isFinite(p.weaponMastery?.longsword?.level)) {
-    return { ok: false, reason: 'Progression invalid' };
-  }
-  if (!Number.isFinite(d.player?.x) || !Number.isFinite(d.player?.z)) return { ok: false, reason: 'Player position invalid' };
-  return { ok: true, data: d, source: 'primary' };
 }
 
 export class SaveSystem {

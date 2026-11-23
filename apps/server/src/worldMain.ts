@@ -9,8 +9,15 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startWorldServer } from './worldServer';
+import { AccountService } from './accounts/service';
+import { kvFromEnv } from './accounts/kv';
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+// Local secrets (e.g. DATABASE_URL) live in .env.local at the project root, which git ignores.
+// On Render they come from the dashboard instead, so the file is simply absent there.
+const localEnv = resolve(here, '../../../.env.local');
+if (existsSync(localEnv)) process.loadEnvFile(localEnv);
 const dist = resolve(here, '../../web/dist');
 const cloud = process.env.PORT !== undefined;
 const lan = process.argv.includes('--lan');
@@ -21,10 +28,16 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
   .filter(Boolean);
 
 const staticDir = dist;
+const kv = kvFromEnv(process.env, resolve(here, '../../../data/alloy-kv.json'));
+const accounts = new AccountService(kv);
+if (kv.kind === 'file' && cloud) {
+  console.warn('WARNING: no DATABASE_URL set. Accounts and saves are stored in a local file, which this host may wipe on every deploy or restart.');
+}
+const trustProxy = process.env.RENDER === 'true' || process.env.TRUST_PROXY === '1';
 if (!existsSync(resolve(dist, 'index.html'))) console.warn('No game build found yet (run "npm run build"); the page will 404 until it exists.');
 
-startWorldServer({ port, host: cloud || lan ? '0.0.0.0' : '127.0.0.1', staticDir, allowedOrigins }).then((s) => {
-  console.log(`Alloy Frontier world server listening on port ${s.port} (serving the game too).`);
+startWorldServer({ port, host: cloud || lan ? '0.0.0.0' : '127.0.0.1', staticDir, allowedOrigins, accounts, trustProxy }).then((s) => {
+  console.log(`Alloy Frontier world server listening on port ${s.port} (serving the game too). Account storage: ${kv.kind}.`);
   if (!cloud) console.log(`Play: http://localhost:${s.port}`);
   let last = -1;
   setInterval(() => {
