@@ -25,5 +25,8 @@ Follow the orange marker on the minimap and the tracker in the top-right.
 - Low frame rate (press F3 and note the number) plus your GPU, if you know it
 - Bugs: what you did just before, and a screenshot if possible
 
-Known rough edges: characters are placeholder shapes; combat balance hasn't been tuned
+Pick **Maria** or **Exo Gray** on the title screen (other players see your choice).
+
+Known rough edges: animations are retargeted Mixamo clips fitted to the combat timing, so some
+transitions may pop; the Quarry Sentinel is still a placeholder shape; combat balance hasn't been tuned
 by real players yet; health regenerates out of combat (no potions in this slice).

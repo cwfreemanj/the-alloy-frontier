@@ -259,10 +259,36 @@ export interface TitleOptions {
   onAccountContinue: () => void;
   onAccountNew: () => void;
   onImport: () => void;
+  /** Character model (chosen per browser; others see it online). */
+  characters?: Array<{ id: string; name: string; blurb: string }>;
+  character?: string;
+  onCharacter?: (id: string) => void;
 }
 
 export function titleScreen(opts: TitleOptions): HTMLElement {
   const a = opts.account;
+
+  // ---- Character choice (applies to guest and account play) ----
+  const chars = opts.characters ?? [];
+  const cards: HTMLElement[] = [];
+  const select = (id: string) => {
+    for (const c of cards) {
+      const on = c.dataset.id === id;
+      c.classList.toggle('selected', on);
+      c.setAttribute('aria-checked', String(on));
+    }
+    opts.onCharacter?.(id);
+  };
+  for (const c of chars) {
+    const on = c.id === opts.character;
+    const card = h(
+      'button',
+      { class: `char-card${on ? ' selected' : ''}`, type: 'button', role: 'radio', 'aria-checked': String(on), 'data-id': c.id, 'data-testid': `char-${c.id}`, onclick: () => select(c.id) },
+      h('b', null, c.name),
+      h('span', { class: 'small muted' }, c.blurb),
+    );
+    cards.push(card);
+  }
 
   // ---- Account section ----
   let accountBlock: HTMLElement;
@@ -323,6 +349,8 @@ export function titleScreen(opts: TitleOptions): HTMLElement {
   const nameInput = h('input', { type: 'text', value: opts.name, maxlength: 20, 'aria-label': 'Guest name', 'data-testid': 'player-name', class: 'name-input', spellcheck: 'false' }) as HTMLInputElement;
   const commitName = () => opts.onName(nameInput.value);
   nameInput.addEventListener('change', commitName);
+  // Keep the name as it's typed: the title redraws when the account check finishes.
+  nameInput.addEventListener('input', () => nameInput.value.trim() && commitName());
   const go = (fn: () => void) => () => {
     commitName();
     fn();
@@ -354,9 +382,10 @@ export function titleScreen(opts: TitleOptions): HTMLElement {
       h('div', { class: 'logo' }, 'ALLOY ', h('span', null, 'FRONTIER')),
       h('div', { class: 'sub' }, 'The First Forge · vertical slice'),
       h('div', { class: 'rule' }),
+      chars.length ? h('div', { class: 'char-row' }, h('span', { class: 'small muted' }, 'Choose your character'), h('div', { class: 'char-cards', role: 'radiogroup', 'aria-label': 'Character' }, ...cards)) : null,
       accountBlock,
       guestBlock,
-      h('div', { class: 'foot' }, 'Prototype build · GDD v0.4 · Procedural placeholder art · Click the view to capture the mouse, Esc to release'),
+      h('div', { class: 'foot' }, 'Prototype build · GDD v0.4 · Click the view to capture the mouse, Esc to release'),
     ),
   );
 }

@@ -5,10 +5,9 @@
  * enemy targets, whether an enemy attack reached a player, and kill credit.
  * Client-owned for now: the player's own movement (sanity-checked) and progression.
  */
-import * as THREE from 'three';
 import { ATTACKS, dist2, forwardPoint, inArc, inCircle, type AttackId, type Vec2 } from '@alloy/game-rules';
 import { WORLD_LIMITS, WORLD_PROTOCOL, parseWorldClientMsg, type AvatarState, type EnemyNetState, type WorldPlayerInfo, type WorldServerMsg } from '@alloy/protocol';
-import { ENEMY_SPAWNS, EnemySim, buildWorld, type ColliderWorld } from '@alloy/world';
+import { ENEMY_SPAWNS, EnemySim, buildWorldColliders, type ColliderWorld } from '@alloy/world';
 
 const PLAYER_RADIUS = 0.4;
 const CREDIT_WINDOW_MS = 30_000;
@@ -41,9 +40,9 @@ export interface WorldStats {
 }
 
 let sharedColliders: ColliderWorld | null = null;
-/** Same deterministic world the browser builds (meshes are discarded; colliders are kept). */
+/** Same deterministic colliders the browser builds from the baked Emberhold scene. */
 export function worldColliders(): ColliderWorld {
-  sharedColliders ??= buildWorld(new THREE.Scene()).colliders;
+  sharedColliders ??= buildWorldColliders();
   return sharedColliders;
 }
 

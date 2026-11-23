@@ -1,0 +1,426 @@
+{
+ "version": 1,
+ "characters": {
+  "maria": {
+   "file": "maria.glb",
+   "v": "6e0e9857f3",
+   "name": "Maria",
+   "heightCm": 175.18,
+   "hipsY": 105.25,
+   "handLenCm": 11.45,
+   "hand": {
+    "grip": [
+     -3.936,
+     6.918,
+     1.962
+    ],
+    "dir": [
+     0.8456,
+     0.5179,
+     -0.1296
+    ],
+    "width": [
+     0.5149,
+     -0.727,
+     0.4544
+    ]
+   }
+  },
+  "exo": {
+   "file": "exo.glb",
+   "v": "eefd669cf5",
+   "name": "Exo Gray",
+   "heightCm": 179.81,
+   "hipsY": 96.38,
+   "handLenCm": 12.19
+  },
+  "eve": {
+   "file": "eve.glb",
+   "v": "d7b27946c8",
+   "name": "Eve",
+   "heightCm": 139.08,
+   "hipsY": 81.06,
+   "handLenCm": 7.65
+  },
+  "demon": {
+   "file": "demon.glb",
+   "v": "27124c9dac",
+   "name": "Demon T",
+   "heightCm": 221.76,
+   "hipsY": 123.38,
+   "handLenCm": 14.08
+  },
+  "heraklios": {
+   "file": "heraklios.glb",
+   "v": "aa7e1c4a8a",
+   "name": "Heraklios",
+   "heightCm": 187.7,
+   "hipsY": 99,
+   "handLenCm": 12.61
+  },
+  "maw": {
+   "file": "maw.glb",
+   "v": "d95650547d",
+   "name": "Maw J Laygo",
+   "heightCm": 237.86,
+   "hipsY": 97.4,
+   "handLenCm": 26.14
+  }
+ },
+ "anims": {
+  "file": "anims.glb",
+  "v": "a4b6889b30"
+ },
+ "clips": {
+  "p_idle": {
+   "source": "ss:sword and shield idle",
+   "duration": 3.6,
+   "peak": 1.6,
+   "effector": "RightHand",
+   "travel": [
+    -0.0013,
+    -0.0016
+   ]
+  },
+  "p_walk": {
+   "source": "ss:sword and shield walk",
+   "duration": 1.1,
+   "peak": 0.5,
+   "effector": "RightHand",
+   "travel": [
+    0,
+    1.4836
+   ]
+  },
+  "p_run": {
+   "source": "ss:sword and shield run",
+   "duration": 0.7,
+   "peak": 0.6,
+   "effector": "RightHand",
+   "travel": [
+    0.0001,
+    4.0956
+   ]
+  },
+  "p_back": {
+   "source": "axe:standing walk back",
+   "duration": 1.3667,
+   "peak": 1,
+   "effector": "RightHand",
+   "travel": [
+    0,
+    -0.9104
+   ]
+  },
+  "p_strafe_l": {
+   "source": "ss:sword and shield strafe (3)",
+   "duration": 0.6667,
+   "peak": 0.3,
+   "effector": "RightHand",
+   "travel": [
+    3.4383,
+    0.0001
+   ]
+  },
+  "p_strafe_r": {
+   "source": "ss:sword and shield strafe (4)",
+   "duration": 0.7,
+   "peak": 0.6,
+   "effector": "RightHand",
+   "travel": [
+    -3.358,
+    0
+   ]
+  },
+  "p_light1": {
+   "source": "ss:sword and shield slash",
+   "duration": 1.5,
+   "peak": 0.6,
+   "effector": "RightHand",
+   "travel": [
+    0,
+    0
+   ]
+  },
+  "p_light2": {
+   "source": "ss:sword and shield attack (2)",
+   "duration": 1.3,
+   "peak": 0.6,
+   "effector": "RightHand",
+   "travel": [
+    0.8686,
+    2.0362
+   ]
+  },
+  "p_light3": {
+   "source": "ss:sword and shield attack",
+   "duration": 2.3333,
+   "peak": 1.1667,
+   "effector": "RightHand",
+   "travel": [
+    0.0018,
+    1.541
+   ]
+  },
+  "p_heavy": {
+   "source": "gs:great sword slash",
+   "duration": 1.2667,
+   "peak": 0.5667,
+   "effector": "RightHand",
+   "travel": [
+    0,
+    0
+   ]
+  },
+  "p_guardbreaker": {
+   "source": "gs:great sword kick",
+   "duration": 1.5,
+   "peak": 0.5333,
+   "effector": "RightFoot",
+   "travel": [
+    0,
+    0
+   ]
+  },
+  "p_storm_arc": {
+   "source": "gs:great sword high spin attack",
+   "duration": 1.8667,
+   "peak": 1.1333,
+   "effector": "RightHand",
+   "travel": [
+    -0.0022,
+    1.2265
+   ]
+  },
+  "p_block": {
+   "source": "ss:sword and shield block idle",
+   "duration": 1.3667,
+   "peak": 1.3,
+   "effector": "RightHand",
+   "travel": [
+    0.0002,
+    -0.0003
+   ]
+  },
+  "p_dodge": {
+   "source": "ss:sword and shield crouch",
+   "duration": 0.5667,
+   "peak": 0.2,
+   "effector": "RightHand",
+   "travel": [
+    -0.0468,
+    -0.4732
+   ]
+  },
+  "p_stagger": {
+   "source": "ss:sword and shield impact (3)",
+   "duration": 0.7,
+   "peak": 0.2667,
+   "effector": "RightHand",
+   "travel": [
+    0,
+    -0.0001
+   ]
+  },
+  "p_death": {
+   "source": "ss:sword and shield death",
+   "duration": 2.3,
+   "peak": 1.6,
+   "effector": "RightHand",
+   "travel": [
+    0.0141,
+    -0.5231
+   ]
+  },
+  "p_jump": {
+   "source": "gs:great sword jump (2)",
+   "duration": 0.8333,
+   "peak": 0.1333,
+   "effector": "RightHand",
+   "travel": [
+    0.0019,
+    0.0002
+   ]
+  },
+  "chop": {
+   "source": "axe:standing melee attack downward",
+   "duration": 2.2333,
+   "peak": 0.8333,
+   "effector": "RightHand",
+   "travel": [
+    0.0005,
+    -0.0012
+   ]
+  },
+  "npc_happy": {
+   "source": "af:Happy Idle",
+   "duration": 2,
+   "peak": 1.3667,
+   "effector": "RightHand",
+   "travel": [
+    0.0003,
+    -0.0001
+   ]
+  },
+  "npc_look": {
+   "source": "axe:unarmed idle looking ver. 1",
+   "duration": 11.1333,
+   "peak": 7.6333,
+   "effector": "RightHand",
+   "travel": [
+    0.0002,
+    0
+   ]
+  },
+  "sc_idle": {
+   "source": "axe:standing idle",
+   "duration": 1.7667,
+   "peak": 0.3,
+   "effector": "RightHand",
+   "travel": [
+    0.0001,
+    -0.0002
+   ]
+  },
+  "sc_walk": {
+   "source": "axe:standing walk forward",
+   "duration": 1.3333,
+   "peak": 1,
+   "effector": "RightHand",
+   "travel": [
+    0,
+    1.0024
+   ]
+  },
+  "sc_run": {
+   "source": "axe:standing run forward",
+   "duration": 0.7333,
+   "peak": 0.6333,
+   "effector": "RightHand",
+   "travel": [
+    0,
+    2.4342
+   ]
+  },
+  "sc_slash": {
+   "source": "axe:standing melee attack horizontal",
+   "duration": 2.3667,
+   "peak": 0.9667,
+   "effector": "RightHand",
+   "travel": [
+    -0.0003,
+    -0.0001
+   ]
+  },
+  "sc_stagger": {
+   "source": "axe:standing react large gut",
+   "duration": 1.6,
+   "peak": 0.1333,
+   "effector": "RightHand",
+   "travel": [
+    0,
+    0
+   ]
+  },
+  "sc_guard": {
+   "source": "axe:standing block idle",
+   "duration": 1.6667,
+   "peak": 0.3333,
+   "effector": "RightHand",
+   "travel": [
+    -0.0006,
+    -0.0002
+   ]
+  },
+  "sc_death": {
+   "source": "gs:two handed sword death",
+   "duration": 2.4,
+   "peak": 1.5,
+   "effector": "RightHand",
+   "travel": [
+    -0.0056,
+    -0.3413
+   ]
+  },
+  "bo_idle": {
+   "source": "gs:great sword idle",
+   "duration": 1.9,
+   "peak": 0.3667,
+   "effector": "RightHand",
+   "travel": [
+    0.0004,
+    -0.0002
+   ]
+  },
+  "bo_walk": {
+   "source": "gs:great sword walk",
+   "duration": 1.3333,
+   "peak": 0.3667,
+   "effector": "RightHand",
+   "travel": [
+    0.0014,
+    1.0702
+   ]
+  },
+  "bo_run": {
+   "source": "gs:great sword run",
+   "duration": 0.7333,
+   "peak": 0.0667,
+   "effector": "RightHand",
+   "travel": [
+    0,
+    -2.5333
+   ]
+  },
+  "bo_sweep": {
+   "source": "gs:great sword slash (5)",
+   "duration": 1.3667,
+   "peak": 0.3667,
+   "effector": "RightHand",
+   "travel": [
+    -0.0064,
+    0.0229
+   ]
+  },
+  "bo_slam": {
+   "source": "gs:great sword jump attack",
+   "duration": 2.1667,
+   "peak": 1.0667,
+   "effector": "RightHand",
+   "travel": [
+    -0.0357,
+    1.4393
+   ]
+  },
+  "bo_lunge": {
+   "source": "gs:great sword attack",
+   "duration": 1.2,
+   "peak": 0.4667,
+   "effector": "RightHand",
+   "travel": [
+    0,
+    0
+   ]
+  },
+  "bo_stagger": {
+   "source": "gs:great sword impact",
+   "duration": 0.8333,
+   "peak": 0.4667,
+   "effector": "RightHand",
+   "travel": [
+    -0.0017,
+    -0.0014
+   ]
+  },
+  "bo_death": {
+   "source": "gs:two handed sword death (2)",
+   "duration": 2.4,
+   "peak": 0.9,
+   "effector": "RightHand",
+   "travel": [
+    -0.0263,
+    0.5207
+   ]
+  }
+ }
+}

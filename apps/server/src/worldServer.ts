@@ -41,6 +41,12 @@ const TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
+  '.glb': 'model/gltf-binary',
+  '.gltf': 'model/gltf+json',
+  '.bin': 'application/octet-stream',
+  '.webp': 'image/webp',
+  '.ktx2': 'image/ktx2',
+  '.wasm': 'application/wasm',
 };
 
 function serveStatic(root: string, req: IncomingMessage, res: ServerResponse): void {
@@ -63,7 +69,10 @@ function serveStatic(root: string, req: IncomingMessage, res: ServerResponse): v
     return;
   }
   const type = TYPES[extname(file)] ?? 'application/octet-stream';
-  const cache = file.includes(`${sep}assets${sep}`) ? 'public, max-age=31536000, immutable' : 'no-cache';
+  // Hashed build output (/assets/) and content-versioned files (?v=<hash>, e.g. character models)
+  // never change under the same URL; everything else is revalidated.
+  const immutable = file.includes(`${sep}assets${sep}`) || url.searchParams.has('v');
+  const cache = immutable ? 'public, max-age=31536000, immutable' : 'no-cache';
   res.writeHead(200, { 'content-type': type, 'cache-control': cache, 'x-content-type-options': 'nosniff' });
   createReadStream(file).pipe(res);
 }
