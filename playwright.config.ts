@@ -5,10 +5,9 @@ const isCI = !!process.env.CI;
 /**
  * Browser tests run against the PRODUCTION build (vite preview).
  * Locally: the installed Chrome (no Playwright browser download). Set PW_CHANNEL=msedge to use Edge.
- * In CI (process.env.CI): Playwright's bundled full Chromium, unless PW_CHANNEL is set.
+ * In CI (process.env.CI): Playwright's bundled Chromium, unless PW_CHANNEL is set.
  */
-// 'chromium' = full Chromium in new headless mode; the default headless shell throttles animation frames.
-const channel = process.env.PW_CHANNEL ?? (isCI ? 'chromium' : 'chrome');
+const channel = process.env.PW_CHANNEL ?? (isCI ? undefined : 'chrome');
 
 // GPU flags tuned for Windows. ANGLE's d3d11 backend doesn't exist on Linux/macOS,
 // so there we let Chromium render WebGL with SwiftShader instead.
@@ -27,10 +26,6 @@ export default defineConfig({
     baseURL: 'http://localhost:4178',
     channel,
     viewport: { width: 1920, height: 1080 },
-    // CI has no GPU: SwiftShader at full resolution drops below the game's 20 fps
-    // time-step floor, so game time falls behind the tests' real-time waits.
-    // Half device scale makes the game render a quarter of the pixels (CSS layout unchanged).
-    deviceScaleFactor: isCI ? 0.5 : undefined,
     headless: process.env.PW_HEADED ? false : true,
     launchOptions: { args: gpuArgs },
     trace: isCI ? 'retain-on-failure' : 'off',

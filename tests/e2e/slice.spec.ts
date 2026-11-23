@@ -21,23 +21,6 @@ const state = (page: Page) => page.evaluate(() => (window as unknown as { __allo
 const call = (page: Page, fn: string, ...args: unknown[]) =>
   page.evaluate(([f, a]) => (window as unknown as Record<string, Record<string, (...x: unknown[]) => unknown>>).__alloy[f as string](...(a as unknown[])), [fn, args] as const);
 
-// CI has no GPU: at the default preset SwiftShader runs below the game's 20 fps time-step
-// floor, so game time lags the real-time waits below. Use the game's own "low" preset there.
-// An init script re-applies it after newGame() clears localStorage and reloads.
-if (process.env.CI) {
-  test.beforeEach(async ({ context }) => {
-    await context.addInitScript(() => {
-      try {
-        const key = 'alloy-frontier.settings.v1';
-        const s = JSON.parse(localStorage.getItem(key) ?? '{}') as Record<string, unknown>;
-        localStorage.setItem(key, JSON.stringify({ ...s, quality: 'low' }));
-      } catch {
-        /* ignore */
-      }
-    });
-  });
-}
-
 async function newGame(page: Page) {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
