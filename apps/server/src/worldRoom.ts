@@ -7,11 +7,11 @@
  * (computed from the server-side weapon). Client-owned: the player's own movement
  * (sanity-checked), and a guest's character (kept in their browser).
  */
-import { ATTACKS, dist2, forwardPoint, inArc, inCircle, type AttackId, type Vec2 } from '@alloy/game-rules';
+import { ATTACKS, checkMove, dist2, forwardPoint, inArc, inCircle, isNear, newMoveGuard, resetMoveGuard, type AttackId, type MoveGuard, type Vec2 } from '@alloy/game-rules';
 import { WORLD_LIMITS, WORLD_PROTOCOL, parseWorldClientMsg, type AvatarState, type CharAction, type EnemyNetState, type WorldPlayerInfo, type WorldServerMsg } from '@alloy/protocol';
 import { GATHER_SECONDS, RANGE_SLACK, applyAction, damageAgainst, playerHit, rewardHit, rewardHitTaken, rewardKill } from '@alloy/session';
 import type { CharacterHost, LiveCharacter } from './characters';
-import { ENEMY_SPAWNS, EnemySim, buildWorldColliders, type ColliderWorld } from '@alloy/world';
+import { ENEMY_SPAWNS, EnemySim, RESPAWN_POINT, buildWorldColliders, type ColliderWorld } from '@alloy/world';
 
 const PLAYER_RADIUS = 0.4;
 const CREDIT_WINDOW_MS = 30_000;
@@ -38,6 +38,9 @@ interface Member {
   hits: number;
   /** The server-owned character of a signed-in player (null for guests). */
   char: LiveCharacter | null;
+  /** Speed check of reported positions (null until the first position). */
+  move: MoveGuard | null;
+  lastCorrectAt: number;
 }
 
 export interface WorldStats {
@@ -49,6 +52,8 @@ export interface WorldStats {
   kills: number;
   acts: number;
   rejectedActs: number;
+  /** Reported positions refused by the speed check. */
+  speedRejected: number;
   /**
    * Damage signed-in players dealt, by damage type and by weapon family (unarmed: 'unarmed').
    * Groundwork for an adapting world (docs/design-backlog.md); not persisted yet.
@@ -70,12 +75,14 @@ export class WorldRoom {
   private contributors = new Map<string, Map<string, number>>();
   private lastSent = new Map<string, string>();
   private nextId = 1;
-  stats: WorldStats = { malformed: 0, rateLimited: 0, rejectedHits: 0, acceptedHits: 0, enemyHitsOnPlayers: 0, kills: 0, acts: 0, rejectedActs: 0, damageByType: {}, damageByFamily: {} };
+  stats: WorldStats = { malformed: 0, rateLimited: 0, rejectedHits: 0, acceptedHits: 0, enemyHitsOnPlayers: 0, kills: 0, acts: 0, rejectedActs: 0, speedRejected: 0, damageByType: {}, damageByFamily: {} };
 
   constructor(
     private now: () => number = () => Date.now(),
     private host: CharacterHost | null = null,
     private rng: () => number = Math.random,
+    /** Skip the speed check (debug teleports in local tests). Never set on a hosted server. */
+    readonly allowTeleport = false,
   ) {
     const colliders = worldColliders();
     this.enemies = ENEMY_SPAWNS.filter((s) => s.type !== 'dummy').map((s) => new EnemySim(s, colliders));
@@ -126,6 +133,7 @@ export class WorldRoom {
     if (msg.t === 'state') {
       const first = me.state === null;
       const wasDead = me.state?.ph === 'dead';
+      if (!this.allowTeleport) msg.s = this.guardMove(me, msg.s, wasDead, t);
       me.state = msg.s;
       if (me.char) this.trackAvatar(me.char, msg.s, wasDead);
       // Players appear to others once they are actually in the world (not on the title screen).
@@ -134,6 +142,42 @@ export class WorldRoom {
     else if (msg.t === 'hit') this.hit(me, msg.enemyId, msg.attackId, msg.damage, msg.stagger, msg.guardBreak, msg.crit);
     else if (msg.t === 'act') this.act(me, msg.id, msg.a);
     return me.id;
+  }
+
+  /**
+   * Speed check: a reported position that moves further than the player could have is
+   * replaced with the last accepted one (others never see the jump; range checks use it)
+   * and the browser is told to move back. Respawning at the respawn point after a death is
+   * allowed. A signed-in player's first position must be near where the server saved them,
+   * so reconnecting can't be used to teleport.
+   */
+  private guardMove(me: Member, s: AvatarState, wasDead: boolean, t: number): AvatarState {
+    const g = me.move;
+    if (!g) {
+      const saved = me.char?.session.data.player;
+      if (saved && !isNear(s, saved) && !isNear(s, RESPAWN_POINT)) {
+        me.move = newMoveGuard(saved.x, saved.z, t);
+        return this.refuseMove(me, s, t);
+      }
+      me.move = newMoveGuard(s.x, s.z, t);
+      return s;
+    }
+    if (wasDead && s.ph !== 'dead' && isNear(s, RESPAWN_POINT)) {
+      resetMoveGuard(g, s.x, s.z, t);
+      return s;
+    }
+    return checkMove(g, s.x, s.z, t) ? s : this.refuseMove(me, s, t);
+  }
+
+  private refuseMove(me: Member, s: AvatarState, t: number): AvatarState {
+    const g = me.move!;
+    this.stats.speedRejected++;
+    // At most two corrections a second: the browser needs a moment to apply one.
+    if (t - me.lastCorrectAt >= 500) {
+      me.lastCorrectAt = t;
+      me.send({ t: 'correct', x: g.x, z: g.z });
+    }
+    return { ...s, x: g.x, z: g.z, spd: 0 };
   }
 
   /** The character follows the avatar: position for the save, and deaths for the stats. */
@@ -205,7 +249,7 @@ export class WorldRoom {
       return null;
     }
     const id = `p${this.nextId++}`;
-    const m: Member = { id, name, accountId, close, state: null, send, windowStart: this.now(), msgs: 0, hits: 0, char };
+    const m: Member = { id, name, accountId, close, state: null, send, windowStart: this.now(), msgs: 0, hits: 0, char, move: null, lastCorrectAt: 0 };
     this.members.set(id, m);
     send({ t: 'welcome', id, players: this.infos(), enemies: this.enemies.map(netState), protocol: WORLD_PROTOCOL });
     if (char) this.sendChar(m);

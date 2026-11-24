@@ -62,9 +62,9 @@ export function playerAnimRequest(i: PlayerAnimInput): AnimRequest {
 }
 
 export const PLAYER_RADIUS = 0.4;
-export const WALK_SPEED = 4.6;
-export const SPRINT_SPEED = 7.6;
-export const BLOCK_SPEED = 2.2;
+// Speeds live in the shared rules so the server's speed check matches them.
+export { BLOCK_SPEED, SPRINT_SPEED, WALK_SPEED } from '@alloy/game-rules';
+import { BLOCK_SPEED, SPRINT_SPEED, WALK_SPEED } from '@alloy/game-rules';
 
 export interface MoveInput {
   /** Desired world-space direction (unnormalised, length 0..1). */
