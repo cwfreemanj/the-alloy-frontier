@@ -4,16 +4,16 @@
  */
 import * as THREE from 'three';
 import {
+  ATTRIBUTES,
+  STAT_POINTS_PER_RANK,
+  incomingContest,
   ATTACKS,
   DODGE,
-  computeOutgoingHit,
   dist2,
   forwardPoint,
   inArc,
   inCircle,
   mitigate,
-  weaponMasteryDamageBonus,
-  weaponXpForHit,
   yawTo,
   type CombatContext,
   type CombatEvent,
@@ -29,10 +29,11 @@ import { PLAYER_RADIUS, Player } from '../entities/Player';
 import { Npc, ResourceNode } from '../entities/WorldObjects';
 import { Effects } from '../fx/Effects';
 import { SaveSystem } from '../state/Save';
-import { Session, applyAction, ensureNodes, newSessionData, regrowNodes, rewardKill, type CharAction, type SessionData, type SessionEvent } from '../state/Session';
+import { Session, applyAction, characterStats, ensureNodes, newSessionData, regrowNodes, hitAgainst, rewardHit, rewardHitTaken, rewardKill, type CharAction, type SessionData, type SessionEvent } from '../state/Session';
+import { CharacterWindow, type CharacterTab } from '../ui/CharacterWindow';
 import { ForgePanel } from '../ui/ForgePanel';
 import { Hud } from '../ui/Hud';
-import { InventoryPanel, MerchantPanel, dialogPanel, pausePanel, summaryPanel, titleScreen, type Settings } from '../ui/Panels';
+import { MerchantPanel, dialogPanel, pausePanel, summaryPanel, titleScreen, type Settings } from '../ui/Panels';
 import { h } from '../ui/dom';
 import { ALL_RESOURCE_NODES, ENEMY_SPAWNS, FORGE_ANVIL, NPCS, RESPAWN_POINT, ZONES, zoneAt, type Zone } from '@alloy/world';
 import { terrainHeight } from '@alloy/world';
@@ -320,6 +321,7 @@ export class Game {
     this.session.data = data;
     for (const e of events) this.session.notify(e);
     if ((this.session.equipped()?.itemId ?? null) !== before) this.player.setWeapon(this.session.equipped());
+    this.applyCharacterStats();
     this.forgePanel?.render();
     this.panel?.render();
   }
@@ -426,8 +428,8 @@ export class Game {
       else if (r.guarded) this.hud.damageNumber(sp.x, sp.y - 24, 'GUARDED — use Guardbreaker (R)', 'info');
       else if (r.staggered) this.hud.damageNumber(sp.x, sp.y - 24, 'STAGGERED', 'info');
     }
-    // Signed in, the server grants weapon XP for the hits it accepts.
-    if (this.mode !== 'account') this.session.gainWeaponXp(weaponXpForHit(e.def.kind, r.damage));
+    // Signed in, the server grants weapon and attribute XP for the hits it accepts.
+    if (this.mode !== 'account') rewardHit(this.session, e.spawn.type, r.damage, this.player.combat.attack?.id ?? 'light1', r.crit);
   }
 
   // ---------------- Setup ----------------
@@ -482,7 +484,11 @@ export class Game {
         case 'progress':
           if (e.kind === 'weapon') this.hud.toast(`Longsword mastery ${this.session.weaponLevel} (+${e.levels})`, 'good');
           if (e.kind === 'smith') this.hud.toast(`Blacksmithing mastery ${this.session.smithMastery}`, 'good');
-          if (e.kind === 'adventurer') this.hud.toast(`Adventurer rank ${this.session.data.progression.adventurer.rank}`, 'good');
+          if (e.kind === 'adventurer') this.hud.toast(`Adventurer rank ${this.session.data.progression.adventurer.rank} · +${STAT_POINTS_PER_RANK * e.levels} stat points (O)`, 'good');
+          if (e.kind === 'attribute' && e.attr) {
+            this.hud.toast(`${ATTRIBUTES[e.attr].name} ${this.session.attributes[e.attr].level}`, 'good');
+            this.applyCharacterStats();
+          }
           break;
         case 'quest_step':
           this.hud.toast(`✓ ${e.title}${e.next ? ` → ${e.next}` : ''}`, 'good');
@@ -494,10 +500,15 @@ export class Game {
         case 'inventory':
           this.forgePanel?.render();
           break;
+        case 'stats':
+          this.applyCharacterStats();
+          this.panel?.render();
+          break;
       }
     });
     const p = data.player;
     this.player.spawn(p.x, p.z, p.yaw);
+    this.applyCharacterStats();
     this.player.combat.revive();
     this.player.combat.health = Math.max(1, Math.min(this.player.combat.maxHealth, p.health));
     this.player.setWeapon(this.session.equipped());
@@ -661,12 +672,17 @@ export class Game {
     );
   }
 
-  openInventory(): void {
-    const p = new InventoryPanel(
+  openInventory(tab: CharacterTab = 'inventory'): void {
+    const name = this.mode === 'account' ? (this.accounts?.username ?? 'Character') : this.playerName || 'Character';
+    const p = new CharacterWindow(
       this.session,
+      tab,
+      name,
       () => this.closeModal(),
       (id) => void this.act({ k: 'equip', item: id }),
       async (id) => (await this.act({ k: 'discard', item: id })).ok,
+      (attr, n) => this.act({ k: 'allocate', attr, n }),
+      () => this.act({ k: 'respec' }),
     );
     this.setModal('inventory', p.el);
     this.panel = p;
@@ -786,9 +802,19 @@ export class Game {
       if (this.modal !== null) this.closeModal();
       else this.openPause();
     }
-    if (this.input.pressed('inventory') && this.started) {
-      if (this.modal === 'inventory') this.closeModal();
-      else if (this.modal === null) this.openInventory();
+    // I / O / U open the character window on its Inventory / Character / Skills tab;
+    // the same key again closes it.
+    const tabKeys: Array<['inventory' | 'character' | 'skills', CharacterTab]> = [
+      ['inventory', 'inventory'],
+      ['character', 'character'],
+      ['skills', 'skills'],
+    ];
+    for (const [action, tab] of tabKeys) {
+      if (!this.input.pressed(action) || !this.started) continue;
+      const w = this.panel instanceof CharacterWindow ? this.panel : null;
+      if (this.modal === 'inventory' && w?.tab === tab) this.closeModal();
+      else if (this.modal === 'inventory' && w) w.show(tab);
+      else if (this.modal === null) this.openInventory(tab);
     }
   }
 
@@ -796,11 +822,20 @@ export class Game {
     return this.session.equipped();
   }
 
+  /** Max health and stamina come from the character's attributes (shared rules). */
+  private applyCharacterStats(): void {
+    const st = characterStats(this.session);
+    const c = this.player.combat;
+    c.maxHealth = st.maxHealth;
+    c.health = Math.min(c.health, c.maxHealth);
+    c.stamina.max = st.maxStamina;
+    c.stamina.current = Math.min(c.stamina.current, c.stamina.max);
+  }
+
   private combatContext(): CombatContext {
     const w = this.weapon();
-    const stats = w?.result ?? { damage: 8, attackSpeed: 1, stagger: 8, staminaCostMultiplier: 1, critChance: 0 };
     return {
-      weapon: stats,
+      weapon: characterStats(this.session).weapon,
       abilities: w?.result.imbuements ?? [],
       abilityCooldowns: { storm_arc: IMBUEMENTS.storm_arc.cooldown },
     };
@@ -866,7 +901,7 @@ export class Game {
     this.lastAvatarPos = this.player.pos2;
 
     this.updateEnemies(dt);
-    this.resolvePlayerHits(ctx);
+    this.resolvePlayerHits();
     this.resolveEnemyHits();
 
     // NPCs look at the player when near
@@ -989,7 +1024,7 @@ export class Game {
     this.lockTarget = best;
   }
 
-  private resolvePlayerHits(ctx: CombatContext): void {
+  private resolvePlayerHits(): void {
     const c = this.player.combat;
     if (!c.hitWindowOpen() || !c.attack) return;
     const a = c.attack;
@@ -998,8 +1033,7 @@ export class Game {
       if (Math.abs(e.position.y - this.player.position.y) > 2.5) continue;
       if (!inArc(this.player.pos2, this.player.yaw, e.pos2, a.range, a.arcDeg, e.def.radius)) continue;
       if (!c.tryRegisterHit(e.id)) continue;
-      const bonus = weaponMasteryDamageBonus(this.session.weaponLevel);
-      const out = computeOutgoingHit(ctx.weapon, a, bonus, Math.random());
+      const out = hitAgainst(this.session, a, Math.random(), e.def.attributes);
       const dmg = mitigate(out.damage, e.def.defense);
       if (this.online.online && e.def.kind !== 'dummy') {
         // The server decides the outcome; show impact now, numbers when it answers.
@@ -1027,7 +1061,7 @@ export class Game {
         else if (res.guarded) this.hud.damageNumber(sp.x, sp.y - 24, 'GUARDED — use Guardbreaker (R)', 'info');
         else if (res.staggered) this.hud.damageNumber(sp.x, sp.y - 24, 'STAGGERED', 'info');
       }
-      if (this.mode !== 'account') this.session.gainWeaponXp(weaponXpForHit(e.def.kind, res.damage));
+      if (this.mode !== 'account') rewardHit(this.session, e.spawn.type, res.damage, a.id, out.crit);
       if (res.killed) this.onEnemyKilled(e);
     }
   }
@@ -1073,7 +1107,11 @@ export class Game {
     if (!c.alive) return;
     const toEnemy = new THREE.Vector2(e.position.x - this.player.position.x, e.position.z - this.player.position.z).normalize();
     const facingDot = toEnemy.dot(this.player.forward());
-    const out = c.receiveHit({ rawDamage: damage, facingDot, heavy });
+    // The enemy's Strength against your Vitality: how hard the hit lands.
+    const landed = damage * incomingContest(e.def.attributes.strength, this.session.attributeTotals().vitality);
+    const out = c.receiveHit({ rawDamage: landed, facingDot, heavy });
+    // Signed in, the server grants Vitality XP when it sends the attack.
+    if (this.mode !== 'account' && e.def.kind !== 'dummy') rewardHitTaken(this.session, damage);
     const sp = this.hud.project(this.camera, this.player.position, 2, window.innerWidth, window.innerHeight);
     if (out.dodged) {
       if (sp.visible) this.hud.damageNumber(sp.x, sp.y, 'DODGED', 'info');
@@ -1335,6 +1373,9 @@ export class Game {
           phase: c.phase,
           attack: c.attack?.id ?? null,
           health: c.health,
+          maxHealth: c.maxHealth,
+          maxStamina: c.stamina.max,
+          attributes: JSON.parse(JSON.stringify(this.session.attributes)) as Record<string, { level: number; xp: number }>,
           stamina: +c.stamina.current.toFixed(3),
           quest: { step: this.session.step()?.id ?? 'complete', index: this.session.data.quest.stepIndex },
           totals: this.session.totals(),

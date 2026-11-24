@@ -3,6 +3,7 @@
  * deliberately separate systems and must never be conflated.
  */
 import type { WeaponFamily } from '@alloy/item-gen';
+import { createAllocated, createAttributes, type AttributeLevels, type AttributeState } from './attributes';
 
 export interface ProgressionState {
   version: 1;
@@ -10,6 +11,10 @@ export interface ProgressionState {
   weaponMastery: Record<WeaponFamily, { level: number; xp: number }>;
   /** Open-ended profession mastery (1-100 foundational ranks, continued growth proposed). */
   professions: { blacksmithing: { mastery: number; xp: number } };
+  /** Grow-by-use attributes. Optional: saves from before attributes have none (filled on load). */
+  attributes?: AttributeState;
+  /** Stat points spent per attribute. Unspent points are derived from the adventurer rank. */
+  allocated?: AttributeLevels;
 }
 
 export const WEAPON_MASTERY_MAX = 30;
@@ -23,6 +28,8 @@ export function createProgression(): ProgressionState {
     adventurer: { rank: 1, xp: 0 },
     weaponMastery: { longsword: { level: 1, xp: 0 } },
     professions: { blacksmithing: { mastery: STARTING_SMITH_MASTERY, xp: 0 } },
+    attributes: createAttributes(),
+    allocated: createAllocated(),
   };
 }
 

@@ -137,6 +137,41 @@ describe('server-owned characters', () => {
     expect(data.inventory.coins).toBe(coins + ENEMIES.scavenger.coins[1]);
     expect(data.stats.kills.scavenger).toBe(1);
     expect(data.progression.weaponMastery.longsword.xp + data.progression.weaponMastery.longsword.level).toBeGreaterThan(1);
+    // Attributes grow from the hits the server accepted and from the kill.
+    const at = data.progression.attributes!;
+    expect(at.dexterity.xp + at.dexterity.level).toBeGreaterThan(1);
+    expect(at.strength.xp + at.strength.level).toBeGreaterThan(1);
+    expect(at.endurance.xp + at.endurance.level).toBeGreaterThan(1);
+  });
+
+  it('lets a signed-in player spend only the stat points the server says they earned', async () => {
+    const ctx = setup();
+    const p = await signedIn(ctx, 'acct-pts');
+    expect(p.act({ k: 'allocate', attr: 'strength', n: 3 })).toMatchObject({ ok: false, error: 'no_points' });
+    p.char.session.gainAdventurer(100); // rank 2: 3 points
+    expect(p.act({ k: 'allocate', attr: 'strength', n: 3 }).ok).toBe(true);
+    expect(p.lastChar()!.data.progression.allocated!.strength).toBe(3);
+    expect(p.act({ k: 'allocate', attr: 'strength', n: 1 })).toMatchObject({ ok: false, error: 'no_points' });
+    // Malformed requests never reach the rules.
+    const before = ctx.room.stats.malformed;
+    p.act({ k: 'allocate', attr: 'luck', n: 1 });
+    p.act({ k: 'allocate', attr: 'strength', n: -5 });
+    expect(ctx.room.stats.malformed).toBe(before + 2);
+    expect(p.act({ k: 'respec' }).ok).toBe(true);
+    expect(p.lastChar()!.data.progression.allocated!.strength).toBe(0);
+  });
+
+  it('grows Vitality from the enemy attacks the server aims at a signed-in player', async () => {
+    const ctx = setup();
+    const p = await signedIn(ctx, 'acct-vit');
+    const e = ctx.room.enemies.find((x) => x.id === scav.id)!;
+    for (let i = 0; i < 20 * 20 && ctx.room.stats.enemyHitsOnPlayers === 0; i++) {
+      p.at(e.x + 1, e.z);
+      ctx.clock.advance(50);
+      ctx.room.step(0.05);
+    }
+    expect(ctx.room.stats.enemyHitsOnPlayers).toBeGreaterThan(0);
+    expect(p.char.session.attributes.vitality.xp).toBeGreaterThan(0);
   });
 
   it('saves changed characters after a delay and on leaving, and reloads them', async () => {

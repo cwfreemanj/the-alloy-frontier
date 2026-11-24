@@ -10,7 +10,10 @@ type AlloyState = {
   pos: { x: number; z: number };
   phase: string;
   health: number;
+  maxHealth: number;
+  maxStamina: number;
   stamina: number;
+  attributes: Record<string, { level: number; xp: number }>;
   quest: { step: string; index: number };
   totals: Record<string, number>;
   equipped: { damage: number; source: string; imbuements: string[] } | null;
@@ -218,6 +221,59 @@ test('full loop: gather, forge (quick + masterwork UI), equip, elite, report, sa
   expect(after.equipped).toEqual(before.equipped);
   expect(after.totals).toEqual(before.totals);
   expect(after.enemies.find((e) => e.id === 'warden')!.state).toBe('dead');
+});
+
+test('character window: tabs, attributes that grow by use, derived stats', async ({ page }) => {
+  const errors = await newGame(page);
+  // O opens the Character tab; I and U switch tabs; the same key again closes the window.
+  await page.keyboard.press('KeyO');
+  const win = page.getByTestId('character-window');
+  await expect(win).toHaveAttribute('data-tab', 'character');
+  await expect(page.getByTestId('attr-strength')).toHaveText('1');
+  await expect(win.locator('[data-stat="Max health"]')).toHaveText('200');
+  await expect(win.locator('[data-slot="main"]')).toContainText('Empty');
+  await expect(win.locator('[data-slot="head"]')).toContainText('Coming soon');
+  await page.keyboard.press('KeyI');
+  await expect(win).toHaveAttribute('data-tab', 'inventory');
+  await page.getByTestId('tab-skills').click();
+  await expect(page.getByTestId('character-window')).toHaveAttribute('data-tab', 'skills');
+  await expect(page.getByTestId('skill-smith')).toContainText('Blacksmithing');
+  await page.keyboard.press('KeyU');
+  await expect.poll(async () => (await state(page)).modal).toBeNull();
+
+  // Mining ore grows Strength and Endurance (the shared rules, run locally for a guest).
+  await call(page, 'teleport', -6, 38.2);
+  await call(page, 'face', 0);
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId('prompt')).toContainText('Gather');
+  await page.keyboard.press('KeyE');
+  await expect.poll(async () => (await state(page)).totals.iron_ore, { timeout: 5000 }).toBeGreaterThan(0);
+  const a = (await state(page)).attributes;
+  expect(a.strength.xp).toBeGreaterThan(0);
+  expect(a.endurance.xp).toBeGreaterThan(0);
+
+  // A Vitality level raises max health in play and on the character sheet.
+  await page.evaluate(() => (window as unknown as { __alloy: { session: () => { gainAttributes: (g: Array<[string, number]>) => void } } }).__alloy.session().gainAttributes([['vitality', 40]]));
+  await expect.poll(async () => (await state(page)).maxHealth).toBe(205);
+  await page.keyboard.press('KeyO');
+  await expect(page.getByTestId('attr-vitality')).toHaveText('2');
+  await expect(page.getByTestId('character-window').locator('[data-stat="Max health"]')).toHaveText('205');
+
+  // Stat points: none at rank 1; 3 per rank after. Spending adds to the total; Reset refunds.
+  await expect(page.getByTestId('unspent-points')).toHaveText('0');
+  await expect(page.getByTestId('add-strength')).toBeDisabled();
+  await page.evaluate(() => (window as unknown as { __alloy: { session: () => { gainAdventurer: (xp: number) => void } } }).__alloy.session().gainAdventurer(100));
+  await page.keyboard.press('KeyO');
+  await page.keyboard.press('KeyO');
+  await expect(page.getByTestId('unspent-points')).toHaveText('3');
+  const str = Number(await page.getByTestId('attr-strength').textContent());
+  await page.getByTestId('add-strength').click();
+  await expect(page.getByTestId('attr-strength')).toHaveText(String(str + 1));
+  await expect(page.getByTestId('unspent-points')).toHaveText('2');
+  await page.getByTestId('respec').click();
+  await expect(page.getByTestId('unspent-points')).toHaveText('3');
+  await expect(page.getByTestId('attr-strength')).toHaveText(String(str));
+  expect(errors).toEqual([]);
 });
 
 test('performance capture (1920x1080, medium preset)', async ({ page }) => {

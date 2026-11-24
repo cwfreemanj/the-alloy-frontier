@@ -17,6 +17,19 @@ import {
 } from '@alloy/crafting';
 import {
   QUEST_EDGE_YOU_MAKE,
+  ATTRIBUTE_XP,
+  ALLOCATED_MAX,
+  addAttributeXp,
+  attributeBonuses,
+  attributeTotals,
+  earnedStatPoints,
+  normalizeAllocated,
+  normalizeAttributes,
+  spentStatPoints,
+  type AttributeBonuses,
+  type AttributeId,
+  type AttributeLevels,
+  type AttributeState,
   addAdventurerXp,
   addSmithXp,
   addWeaponXp,
@@ -37,7 +50,9 @@ import type { SessionData } from '@alloy/save';
 
 export type SessionEvent =
   | { type: 'inventory' }
-  | { type: 'progress'; kind: 'weapon' | 'smith' | 'adventurer'; levels: number }
+  /** Stat points were spent or refunded. */
+  | { type: 'stats' }
+  | { type: 'progress'; kind: 'weapon' | 'smith' | 'adventurer' | 'attribute'; levels: number; attr?: AttributeId }
   | { type: 'quest_step'; title: string; next: string | null }
   | { type: 'quest_complete' }
   | { type: 'toast'; text: string; tone?: 'info' | 'good' | 'warn' }
@@ -68,6 +83,8 @@ export class Session {
 
   constructor(data: SessionData) {
     this.data = data;
+    data.progression.attributes = normalizeAttributes(data.progression.attributes);
+    data.progression.allocated = normalizeAllocated(data.progression.allocated);
     this.txCounter = data.inventory.journal.length + 1;
   }
 
@@ -97,6 +114,48 @@ export class Session {
   }
   get weaponLevel(): number {
     return this.data.progression.weaponMastery.longsword.level;
+  }
+  get attributes(): AttributeState {
+    return (this.data.progression.attributes ??= normalizeAttributes(undefined));
+  }
+  /** Stat points spent per attribute. */
+  get allocated(): AttributeLevels {
+    return (this.data.progression.allocated ??= normalizeAllocated(undefined));
+  }
+  /** One total per attribute: trained level + allocated points. */
+  attributeTotals(): AttributeLevels {
+    return attributeTotals(this.attributes, this.allocated);
+  }
+  /** Stat points earned (3 per adventurer rank) and not yet spent. */
+  get unspentPoints(): number {
+    return Math.max(0, earnedStatPoints(this.data.progression.adventurer.rank) - spentStatPoints(this.allocated));
+  }
+  /** What the character's attributes add (damage, crit, max health, max stamina). */
+  bonuses(): AttributeBonuses {
+    return attributeBonuses(this.attributeTotals());
+  }
+  /** Spend stat points on one attribute. */
+  allocate(id: AttributeId, n: number): { ok: true } | { ok: false; error: string; message: string } {
+    if (!Number.isInteger(n) || n < 1) return { ok: false, error: 'invalid_quantity', message: 'Invalid number of points.' };
+    if (n > this.unspentPoints) return { ok: false, error: 'no_points', message: 'Not enough stat points.' };
+    if (this.allocated[id] + n > ALLOCATED_MAX) return { ok: false, error: 'attribute_cap', message: `At most ${ALLOCATED_MAX} points can go into one attribute.` };
+    this.allocated[id] += n;
+    this.emit({ type: 'stats' });
+    return { ok: true };
+  }
+  /** Refund every spent stat point (free for now). */
+  respec(): number {
+    const n = spentStatPoints(this.allocated);
+    this.data.progression.allocated = normalizeAllocated(undefined);
+    if (n > 0) this.emit({ type: 'stats' });
+    return n;
+  }
+  /** Grow attributes by use; announces each level-up. */
+  gainAttributes(gains: Array<[AttributeId, number]>): void {
+    for (const [id, xp] of gains) {
+      const levels = addAttributeXp(this.attributes, id, xp);
+      if (levels > 0) this.emit({ type: 'progress', kind: 'attribute', attr: id, levels });
+    }
   }
   equipped(): ItemInstance | null {
     return equippedWeapon(this.data.inventory);
@@ -204,6 +263,7 @@ export class Session {
     const g = addSmithXp(this.data.progression, xp);
     this.data.progression = g.state;
     if (g.levelsGained > 0) this.emit({ type: 'progress', kind: 'smith', levels: g.levelsGained });
+    this.gainAttributes(ATTRIBUTE_XP.forge());
     this.emit({ type: 'toast', text: `+${xp} blacksmithing XP`, tone: 'good' });
     this.emit({ type: 'inventory' });
     this.quest({ type: 'event', event: req.mode === 'quick' ? 'craft_quick' : 'craft_masterwork' });
