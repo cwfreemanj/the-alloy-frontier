@@ -113,7 +113,7 @@ export class Hud {
       this.banner,
       this.perf,
       this.death,
-      h('div', { class: 'hint-line' }, 'Esc: menu · I: inventory · F3: performance'),
+      h('div', { class: 'hint-line' }, 'Esc: menu · I: inventory · O: character · U: skills · F3: performance'),
     );
     parent.append(this.root);
   }

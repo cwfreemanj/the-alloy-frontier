@@ -19,6 +19,8 @@ export type Action =
   | 'lock'
   | 'interact'
   | 'inventory'
+  | 'character'
+  | 'skills'
   | 'camLeft'
   | 'camRight'
   | 'camUp'
@@ -43,6 +45,8 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   lock: ['Tab', 'Mouse1', 'KeyT'],
   interact: ['KeyE'],
   inventory: ['KeyI'],
+  character: ['KeyO'],
+  skills: ['KeyU'],
   camLeft: ['ArrowLeft'],
   camRight: ['ArrowRight'],
   camUp: ['ArrowUp'],
@@ -136,7 +140,7 @@ export class Input {
   }
 
   pressed(a: Action): boolean {
-    if (!this.enabled && a !== 'pause' && a !== 'inventory' && a !== 'perf') return false;
+    if (!this.enabled && a !== 'pause' && a !== 'inventory' && a !== 'character' && a !== 'skills' && a !== 'perf') return false;
     return this.bindings[a].some((c) => this.pressedThisFrame.has(c));
   }
 

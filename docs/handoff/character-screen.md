@@ -36,9 +36,9 @@ Notes:
 ## Stages
 - [x] 1. Attribute rules + tests (`game-rules`), session hooks, `characterStats()` in `session`
 - [x] 2. Server awards attribute XP (hits landed, hits sent to player, gathers, forges, kills)
-- [ ] 3. Client uses derived stats (damage, crit, max health, max stamina); guest awards
-- [ ] 4. Tabbed window: Character / Inventory / Skills (replaces `InventoryPanel`)
-- [ ] 5. e2e coverage for the window; typecheck, unit, build, e2e; PR
+- [x] 3. Client uses derived stats (damage, crit, max health, max stamina); guest awards
+- [x] 4. Tabbed window: Character / Inventory / Skills (replaces `InventoryPanel`)
+- [x] 5. e2e coverage for the window; typecheck, unit, build, e2e; PR
 
 ## Current state
 Stages 1-2 done and verified: `npm run typecheck` clean, `npm test` passes (unit tests for
@@ -53,7 +53,20 @@ the rules in `packages/game-rules/test/attributes.test.ts`, session hooks in
   enemy attack reaches a signed-in player.
 No protocol bump: `char` data just gains an optional field; old clients ignore the new event kind.
 
-Next: stage 3 (client uses `characterStats`, guest awards in `Game.ts`).
+Stages 3-4 done:
+- Client (`Game.ts`): `applyCharacterStats()` sets max health/stamina from `characterStats`;
+  combat uses the derived weapon and damage bonus; guests call `rewardHit` / `rewardHitTaken`.
+- Window: `apps/web/src/ui/CharacterWindow.ts` replaces `InventoryPanel` (removed from
+  `Panels.ts`). Keys: I = Inventory, O = Character, U = Skills (`core/Input.ts`); the same key
+  again closes it. Styles under "Character window" in `ui/styles.css`.
+- Checked by eye in the browser at 1366x800 and 800x600.
+- e2e: "character window: tabs, attributes that grow by use, derived stats" in `tests/e2e/slice.spec.ts`.
 
-## Verify
-`npm run typecheck`, `npm test`, `npm run build`, `npm run test:e2e`.
+Stage 5: `npm run test:e2e` ran 13 tests: 12 passed, 1 failed. The failure was
+"two players share one world" (player B's name came out as the default guest name). That test
+passed on 2 reruns, so it's a flake, probably the title-screen name race. The new character-window
+e2e test passed.
+
+Next: the owner reviews and merges the PR. On merge, remove this file and its README entry.
+Follow-ups: armor items and slots (needs models), a speed check on movement (see
+`docs/server-authority.md`).

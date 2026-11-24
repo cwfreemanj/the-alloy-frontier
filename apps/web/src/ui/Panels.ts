@@ -1,91 +1,13 @@
-/** Inventory, merchant, dialogue, pause/settings, title and summary panels. */
-import { MERCHANT_STOCK, averageQuality, materialTotal, merchantPreview } from '@alloy/crafting';
-import { RARITY_ORDER, itemDisplayName, materialName, type ItemInstance } from '@alloy/item-gen';
+/** Merchant, dialogue, pause/settings, title and summary panels. */
+import { MERCHANT_STOCK, materialTotal, merchantPreview } from '@alloy/crafting';
+import { itemDisplayName, type ItemInstance } from '@alloy/item-gen';
 import { QUEST_EDGE_YOU_MAKE, smithXpToNext, weaponXpToNext } from '@alloy/game-rules';
 import type { Session } from '../state/Session';
 import { clear, h } from './dom';
-import { drawSword, itemHeader, provenanceText, sourceLabel, statTable, traitsBlock } from './ItemView';
-import { RARITY_COLORS } from '../entities/Weapons';
+import { drawSword, itemHeader, provenanceText, statTable, traitsBlock } from './ItemView';
 
 const panelHead = (title: string, onClose: () => void, extra?: Node) =>
   h('div', { class: 'panel-head' }, h('h2', null, title), extra ?? null, h('button', { class: 'close-x', onclick: onClose, 'aria-label': 'Close', title: 'Close (Esc)' }, '✕'));
-
-// ---------------- Inventory ----------------
-type SortKey = 'rating' | 'recent' | 'name' | 'rarity';
-export class InventoryPanel {
-  readonly el = h('div', { class: 'overlay', role: 'dialog', 'aria-label': 'Inventory' });
-  private selected: string | null;
-  private sort: SortKey = 'rating';
-  private confirmDiscard = false;
-  constructor(
-    private session: Session,
-    private onClose: () => void,
-    private onEquip: (id: string) => void,
-    /** Asks the authority (server for accounts, this browser for guests); true when done. */
-    private onDiscard: (id: string) => Promise<boolean>,
-  ) {
-    this.selected = session.inventory.equipped.weapon ?? session.inventory.itemOrder[0] ?? null;
-    this.render();
-  }
-  render(): void {
-    clear(this.el);
-    const inv = this.session.inventory;
-    const eq = this.session.equipped();
-    const items = inv.itemOrder.map((id) => inv.items[id]).filter(Boolean);
-    const sorted = [...items].sort((a, b) => {
-      if (this.sort === 'rating') return b.result.rating - a.result.rating;
-      if (this.sort === 'name') return itemDisplayName(a).localeCompare(itemDisplayName(b));
-      if (this.sort === 'rarity') return RARITY_ORDER.indexOf(b.result.rarity) - RARITY_ORDER.indexOf(a.result.rarity);
-      return b.createdAt - a.createdAt;
-    });
-    const sortSel = h('select', { 'aria-label': 'Sort items' }, ...(['rating', 'recent', 'name', 'rarity'] as SortKey[]).map((k) => h('option', { value: k, selected: k === this.sort }, `Sort: ${k}`))) as HTMLSelectElement;
-    sortSel.addEventListener('change', () => ((this.sort = sortSel.value as SortKey), this.render()));
-    const list = h('div', { class: 'list' });
-    for (const it of sorted) {
-      list.append(
-        h(
-          'button',
-          { class: `card ${it.itemId === this.selected ? 'selected' : ''}`, 'data-item': it.itemId, onclick: () => ((this.selected = it.itemId), (this.confirmDiscard = false), this.render()) },
-          h('div', { class: 'row' }, h('span', { class: 'ttl', style: `color:${RARITY_COLORS[it.result.rarity]}` }, itemDisplayName(it)), h('span', { class: 'spacer' }), eq?.itemId === it.itemId ? h('span', { class: 'tag ember' }, 'Equipped') : null),
-          h('div', { class: 'sub' }, `Rating ${it.result.rating} · ${it.result.damage} dmg · ${sourceLabel(it)}`),
-        ),
-      );
-    }
-    if (sorted.length === 0) list.append(h('div', { class: 'muted small' }, 'No equipment yet. Speak with Orla at the forge.'));
-    const mats = h('table', { class: 'stat-table' });
-    for (const id of ['iron_ore', 'ironwood', 'ironglass', 'binding_flux'] as const) {
-      const q = averageQuality(inv, id);
-      mats.append(h('tr', null, h('td', null, materialName(id)), h('td', null, String(materialTotal(inv, id))), h('td', { class: 'muted' }, q === null ? '—' : `q ${Math.round(q * 100)}%`)));
-    }
-    const lots = inv.lots.map((l) => h('div', { class: 'small muted' }, `${l.quantity}× ${materialName(l.materialId)} · quality ${Math.round(l.quality * 100)}% · from ${l.origin}`));
-    const left = h('div', { class: 'inv-col' }, h('div', { class: 'row' }, h('h3', { style: 'margin:0' }, 'Weapons'), h('span', { class: 'spacer' }), sortSel), list, h('h3', null, `Materials · ${inv.coins} coins`), mats, h('details', null, h('summary', { class: 'small muted' }, `Material lots (${inv.lots.length})`), ...lots));
-    const sel = this.selected ? inv.items[this.selected] : null;
-    const right = h('div', { class: 'inv-col' });
-    if (sel) {
-      const canvas = h('canvas', { style: 'width:100%;height:110px' });
-      right.append(
-        h('div', { class: 'preview-wrap', style: 'height:110px' }, canvas),
-        h('div', { style: 'margin-top:8px' }, itemHeader(sel)),
-        traitsBlock(sel),
-        h('h3', null, eq && eq.itemId !== sel.itemId ? `Compared with ${itemDisplayName(eq)}` : 'Statistics'),
-        statTable(sel, eq && eq.itemId !== sel.itemId ? eq : null),
-        h(
-          'div',
-          { class: 'row', style: 'margin-top:10px' },
-          h('button', { class: 'btn primary', disabled: eq?.itemId === sel.itemId, 'data-testid': 'inv-equip', onclick: () => (this.onEquip(sel.itemId), this.render()) }, eq?.itemId === sel.itemId ? 'Equipped' : 'Equip'),
-          h('span', { class: 'spacer' }),
-          this.confirmDiscard
-            ? h('span', { class: 'row' }, h('span', { class: 'small bad' }, 'Discard permanently?'), h('button', { class: 'btn small', onclick: () => void this.onDiscard(sel.itemId).then((ok) => (ok && (this.selected = null), (this.confirmDiscard = false), this.render())) }, 'Yes, discard'), h('button', { class: 'btn small', onclick: () => ((this.confirmDiscard = false), this.render()) }, 'Keep'))
-            : h('button', { class: 'btn small', disabled: eq?.itemId === sel.itemId, title: eq?.itemId === sel.itemId ? 'Cannot discard the equipped weapon' : '', onclick: () => ((this.confirmDiscard = true), this.render()) }, 'Discard…'),
-        ),
-        h('h3', null, 'Provenance'),
-        h('div', { class: 'prov' }, provenanceText(sel)),
-      );
-      requestAnimationFrame(() => drawSword(canvas, sel));
-    }
-    this.el.append(h('div', { class: 'panel inv' }, panelHead('Inventory', this.onClose), h('div', { class: 'panel-body inv-grid' }, left, right)));
-  }
-}
 
 // ---------------- Merchant ----------------
 export class MerchantPanel {
@@ -183,7 +105,7 @@ export function controlsGrid(): HTMLElement {
     ['G', 'Weapon ability (Storm Arc, if imbued)'],
     ['Tab / MMB / T', 'Target lock'],
     ['E', 'Interact / gather'],
-    ['I', 'Inventory'],
+    ['I / O / U', 'Inventory / Character / Skills'],
     ['Esc / P', 'Pause menu'],
     ['F3 / `', 'Performance overlay'],
     ['Mouse wheel', 'Camera zoom'],
