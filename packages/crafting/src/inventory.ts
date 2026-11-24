@@ -5,9 +5,12 @@
  */
 import {
   MATERIALS,
+  getBlueprint,
   isMaterialId,
   validateItem,
   type ConsumedMaterial,
+  type EquipInfo,
+  type ToolKind,
   type ItemInstance,
   type MaterialId,
   type MaterialLot,
@@ -28,10 +31,16 @@ export interface InventoryState {
   lots: MaterialLot[];
   items: Record<string, ItemInstance>;
   itemOrder: string[];
-  equipped: { weapon: string | null };
+  /** Item id per slot. `weapon` is the main hand (the name predates the other slots). */
+  equipped: Equipped;
   seq: { lot: number; item: number };
   journal: JournalEntry[];
 }
+
+/** Character equipment slots (see docs/equipment-contract.md). */
+export const EQUIP_SLOTS = ['head', 'shoulders', 'neck', 'cape', 'chest', 'belt', 'hands', 'legs', 'feet', 'ring1', 'ring2', 'weapon', 'offhand', 'tool'] as const;
+export type EquipSlot = (typeof EQUIP_SLOTS)[number];
+export type Equipped = { weapon: string | null } & Partial<Record<Exclude<EquipSlot, 'weapon'>, string | null>>;
 
 export type Fail = { ok: false; error: string; message: string };
 export const fail = (error: string, message: string): Fail => ({ ok: false, error, message });
@@ -145,21 +154,96 @@ export function insertItem(draft: InventoryState, item: ItemInstance): void {
   draft.seq.item++;
 }
 
+/** Where an item goes (from its blueprint). Blueprints without `equip` are one-handed main-hand weapons. */
+export function equipInfo(item: ItemInstance): EquipInfo {
+  return getBlueprint(item.blueprintId)?.equip ?? { slot: 'weapon', hands: 1 };
+}
+
+/** The slot an item currently occupies, if any. */
+export function slotOf(inv: InventoryState, itemId: string): EquipSlot | null {
+  for (const s of EQUIP_SLOTS) if (inv.equipped[s] === itemId) return s;
+  return null;
+}
+
+/** The slots an item may go in. */
+export function slotsFor(item: ItemInstance): EquipSlot[] {
+  const k = equipInfo(item).slot;
+  return k === 'ring' ? ['ring1', 'ring2'] : [k];
+}
+
+const isTwoHanded = (inv: InventoryState, id: string | null | undefined): boolean => !!id && !!inv.items[id] && equipInfo(inv.items[id]).hands === 2;
+
+/**
+ * Equip an item. The slot comes from the item; for rings the caller may pick ring1/ring2
+ * (default: the first empty one). A two-handed weapon empties the off-hand; the off-hand
+ * can't be used while one is equipped. Moving an item between ring slots is allowed.
+ */
+export function equipItem(inv: InventoryState, itemId: string, at: number, slot?: EquipSlot): { ok: true; inventory: InventoryState; slot: EquipSlot } | Fail {
+  const item = inv.items[itemId];
+  if (!item) return fail('not_owned', 'Item is not in this inventory');
+  const allowed = slotsFor(item);
+  if (slot && !allowed.includes(slot)) return fail('wrong_slot', 'That item does not go in that slot');
+  const target = slot ?? allowed.find((x) => !inv.equipped[x]) ?? allowed[0];
+  if (inv.equipped[target] === itemId) return { ok: true, inventory: inv, slot: target };
+  if (target === 'offhand' && isTwoHanded(inv, inv.equipped.weapon)) return fail('two_handed', 'Your two-handed weapon needs both hands');
+  const draft = cloneInventory(inv);
+  const from = slotOf(draft, itemId);
+  if (from) draft.equipped[from] = null;
+  draft.equipped[target] = itemId;
+  if (target === 'weapon' && equipInfo(item).hands === 2) draft.equipped.offhand = null;
+  draft.items[itemId].history.push({ at, event: 'Equipped' });
+  return { ok: true, inventory: draft, slot: target };
+}
+
+/** Back-compat wrapper: equip into the main hand. */
 export function equipWeapon(inv: InventoryState, itemId: string, at: number): { ok: true; inventory: InventoryState } | Fail {
   const item = inv.items[itemId];
   if (!item) return fail('not_owned', 'Item is not in this inventory');
-  if (item.family !== 'longsword') return fail('wrong_slot', 'Item cannot be equipped as a weapon');
-  if (inv.equipped.weapon === itemId) return { ok: true, inventory: inv };
+  if (equipInfo(item).slot !== 'weapon') return fail('wrong_slot', 'Item cannot be equipped as a weapon');
+  return equipItem(inv, itemId, at, 'weapon');
+}
+
+/** Empty a slot (the item stays in the inventory). */
+export function unequip(inv: InventoryState, slot: EquipSlot): { ok: true; inventory: InventoryState } | Fail {
+  if (!(EQUIP_SLOTS as readonly string[]).includes(slot)) return fail('wrong_slot', 'Unknown slot');
+  if (!inv.equipped[slot]) return fail('empty', 'Nothing is equipped there');
   const draft = cloneInventory(inv);
-  draft.equipped.weapon = itemId;
-  draft.items[itemId].history.push({ at, event: 'Equipped' });
+  draft.equipped[slot] = null;
   return { ok: true, inventory: draft };
 }
 
-/** Safe discard: refuses equipped items. */
+/** The equipped item in each filled slot. */
+export function equippedItems(inv: InventoryState): Array<{ slot: EquipSlot; item: ItemInstance }> {
+  const out: Array<{ slot: EquipSlot; item: ItemInstance }> = [];
+  for (const x of EQUIP_SLOTS) {
+    const id = inv.equipped[x];
+    if (id && inv.items[id]) out.push({ slot: x, item: inv.items[id] });
+  }
+  return out;
+}
+
+/** Tool power of an item for a kind of gathering (0 = not that tool). */
+export function toolPower(item: ItemInstance | null | undefined, kind: ToolKind): number {
+  if (!item) return 0;
+  const t = equipInfo(item).tool;
+  return t && t.kind === kind ? Math.max(1, t.power) : 0;
+}
+
+/** Fill in missing slots of older saves (they only had a main hand). */
+export function normalizeEquipped(inv: InventoryState): void {
+  const e = (inv.equipped ??= { weapon: null }) as Record<string, string | null | undefined>;
+  for (const x of EQUIP_SLOTS) if (e[x] === undefined) e[x] = null;
+}
+
+/** Safe discard: refuses equipped items, and the last tool of a kind (gathering needs it). */
 export function discardItem(inv: InventoryState, itemId: string): { ok: true; inventory: InventoryState } | Fail {
-  if (!inv.items[itemId]) return fail('not_owned', 'Item is not in this inventory');
-  if (inv.equipped.weapon === itemId) return fail('equipped', 'Unequip or replace the item before discarding it');
+  const item = inv.items[itemId];
+  if (!item) return fail('not_owned', 'Item is not in this inventory');
+  if (slotOf(inv, itemId)) return fail('equipped', 'Unequip the item before discarding it');
+  const kind = equipInfo(item).tool?.kind;
+  if (kind && !Object.values(inv.items).some((o) => o.itemId !== itemId && toolPower(o, kind) > 0)) {
+    return fail('last_tool', 'You need at least one tool of this kind for gathering');
+  }
   const draft = cloneInventory(inv);
   delete draft.items[itemId];
   draft.itemOrder = draft.itemOrder.filter((id) => id !== itemId);
@@ -188,6 +272,16 @@ export function validateInventory(inv: unknown): { ok: true } | Fail {
     if (item.itemId !== id || !validateItem(item)) return fail('item', `Invalid or tampered item ${id}`);
   }
   if (new Set(s.itemOrder).size !== s.itemOrder.length) return fail('order', 'Duplicate item order entries');
-  if (s.equipped?.weapon && !s.items[s.equipped.weapon]) return fail('equipped', 'Equipped item missing');
+  const seen = new Set<string>();
+  for (const slot of EQUIP_SLOTS) {
+    const id = s.equipped?.[slot];
+    if (!id) continue;
+    const item = s.items[id];
+    if (!item) return fail('equipped', 'Equipped item missing');
+    if (!slotsFor(item).includes(slot)) return fail('equipped', `Item ${id} cannot be in ${slot}`);
+    if (seen.has(id)) return fail('equipped', `Item ${id} is equipped twice`);
+    seen.add(id);
+  }
+  if (s.equipped?.offhand && isTwoHanded(s, s.equipped.weapon)) return fail('equipped', 'Off-hand used with a two-handed weapon');
   return { ok: true };
 }

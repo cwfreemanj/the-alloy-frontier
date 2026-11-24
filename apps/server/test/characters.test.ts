@@ -161,6 +161,23 @@ describe('server-owned characters', () => {
     expect(p.lastChar()!.data.progression.allocated!.strength).toBe(0);
   });
 
+  it('checks equipment changes and the tool requirement on the server', async () => {
+    const ctx = setup();
+    const p = await signedIn(ctx, 'acct-gear');
+    p.at(ore.pos.x, ore.pos.z);
+    expect(p.act({ k: 'unequip', slot: 'tool' }).ok).toBe(true);
+    expect(p.lastChar()!.data.inventory.equipped.tool).toBeNull();
+    expect(p.act({ k: 'gather', node: ore.id })).toMatchObject({ ok: false, error: 'no_tool' });
+    const pick = Object.values(p.char.session.inventory.items).find((i) => i.blueprintId === 'worn_pickaxe')!;
+    expect(p.act({ k: 'equip', item: pick.itemId, slot: 'head' })).toMatchObject({ ok: false });
+    expect(p.act({ k: 'equip', item: pick.itemId }).ok).toBe(true);
+    expect(p.act({ k: 'gather', node: ore.id }).ok).toBe(true);
+    const before = ctx.room.stats.malformed;
+    p.act({ k: 'equip', item: pick.itemId, slot: 'pocket' });
+    p.act({ k: 'unequip', slot: 42 });
+    expect(ctx.room.stats.malformed).toBe(before + 2);
+  });
+
   it('grows Vitality from the enemy attacks the server aims at a signed-in player', async () => {
     const ctx = setup();
     const p = await signedIn(ctx, 'acct-vit');

@@ -13,6 +13,7 @@ import type { SessionData } from '@alloy/save';
 import type { CharAction, SessionEvent } from '@alloy/session';
 import type { ItemInstance } from '@alloy/item-gen';
 import { ATTRIBUTE_IDS } from '@alloy/game-rules';
+import { EQUIP_SLOTS } from '@alloy/crafting';
 
 export type { CharAction } from '@alloy/session';
 
@@ -118,8 +119,13 @@ function charAction(v: unknown): CharAction | null {
     case 'buy':
       return str(v.stock) && int(v.qty, 1, 99) ? { k: 'buy', stock: v.stock, qty: v.qty } : null;
     case 'equip':
+      if (!str(v.item, 128)) return null;
+      if (v.slot === undefined) return { k: 'equip', item: v.item };
+      return (EQUIP_SLOTS as readonly unknown[]).includes(v.slot) ? { k: 'equip', item: v.item, slot: v.slot as (typeof EQUIP_SLOTS)[number] } : null;
+    case 'unequip':
+      return (EQUIP_SLOTS as readonly unknown[]).includes(v.slot) ? { k: 'unequip', slot: v.slot as (typeof EQUIP_SLOTS)[number] } : null;
     case 'discard':
-      return str(v.item, 128) ? { k: v.k, item: v.item } : null;
+      return str(v.item, 128) ? { k: 'discard', item: v.item } : null;
     case 'talk':
       return v.npc === 'orla' ? { k: 'talk', npc: 'orla' } : null;
     case 'event':
