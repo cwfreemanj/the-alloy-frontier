@@ -1,6 +1,6 @@
-# Handoff: full-screen character screens, skills vs proficiencies
+# Design record: full-screen character screens, skills vs proficiencies
 
-Branch: `character-screens`. Read `AGENTS.md` first.
+Merged in PR #14. This was the handoff file for the task; it is kept as the record of what was decided and why.
 
 ## Goal
 Rebuild the character window as full-screen tabbed screens in the style of the owner's mockup
