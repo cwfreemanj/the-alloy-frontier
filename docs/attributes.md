@@ -1,6 +1,6 @@
-# Handoff: attributes + character / inventory / skills window
+# Design record: attributes and the character window
 
-Branch: `character-screen`. Read `AGENTS.md` first.
+Merged in PR #10. This was the handoff file for the task; it is kept as the record of what was decided and why.
 
 ## Goal
 One window (I or C) with three tabs that brings the character together:
