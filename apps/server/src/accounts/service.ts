@@ -185,7 +185,7 @@ export class AccountService {
    * Bring a guest character (made in a browser) into an account that has none yet.
    * The save is validated like any other, and values the browser could have inflated
    * are capped. Accepted risk: a guest save can be edited before import (see
-   * docs/handoff/server-authority.md); after import, the server owns the character.
+   * docs/server-authority.md); after import, the server owns the character.
    */
   async importCharacter(accountId: string, raw: unknown): Promise<Result<{ revision: number }>> {
     if (typeof raw !== 'string' || raw.length > MAX_SAVE_BYTES) return err(413, 'too_large', 'Save is too large.');

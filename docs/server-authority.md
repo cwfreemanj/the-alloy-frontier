@@ -1,8 +1,7 @@
-# Handoff: server-authoritative crafting and inventory
+# Server-authoritative characters (design record)
 
-- **Branch:** `server-transactions`, off `main` at 8e9cd64.
-- **Owner:** Neal (backend).
-- **Status:** in progress. See the checklist and "Current state".
+Merged in PR #8. This file records the design, the decisions and the known limitations, for
+whoever works on the server next. Kept from the handoff notes the work was built from.
 
 ## Goal
 
@@ -124,9 +123,9 @@ type CharAction =
 - [x] Stage 6: `tests/e2e/accounts.spec.ts` now goes through real actions. The cheat test checks that the debug grants refuse, that local edits are overwritten by the server's copy, that out-of-range actions are refused, and that `PUT /api/save` gets 410. The second-device sign-out became its own test. After a teleport, tests retry `act` until the server has the new position (`actWhenThere`).
 - [x] Stage 7: README and AGENTS updated; PR opened (not merged).
 
-## Current state
+## State at merge
 
-- All stages are done; the PR is open for review.
+- All stages are done and merged.
 - **Verified on this branch:**
   - typecheck passes
   - `npm test` passes (139 tests)
