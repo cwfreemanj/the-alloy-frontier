@@ -2,12 +2,21 @@
  * Shared-world protocol (GDD 6.10 follow-up): one persistent world on the server that
  * every player joins automatically. Small JSON messages over one WebSocket.
  *
- * Authority today: the server owns enemies (AI, health, attacks, deaths, respawns) and
- * kill credit. Clients own their own movement and their own progression/inventory, and
- * report hits with damage computed from their equipped weapon; the server checks range,
- * rate and caps. Moving inventory and progression to the server is the next authority step.
+ * Authority: the server owns enemies (AI, health, attacks, deaths, respawns) and kill
+ * credit. For signed-in players it also owns the character: clients send actions ('act')
+ * and the server applies them with the shared rules in @alloy/session and sends back the
+ * resulting character ('char'); hit damage is computed from the server-side weapon.
+ * Guests keep their character in the browser and report hit damage (range, rate and caps
+ * are checked). Clients always own their own movement (sanity-checked).
  */
-export const WORLD_PROTOCOL = 1;
+import type { SessionData } from '@alloy/save';
+import type { CharAction, SessionEvent } from '@alloy/session';
+import type { ItemInstance } from '@alloy/item-gen';
+
+export type { CharAction } from '@alloy/session';
+
+/** v2: character actions for signed-in players. */
+export const WORLD_PROTOCOL = 2;
 
 /** Compact animation state of a player avatar. */
 export interface AvatarState {
@@ -65,7 +74,8 @@ export interface HitVerdict {
 export type WorldClientMsg =
   | { t: 'hello'; name: string; protocol: number; token?: string }
   | { t: 'state'; s: AvatarState }
-  | { t: 'hit'; enemyId: string; attackId: string; damage: number; stagger: number; guardBreak: boolean; crit: boolean };
+  | { t: 'hit'; enemyId: string; attackId: string; damage: number; stagger: number; guardBreak: boolean; crit: boolean }
+  | { t: 'act'; id: number; a: CharAction };
 
 export type WorldServerMsg =
   | { t: 'welcome'; id: string; players: WorldPlayerInfo[]; enemies: EnemyNetState[]; protocol: number }
@@ -76,6 +86,9 @@ export type WorldServerMsg =
   | ({ t: 'hitResult' } & HitVerdict)
   | { t: 'playerHit'; enemyId: string; damage: number; heavy: boolean }
   | { t: 'kill'; enemyId: string; type: string; contributors: string[] }
+  | { t: 'actResult'; id: number; ok: boolean; error?: string; message?: string; item?: ItemInstance }
+  /** The authoritative character (signed-in players), with the events its last changes produced. */
+  | { t: 'char'; data: SessionData; events: SessionEvent[] }
   | { t: 'error'; error: string };
 
 /** Hard caps the server enforces. */
@@ -92,6 +105,56 @@ export const WORLD_LIMITS = {
 const num = (v: unknown, bound = 1e6): v is number => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= bound;
 const str = (v: unknown, max = 64): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
 const bool = (v: unknown): v is boolean => typeof v === 'boolean';
+const int = (v: unknown, lo: number, hi: number): v is number => Number.isInteger(v) && (v as number) >= lo && (v as number) <= hi;
+const obj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** Shape check of a character action. Content (ownership, ranges, recipes) is checked by the rules. */
+function charAction(v: unknown): CharAction | null {
+  if (!obj(v)) return null;
+  switch (v.k) {
+    case 'gather':
+      return str(v.node) ? { k: 'gather', node: v.node } : null;
+    case 'buy':
+      return str(v.stock) && int(v.qty, 1, 99) ? { k: 'buy', stock: v.stock, qty: v.qty } : null;
+    case 'equip':
+    case 'discard':
+      return str(v.item, 128) ? { k: v.k, item: v.item } : null;
+    case 'talk':
+      return v.npc === 'orla' ? { k: 'talk', npc: 'orla' } : null;
+    case 'event':
+      return v.ev === 'open_merchant' ? { k: 'event', ev: 'open_merchant' } : null;
+    case 'forge': {
+      const r = v.req;
+      if (!obj(r) || !str(r.txId, 128) || !str(r.blueprintId) || (r.mode !== 'quick' && r.mode !== 'masterwork') || !int(r.bufferQuantity, 0, 1000)) return null;
+      if (r.specialization !== undefined && !str(r.specialization, 16)) return null;
+      if (r.temper !== undefined && !str(r.temper, 16)) return null;
+      let evidence: { heat: string; strikes: Array<{ x: number; y: number; kind: 'focused' | 'spread' }> } | undefined;
+      if (r.evidence !== undefined) {
+        const e = r.evidence;
+        if (!obj(e) || !str(e.heat, 16) || !Array.isArray(e.strikes) || e.strikes.length > 64) return null;
+        const strikes: Array<{ x: number; y: number; kind: 'focused' | 'spread' }> = [];
+        for (const k of e.strikes) {
+          if (!obj(k) || !int(k.x, 0, 64) || !int(k.y, 0, 64) || (k.kind !== 'focused' && k.kind !== 'spread')) return null;
+          strikes.push({ x: k.x, y: k.y, kind: k.kind });
+        }
+        evidence = { heat: e.heat, strikes };
+      }
+      const req = {
+        txId: r.txId,
+        blueprintId: r.blueprintId,
+        mode: r.mode,
+        bufferQuantity: r.bufferQuantity,
+        ...(r.specialization !== undefined ? { specialization: r.specialization } : {}),
+        ...(r.temper !== undefined ? { temper: r.temper } : {}),
+        ...(evidence ? { evidence } : {}),
+      };
+      // Values outside the known unions are rejected by planForge with a clear error.
+      return { k: 'forge', req: req as Extract<CharAction, { k: 'forge' }>['req'] };
+    }
+    default:
+      return null;
+  }
+}
 
 function avatar(v: unknown): v is AvatarState {
   if (!v || typeof v !== 'object') return false;
@@ -139,8 +202,9 @@ export function parseWorldClientMsg(raw: unknown): WorldClientMsg | null {
   const o = m as Record<string, unknown>;
   switch (o.t) {
     case 'hello':
-      return str(o.name, 64) && o.protocol === WORLD_PROTOCOL && (o.token === undefined || str(o.token, 100))
-        ? { t: 'hello', name: cleanName(o.name), protocol: WORLD_PROTOCOL, ...(o.token ? { token: o.token as string } : {}) }
+      // Any protocol number parses, so the server can tell an outdated client to reload.
+      return str(o.name, 64) && int(o.protocol, 0, 1e6) && (o.token === undefined || str(o.token, 100))
+        ? { t: 'hello', name: cleanName(o.name), protocol: o.protocol, ...(o.token ? { token: o.token as string } : {}) }
         : null;
     case 'state':
       return avatar(o.s) ? { t: 'state', s: o.s } : null;
@@ -148,6 +212,10 @@ export function parseWorldClientMsg(raw: unknown): WorldClientMsg | null {
       return str(o.enemyId) && str(o.attackId, 32) && num(o.damage) && o.damage >= 0 && o.damage <= WORLD_LIMITS.maxHitDamage && num(o.stagger, 1000) && bool(o.guardBreak) && bool(o.crit)
         ? { t: 'hit', enemyId: o.enemyId, attackId: o.attackId, damage: o.damage, stagger: o.stagger, guardBreak: o.guardBreak, crit: o.crit }
         : null;
+    case 'act': {
+      const a = charAction(o.a);
+      return int(o.id, 0, 2 ** 31) && a ? { t: 'act', id: o.id, a } : null;
+    }
     default:
       return null;
   }

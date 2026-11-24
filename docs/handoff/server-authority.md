@@ -117,8 +117,8 @@ type CharAction =
 ## Checklist
 
 - [x] Stage 1: `@alloy/session` created (Session and node rules moved; `applyAction`, `rewardKill`, `playerHit` and `rewardHit` added; `packages/session/test/actions.test.ts` has 9 tests). The web client imports through `apps/web/src/state/Session.ts` (a re-export) and still applies changes itself. It is routed through `applyAction` in stage 5.
-- [ ] Stage 2: protocol v2 messages and parser tests.
-- [ ] Stage 3: server character host: load, act, kill rewards, server-side hit damage, persistence. Server tests drive `WorldRoom` directly, as `apps/server/test/world.test.ts` does.
+- [x] Stage 2: protocol v2 (`WORLD_PROTOCOL = 2`). `act`, `actResult` and `char` were added, and `charAction` validates every field. A `hello` with any other protocol number gets `error: 'outdated_client'`. Parser rejection is tested in `apps/server/test/characters.test.ts`.
+- [x] Stage 3: `apps/server/src/characters.ts` (CharacterHost, plus a store backed by account saves via `AccountService.serverPutSave`). `worldRoom.ts` handles `act`, kill rewards, weapon XP, server-side damage, play time, position and deaths. `worldServer.ts` opens the character before join, saves every second if it's been due for 5 s, and saves everything on close. `worldMain.ts` saves on SIGTERM/SIGINT. Tests: `apps/server/test/characters.test.ts` (9), plus one end-to-end test in `accounts.test.ts`.
 - [ ] Stage 4: HTTP API lock-down (`new` / `import`), plus updating `apps/server/test/accounts.test.ts`.
 - [ ] Stage 5: client `CharacterLink`, with panels routed through it in account mode.
 - [ ] Stage 6: browser tests. Update `tests/e2e/accounts.spec.ts`, and add a cheat test: in account mode, the debug give/coins and a forged `act` with out-of-range positions are refused, and edited saves can't be PUT.
@@ -126,15 +126,17 @@ type CharAction =
 
 ## Current state
 
-- Stage 1 is done and committed. Verified: typecheck passes, `npm test` passes (129 tests), and `npm run build` passes.
-  `npm run test:e2e` was not rerun for stage 1 (no client behaviour changed).
-- API in `packages/session/src/actions.ts`:
-  - `applyAction(session, action, { pos, slack })`
-  - `rewardKill(session, enemyType, enemyId, rng)`
-  - `playerHit(session, attackId, rng)`, which returns outgoing damage before the target's defense
-  - `rewardHit(session, enemyType, damage)`
-  - `RANGE`, `RANGE_SLACK` and the `CharAction` type
-- Next: stage 2 (protocol v2).
+- Stages 1 to 3 are done and committed. Verified: typecheck passes, `npm test` passes (139 tests), and `npm run build` passes.
+  `npm run test:e2e` has **not** been rerun since stage 1.
+- **Expected break until stage 5:** the browser client still says protocol 1, so a client built from this branch
+  gets `outdated_client` and plays offline. Stage 5 fixes this. Don't merge before then.
+- **Server behaviour now:**
+  - Signed-in players get a `char` message right after `welcome`, and after every change.
+  - Act replies (`actResult`) are sent immediately. Weapon-XP updates are coalesced to at most 4 per second (`CHAR_PUSH_INTERVAL_MS`).
+  - Guests get `actResult` with `error: 'guest'`.
+- **Known limitation:** if a character's final save on leave fails (database down), it is logged and lost,
+  because the character is no longer loaded to retry. Saves while the player is still in the world are retried.
+- **Next:** stage 4 (lock down the HTTP save API), then stage 5 (client).
 
 ## How to verify
 

@@ -197,4 +197,17 @@ export class AccountService {
       return { ok: true as const, value: { revision: rec.revision } };
     });
   }
+
+  /**
+   * Store a character the server itself produced (the world's authoritative copy). No base
+   * revision: the server is the only writer while the player is in the world.
+   */
+  async serverPutSave(accountId: string, raw: string, savedAt: number): Promise<{ revision: number }> {
+    return this.withLock(accountId, async () => {
+      const cur = await this.kv.get<SaveRec>(`save:${accountId}`);
+      const rec: SaveRec = { raw, revision: (cur?.revision ?? 0) + 1, savedAt, updatedAt: this.now() };
+      await this.kv.put(`save:${accountId}`, rec);
+      return { revision: rec.revision };
+    });
+  }
 }

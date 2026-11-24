@@ -7,10 +7,11 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
-import { WORLD_LIMITS, parseWorldClientMsg } from '@alloy/protocol';
+import { WORLD_LIMITS, WORLD_PROTOCOL, parseWorldClientMsg } from '@alloy/protocol';
 import { WorldRoom } from './worldRoom';
 import { handleApi } from './accounts/http';
 import type { AccountService } from './accounts/service';
+import { CharacterHost, accountCharacterStore, type CharacterStore } from './characters';
 
 export interface WorldServerOptions {
   port?: number;
@@ -25,11 +26,16 @@ export interface WorldServerOptions {
   accounts?: AccountService | null;
   /** Trust X-Forwarded-For (set when running behind a known proxy, e.g. Render). */
   trustProxy?: boolean;
+  /** Where signed-in characters live (defaults to the account saves). For tests. */
+  characters?: CharacterStore;
 }
 
 export interface RunningWorldServer {
   port: number;
   room: WorldRoom;
+  /** Live characters of signed-in players (null without accounts). */
+  characters: CharacterHost | null;
+  /** Stop, after writing every changed character. */
   close: () => Promise<void>;
 }
 
@@ -78,10 +84,12 @@ function serveStatic(root: string, req: IncomingMessage, res: ServerResponse): v
 }
 
 export function startWorldServer(opts: WorldServerOptions = {}): Promise<RunningWorldServer> {
-  const room = new WorldRoom();
+  const accounts = opts.accounts ?? null;
+  const store = opts.characters ?? (accounts ? accountCharacterStore(accounts) : null);
+  const characters = store ? new CharacterHost(store) : null;
+  const room = new WorldRoom(undefined, characters);
   const root = opts.staticDir ? resolve(opts.staticDir) : null;
   const allowed = new Set(opts.allowedOrigins ?? []);
-  const accounts = opts.accounts ?? null;
   const http = createServer((req, res) => {
     const path = (req.url ?? '/').split('?')[0];
     if (path === '/world-info' || path === '/healthz') {
@@ -138,13 +146,29 @@ export function startWorldServer(opts: WorldServerOptions = {}): Promise<Running
       }
       const hello = id === null && raw.length < 1000 ? parseWorldClientMsg(raw) : null;
       if (hello?.t === 'hello' && hello.token && accounts) {
+        if (hello.protocol !== WORLD_PROTOCOL) {
+          send({ t: 'error', error: 'outdated_client' });
+          return;
+        }
         joining = accounts
           .accountFor(hello.token)
-          .then((acct) => {
-            if (acct) id = room.join(acct.username, send, acct.id, close);
-            else send({ t: 'error', error: 'signed_out' });
+          .then(async (acct) => {
+            if (!acct) {
+              send({ t: 'error', error: 'signed_out' });
+              return;
+            }
+            // The server loads and owns the character while the player is in the world.
+            const char = characters ? await characters.open(acct.id) : null;
+            if (ws.readyState !== ws.OPEN) {
+              if (char) characters?.release(char);
+              return;
+            }
+            id = room.join(acct.username, send, acct.id, close, char);
           })
-          .catch(() => send({ t: 'error', error: 'server_error' }))
+          .catch((e: unknown) => {
+            console.error(`Could not join a signed-in player: ${(e as Error).message}`);
+            send({ t: 'error', error: 'server_error' });
+          })
           .finally(() => {
             joining = null;
           });
@@ -168,19 +192,22 @@ export function startWorldServer(opts: WorldServerOptions = {}): Promise<Running
   const simDt = 1 / (opts.simHz ?? 20);
   const sim = setInterval(() => room.step(simDt), simDt * 1000);
   const net = setInterval(() => room.publish(), 1000 / (opts.netHz ?? 15));
+  const saves = setInterval(() => characters?.flushDue(), 1000);
   return new Promise((resolveStart) => {
     http.listen(opts.port ?? 2568, opts.host ?? '127.0.0.1', () => {
       const addr = http.address();
       resolveStart({
         port: typeof addr === 'object' && addr ? addr.port : (opts.port ?? 2568),
         room,
+        characters,
         close: () =>
           new Promise<void>((r) => {
             clearInterval(sim);
             clearInterval(net);
             clearInterval(heartbeat);
+            clearInterval(saves);
             for (const c of wss.clients) c.terminate();
-            wss.close(() => http.close(() => r()));
+            wss.close(() => http.close(() => void (characters?.flushAll() ?? Promise.resolve()).then(() => r())));
           }),
       });
     });

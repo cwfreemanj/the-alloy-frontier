@@ -182,4 +182,36 @@ describe('HTTP API and signed-in world', () => {
     second.close();
     bad.close();
   });
+
+  it('the server owns a signed-in character: it applies actions and saves the result itself', async () => {
+    const svc = new AccountService(new MemoryKV());
+    server = await startWorldServer({ port: 0, accounts: svc });
+    const base = `http://127.0.0.1:${server.port}`;
+    const reg = await (await post(base, '/api/register', { username: 'Owner', password: 'password1' })).json();
+    const c = new WebSocket(base.replace('http', 'ws') + '/world');
+    const box: WorldServerMsg[] = [];
+    c.on('message', (d) => box.push(JSON.parse(d.toString())));
+    await new Promise((r) => c.once('open', r));
+    const waitFor = async (pred: (m: WorldServerMsg) => boolean) => {
+      for (let i = 0; i < 200; i++) {
+        const m = box.find(pred);
+        if (m) return m;
+        await new Promise((r) => setTimeout(r, 15));
+      }
+      throw new Error('timeout');
+    };
+    c.send(JSON.stringify({ t: 'hello', name: 'x', protocol: WORLD_PROTOCOL, token: reg.token }));
+    await waitFor((m) => m.t === 'char');
+    // Stand next to Orla and talk: the server grants the starter sword.
+    c.send(JSON.stringify({ t: 'state', s: { x: -9, y: 0, z: 7.5, yaw: 0, spd: 0, ph: 'idle', atk: null, pr: 0, hp: 200, mhp: 200, wpn: null } }));
+    c.send(JSON.stringify({ t: 'act', id: 1, a: { k: 'talk', npc: 'orla' } }));
+    expect(await waitFor((m) => m.t === 'actResult' && m.id === 1)).toMatchObject({ ok: true });
+    c.close();
+    await server.close(); // writes changed characters before stopping
+    server = null;
+    const id = (await svc.accountFor(reg.token))!.id;
+    const saved = JSON.parse((await svc.getSave(id))!.raw).data;
+    expect(saved.inventory.equipped.weapon).toBeTruthy();
+    expect(saved.quest.stepIndex).toBe(1);
+  });
 });

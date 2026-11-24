@@ -1,0 +1,188 @@
+/**
+ * Server-owned characters for signed-in players: actions are applied by the server with
+ * its own position, clock and random numbers; kill rewards, weapon XP and hit damage come
+ * from the server's copy of the character; characters are saved and reloaded by the server.
+ */
+import { describe, expect, it } from 'vitest';
+import { ENEMIES, mitigate } from '@alloy/game-rules';
+import { WORLD_PROTOCOL, type AvatarState, type WorldServerMsg } from '@alloy/protocol';
+import { Session, newSessionData, playerHit } from '@alloy/session';
+import { ENEMY_SPAWNS, FORGE_ANVIL, NPCS, RESOURCE_NODES } from '@alloy/world';
+import { CharacterHost, MemoryCharacterStore, SAVE_DELAY_MS } from '../src/characters';
+import { WorldRoom } from '../src/worldRoom';
+
+const avatar = (x: number, z: number, extra: Partial<AvatarState> = {}): AvatarState => ({ x, y: 0, z, yaw: 0, spd: 0, ph: 'idle', atk: null, pr: 0, hp: 200, mhp: 200, wpn: null, ...extra });
+const ore = RESOURCE_NODES.find((n) => n.material === 'iron_ore')!;
+const scav = ENEMY_SPAWNS.find((s) => s.type === 'scavenger')!;
+
+function setup() {
+  let t = 1_000_000;
+  const clock = { now: () => t, advance: (ms: number) => (t += ms) };
+  const store = new MemoryCharacterStore();
+  const host = new CharacterHost(store, clock.now);
+  const room = new WorldRoom(clock.now, host, () => 0.99); // 0.99: no crits, top of coin range
+  return { clock, store, host, room };
+}
+
+/** A signed-in player in the room, driven directly (the transport does this after the token check). */
+async function signedIn(ctx: ReturnType<typeof setup>, accountId: string) {
+  const inbox: WorldServerMsg[] = [];
+  const char = await ctx.host.open(accountId);
+  const id = ctx.room.join(accountId, (m) => inbox.push(m), accountId, () => {}, char)!;
+  let n = 0;
+  const send = (m: unknown) => ctx.room.handle(id, JSON.stringify(m), (x) => inbox.push(x));
+  return {
+    id,
+    char,
+    inbox,
+    at: (x: number, z: number, extra: Partial<AvatarState> = {}) => send({ t: 'state', s: avatar(x, z, extra) }),
+    act: (a: unknown) => {
+      const rid = ++n;
+      send({ t: 'act', id: rid, a });
+      return inbox.filter((m) => m.t === 'actResult').find((m) => m.t === 'actResult' && m.id === rid) as Extract<WorldServerMsg, { t: 'actResult' }>;
+    },
+    hit: (enemyId: string, attackId: string, damage: number) => send({ t: 'hit', enemyId, attackId, damage, stagger: 0, guardBreak: false, crit: false }),
+    lastChar: () => [...inbox].reverse().find((m) => m.t === 'char') as Extract<WorldServerMsg, { t: 'char' }> | undefined,
+  };
+}
+
+describe('server-owned characters', () => {
+  it('sends the character on join, and applies actions only where the player is', async () => {
+    const ctx = setup();
+    const p = await signedIn(ctx, 'acct-1');
+    expect(p.lastChar()?.data.inventory).toBeTruthy();
+
+    expect(p.act({ k: 'gather', node: ore.id })).toMatchObject({ ok: false, error: 'out_of_range' }); // no position yet
+    p.at(ore.pos.x + 30, ore.pos.z);
+    expect(p.act({ k: 'gather', node: ore.id })).toMatchObject({ ok: false, error: 'out_of_range' });
+    p.at(ore.pos.x + 1, ore.pos.z);
+    expect(p.act({ k: 'gather', node: ore.id }).ok).toBe(true);
+    const got = p.lastChar()!.data.inventory.lots.filter((l) => l.materialId === 'iron_ore').reduce((a, l) => a + l.quantity, 0);
+    expect(got).toBeGreaterThan(0);
+    expect(p.lastChar()!.events.some((e) => e.type === 'toast' && e.text.includes('Iron'))).toBe(true);
+
+    // Gathering is paced like the browser's 1-second channel.
+    expect(p.act({ k: 'gather', node: ore.id })).toMatchObject({ ok: false, error: 'too_fast' });
+    ctx.clock.advance(1000);
+    expect(p.act({ k: 'gather', node: ore.id }).ok).toBe(true);
+  });
+
+  it('refuses actions from guests and from downed players', async () => {
+    const ctx = setup();
+    const inbox: WorldServerMsg[] = [];
+    const gid = ctx.room.handle(null, JSON.stringify({ t: 'hello', name: 'G', protocol: WORLD_PROTOCOL }), (m) => inbox.push(m))!;
+    ctx.room.handle(gid, JSON.stringify({ t: 'act', id: 1, a: { k: 'gather', node: ore.id } }), (m) => inbox.push(m));
+    expect(inbox.find((m) => m.t === 'actResult')).toMatchObject({ ok: false, error: 'guest' });
+
+    const p = await signedIn(ctx, 'acct-2');
+    p.at(ore.pos.x, ore.pos.z, { hp: 0, ph: 'dead' });
+    expect(p.act({ k: 'gather', node: ore.id })).toMatchObject({ ok: false, error: 'dead' });
+    expect(ctx.room.stats.rejectedActs).toBe(2);
+  });
+
+  it('forges at the anvil with the server-side character only after the quest allows it', async () => {
+    const ctx = setup();
+    const p = await signedIn(ctx, 'acct-3');
+    p.char.session.gather('test', 'iron_ore', 3, 0.6, {});
+    p.char.session.gather('test', 'ironwood', 1, 0.6, {});
+    const forge = { k: 'forge', req: { txId: 'tx-a', blueprintId: 'iron_longsword', mode: 'quick', bufferQuantity: 2 } };
+    p.at(FORGE_ANVIL.x, FORGE_ANVIL.z);
+    expect(p.act(forge)).toMatchObject({ ok: false, error: 'quest_gate' });
+    p.at(NPCS.orla.pos.x, NPCS.orla.pos.z);
+    expect(p.act({ k: 'talk', npc: 'orla' }).ok).toBe(true);
+    p.at(FORGE_ANVIL.x, FORGE_ANVIL.z);
+    const r = p.act(forge);
+    expect(r.ok).toBe(true);
+    expect(r.item?.blueprintId).toBe('iron_longsword');
+    expect(p.lastChar()!.data.inventory.items[r.item!.itemId]).toBeTruthy();
+  });
+
+  it('rejects malformed or invented actions at the protocol boundary', async () => {
+    const ctx = setup();
+    const p = await signedIn(ctx, 'acct-4');
+    const before = ctx.room.stats.malformed;
+    for (const a of [{ k: 'give', item: 'x' }, { k: 'buy', stock: 'binding_flux', qty: 1e6 }, { k: 'forge', req: { txId: 'x', blueprintId: 'iron_longsword', mode: 'quick', bufferQuantity: 2, evidence: { heat: 'hot', strikes: 'lots' } } }])
+      p.act(a);
+    expect(ctx.room.stats.malformed).toBe(before + 3);
+  });
+
+  it('computes hit damage from the server-side weapon, ignoring the reported damage', async () => {
+    const ctx = setup();
+    const p = await signedIn(ctx, 'acct-5');
+    const e = ctx.room.enemies.find((x) => x.id === scav.id)!;
+    p.at(e.x + 1.2, e.z);
+    const hp = e.brain.health;
+    p.hit(e.id, 'light1', 200);
+    const expected = mitigate(playerHit(new Session(newSessionData(0)), 'light1', () => 0.99)!.damage, ENEMIES.scavenger.defense);
+    expect(hp - e.brain.health).toBeCloseTo(expected, 1); // enemies round damage to 0.1
+    expect(expected).toBeLessThan(20);
+    // An ability the server-side weapon doesn't have is refused outright.
+    const before = ctx.room.stats.rejectedHits;
+    p.hit(e.id, 'storm_arc', 50);
+    expect(ctx.room.stats.rejectedHits).toBe(before + 1);
+  });
+
+  it('rolls kill rewards on the server for signed-in contributors', async () => {
+    const ctx = setup();
+    const p = await signedIn(ctx, 'acct-6');
+    const coins = p.char.session.inventory.coins;
+    const e = ctx.room.enemies.find((x) => x.id === scav.id)!;
+    p.at(e.x + 1.2, e.z);
+    for (let i = 0; i < 60 && e.brain.alive; i++) {
+      ctx.clock.advance(1000); // stay under the hit rate limit
+      p.hit(e.id, i % 2 ? 'light1' : 'heavy', 1);
+    }
+    expect(e.brain.alive).toBe(false);
+    const data = p.lastChar()!.data;
+    expect(data.inventory.coins).toBe(coins + ENEMIES.scavenger.coins[1]);
+    expect(data.stats.kills.scavenger).toBe(1);
+    expect(data.progression.weaponMastery.longsword.xp + data.progression.weaponMastery.longsword.level).toBeGreaterThan(1);
+  });
+
+  it('saves changed characters after a delay and on leaving, and reloads them', async () => {
+    const ctx = setup();
+    const p = await signedIn(ctx, 'acct-7');
+    p.char.session.addCoins(5);
+    ctx.host.changed(p.char);
+    ctx.host.flushDue();
+    expect(ctx.store.writes).toBe(0);
+    ctx.clock.advance(SAVE_DELAY_MS);
+    ctx.host.flushDue();
+    await ctx.host.flushAll();
+    expect(ctx.store.writes).toBe(1);
+
+    p.char.session.addCoins(7);
+    ctx.host.changed(p.char);
+    const coins = p.char.session.inventory.coins;
+    ctx.room.leave(p.id);
+    expect(ctx.host.loadedCount).toBe(0);
+    await ctx.host.flushAll();
+    const again = await ctx.host.open('acct-7');
+    expect(again.session.inventory.coins).toBe(coins);
+  });
+
+  it('shares one character between a new sign-in and the old connection it replaces', async () => {
+    const ctx = setup();
+    const a = await signedIn(ctx, 'acct-8');
+    const b = await signedIn(ctx, 'acct-8'); // signs a out of the world
+    expect(b.char).toBe(a.char);
+    expect(a.inbox.some((m) => m.t === 'error' && m.error === 'signed_in_elsewhere')).toBe(true);
+    expect(ctx.host.loadedCount).toBe(1);
+    ctx.room.leave(b.id);
+    expect(ctx.host.loadedCount).toBe(0);
+  });
+
+  it('tells outdated clients to reload, and advances play time only while in the world', async () => {
+    const ctx = setup();
+    const inbox: WorldServerMsg[] = [];
+    ctx.room.handle(null, JSON.stringify({ t: 'hello', name: 'Old', protocol: WORLD_PROTOCOL - 1 }), (m) => inbox.push(m));
+    expect(inbox).toEqual([{ t: 'error', error: 'outdated_client' }]);
+    const p = await signedIn(ctx, 'acct-9');
+    const t0 = p.char.session.data.playTime;
+    ctx.room.step(1);
+    expect(p.char.session.data.playTime).toBe(t0); // still on the title screen
+    p.at(0, 0);
+    ctx.room.step(1);
+    expect(p.char.session.data.playTime).toBe(t0 + 1);
+  });
+});
