@@ -258,6 +258,21 @@ test('character window: tabs, attributes that grow by use, derived stats', async
   await page.keyboard.press('KeyO');
   await expect(page.getByTestId('attr-vitality')).toHaveText('2');
   await expect(page.getByTestId('character-window').locator('[data-stat="Max health"]')).toHaveText('205');
+
+  // Stat points: none at rank 1; 3 per rank after. Spending adds to the total; Reset refunds.
+  await expect(page.getByTestId('unspent-points')).toHaveText('0');
+  await expect(page.getByTestId('add-strength')).toBeDisabled();
+  await page.evaluate(() => (window as unknown as { __alloy: { session: () => { gainAdventurer: (xp: number) => void } } }).__alloy.session().gainAdventurer(100));
+  await page.keyboard.press('KeyO');
+  await page.keyboard.press('KeyO');
+  await expect(page.getByTestId('unspent-points')).toHaveText('3');
+  const str = Number(await page.getByTestId('attr-strength').textContent());
+  await page.getByTestId('add-strength').click();
+  await expect(page.getByTestId('attr-strength')).toHaveText(String(str + 1));
+  await expect(page.getByTestId('unspent-points')).toHaveText('2');
+  await page.getByTestId('respec').click();
+  await expect(page.getByTestId('unspent-points')).toHaveText('3');
+  await expect(page.getByTestId('attr-strength')).toHaveText(String(str));
   expect(errors).toEqual([]);
 });
 

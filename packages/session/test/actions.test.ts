@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FORGE_ANVIL, NPCS, RESOURCE_NODES } from '@alloy/world';
-import { NODE_MAX_CHARGES, NODE_RESPAWN_SECONDS, RANGE_SLACK, Session, applyAction, characterStats, newSessionData, playerHit, rewardHit, rewardHitTaken, rewardKill } from '../src';
-import { BASE_MAX_HEALTH, attributeXpToNext } from '@alloy/game-rules';
+import { NODE_MAX_CHARGES, NODE_RESPAWN_SECONDS, RANGE_SLACK, Session, applyAction, characterStats, hitAgainst, newSessionData, playerHit, rewardHit, rewardHitTaken, rewardKill } from '../src';
+import { ATTACKS, BASE_MAX_HEALTH, ENEMIES, adventurerXpToNext, attributeXpToNext } from '@alloy/game-rules';
 
 const fresh = () => new Session(newSessionData(1000));
 const ore = RESOURCE_NODES.find((n) => n.material === 'iron_ore')!;
@@ -153,5 +153,54 @@ describe('attributes in the session', () => {
     expect(playerHit(s, 'light1', () => 0.99)!.damage).toBeGreaterThan(base);
     for (let i = 0; i < 40; i++) rewardHitTaken(s, 100);
     expect(characterStats(s).maxHealth).toBeGreaterThan(BASE_MAX_HEALTH);
+  });
+});
+
+describe('stat points in the session', () => {
+  const ranked = (rank: number) => {
+    const s = fresh();
+    for (let r = 1; r < rank; r++) s.gainAdventurer(adventurerXpToNext(r));
+    return s;
+  };
+
+  it('has no points at rank 1 and 3 per rank after', () => {
+    expect(fresh().unspentPoints).toBe(0);
+    expect(ranked(3).unspentPoints).toBe(6);
+  });
+
+  it('spends points only through the action, within what was earned, and respecs for free', () => {
+    const s = ranked(3);
+    expect(applyAction(s, { k: 'allocate', attr: 'strength', n: 7 }, { pos: null })).toMatchObject({ ok: false, error: 'no_points' });
+    expect(applyAction(s, { k: 'allocate', attr: 'nonsense' as never, n: 1 }, { pos: null })).toMatchObject({ ok: false, error: 'unknown_attribute' });
+    expect(applyAction(s, { k: 'allocate', attr: 'strength', n: 0 }, { pos: null }).ok).toBe(false);
+    expect(applyAction(s, { k: 'allocate', attr: 'strength', n: 4 }, { pos: null }).ok).toBe(true);
+    expect(applyAction(s, { k: 'allocate', attr: 'vitality', n: 2 }, { pos: null }).ok).toBe(true);
+    expect(s.unspentPoints).toBe(0);
+    expect(s.attributeTotals().strength).toBe(5);
+    expect(characterStats(s).maxHealth).toBe(BASE_MAX_HEALTH + 10);
+    const r = applyAction(s, { k: 'respec' }, { pos: null });
+    expect(r.ok).toBe(true);
+    expect(s.unspentPoints).toBe(6);
+    expect(s.attributeTotals().strength).toBe(1);
+  });
+
+  it('fills an empty allocation into old saves', () => {
+    const d = newSessionData(1000);
+    delete d.progression.allocated;
+    expect(new Session(d).allocated).toEqual({ strength: 0, dexterity: 0, vitality: 0, endurance: 0 });
+  });
+
+  it('contests hits against the target: more Strength staggers harder, more Dexterity crits more', () => {
+    const s = ranked(11); // 30 points
+    s.talk('orla');
+    const weak = { strength: 1, dexterity: 1, vitality: 1, endurance: 1 };
+    const tough = { strength: 20, dexterity: 20, vitality: 20, endurance: 20 };
+    const atk = ATTACKS.light1;
+    expect(hitAgainst(s, atk, 0.99, weak).stagger).toBeGreaterThan(hitAgainst(s, atk, 0.99, tough).stagger);
+    applyAction(s, { k: 'allocate', attr: 'dexterity', n: 30 }, { pos: null });
+    // A roll just above the weapon's own crit chance crits only thanks to the Dexterity contest.
+    const roll = characterStats(s).weapon.critChance + 0.05;
+    expect(hitAgainst(s, atk, roll, ENEMIES.scavenger.attributes).crit).toBe(true);
+    expect(hitAgainst(s, atk, roll, tough).crit).toBe(false);
   });
 });

@@ -12,6 +12,7 @@
 import type { SessionData } from '@alloy/save';
 import type { CharAction, SessionEvent } from '@alloy/session';
 import type { ItemInstance } from '@alloy/item-gen';
+import { ATTRIBUTE_IDS } from '@alloy/game-rules';
 
 export type { CharAction } from '@alloy/session';
 
@@ -123,6 +124,10 @@ function charAction(v: unknown): CharAction | null {
       return v.npc === 'orla' ? { k: 'talk', npc: 'orla' } : null;
     case 'event':
       return v.ev === 'open_merchant' ? { k: 'event', ev: 'open_merchant' } : null;
+    case 'allocate':
+      return (ATTRIBUTE_IDS as readonly unknown[]).includes(v.attr) && int(v.n, 1, 100) ? { k: 'allocate', attr: v.attr as (typeof ATTRIBUTE_IDS)[number], n: v.n } : null;
+    case 'respec':
+      return { k: 'respec' };
     case 'forge': {
       const r = v.req;
       if (!obj(r) || !str(r.txId, 128) || !str(r.blueprintId) || (r.mode !== 'quick' && r.mode !== 'masterwork') || !int(r.bufferQuantity, 0, 1000)) return null;

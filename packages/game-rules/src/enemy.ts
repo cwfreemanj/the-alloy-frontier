@@ -2,6 +2,7 @@
  * Enemy archetypes and a small explicit AI state machine (GDD 3.1, 6.1 "small explicit
  * ability/state machine first"). Pure logic: the client maps intents to movement.
  */
+import type { AttributeLevels } from './attributes';
 import { SwingTracker } from './combat';
 
 export type EnemyState =
@@ -64,6 +65,8 @@ export interface EnemyArchetype {
   radius: number;
   /** Visual height scale. */
   scale: number;
+  /** Attributes compared with the player's (stagger, crits, how hard hits land). */
+  attributes: AttributeLevels;
 }
 
 export const ENEMIES: Record<string, EnemyArchetype> = {
@@ -90,6 +93,7 @@ export const ENEMIES: Record<string, EnemyArchetype> = {
     respawnSeconds: 90,
     radius: 0.45,
     scale: 1,
+    attributes: { strength: 2, dexterity: 3, vitality: 2, endurance: 2 },
   },
   sentinel: {
     id: 'sentinel',
@@ -115,6 +119,7 @@ export const ENEMIES: Record<string, EnemyArchetype> = {
     respawnSeconds: 120,
     radius: 0.75,
     scale: 1.35,
+    attributes: { strength: 4, dexterity: 1, vitality: 5, endurance: 3 },
   },
   warden: {
     id: 'warden',
@@ -142,6 +147,7 @@ export const ENEMIES: Record<string, EnemyArchetype> = {
     respawnSeconds: null,
     radius: 1.1,
     scale: 1.8,
+    attributes: { strength: 6, dexterity: 3, vitality: 8, endurance: 6 },
   },
   dummy: {
     id: 'dummy',
@@ -163,6 +169,7 @@ export const ENEMIES: Record<string, EnemyArchetype> = {
     respawnSeconds: null,
     radius: 0.4,
     scale: 1,
+    attributes: { strength: 1, dexterity: 1, vitality: 1, endurance: 1 },
   },
 };
 

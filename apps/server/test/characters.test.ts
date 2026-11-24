@@ -144,6 +144,23 @@ describe('server-owned characters', () => {
     expect(at.endurance.xp + at.endurance.level).toBeGreaterThan(1);
   });
 
+  it('lets a signed-in player spend only the stat points the server says they earned', async () => {
+    const ctx = setup();
+    const p = await signedIn(ctx, 'acct-pts');
+    expect(p.act({ k: 'allocate', attr: 'strength', n: 3 })).toMatchObject({ ok: false, error: 'no_points' });
+    p.char.session.gainAdventurer(100); // rank 2: 3 points
+    expect(p.act({ k: 'allocate', attr: 'strength', n: 3 }).ok).toBe(true);
+    expect(p.lastChar()!.data.progression.allocated!.strength).toBe(3);
+    expect(p.act({ k: 'allocate', attr: 'strength', n: 1 })).toMatchObject({ ok: false, error: 'no_points' });
+    // Malformed requests never reach the rules.
+    const before = ctx.room.stats.malformed;
+    p.act({ k: 'allocate', attr: 'luck', n: 1 });
+    p.act({ k: 'allocate', attr: 'strength', n: -5 });
+    expect(ctx.room.stats.malformed).toBe(before + 2);
+    expect(p.act({ k: 'respec' }).ok).toBe(true);
+    expect(p.lastChar()!.data.progression.allocated!.strength).toBe(0);
+  });
+
   it('grows Vitality from the enemy attacks the server aims at a signed-in player', async () => {
     const ctx = setup();
     const p = await signedIn(ctx, 'acct-vit');

@@ -179,6 +179,10 @@ button.btn.small { padding: 4px 9px; font-size: 12px; }
 .slot-art { width: 100%; height: 46%; }
 .slot-name { font-size: 10px; line-height: 1.1; text-align: center; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .attrs { display: grid; gap: 10px; }
+.points { margin-bottom: 8px; padding: 6px 10px; background: var(--panel-2); border: 1px solid var(--steel); border-radius: 3px; font-size: 13px; }
+.attr-total { font-size: 16px; min-width: 2ch; text-align: right; }
+button.btn.plus { padding: 0 8px; margin-left: 8px; line-height: 20px; font-weight: 700; color: var(--ember); }
+button.btn.plus:disabled { color: var(--dim); }
 .attr { background: var(--panel-2); border: 1px solid var(--steel); border-radius: 3px; padding: 8px 10px; display: grid; gap: 4px; }
 .xpbar { position: relative; height: 14px; background: #101114; border: 1px solid var(--steel); border-radius: 2px; overflow: hidden; }
 .xpbar-fill { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, var(--ember-deep), var(--ember)); }

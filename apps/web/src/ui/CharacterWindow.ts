@@ -8,6 +8,7 @@
 import { averageQuality, materialTotal } from '@alloy/crafting';
 import {
   ADVENTURER_RANK_MAX,
+  ALLOCATED_MAX,
   ATTACKS,
   ATTRIBUTES,
   ATTRIBUTE_IDS,
@@ -17,6 +18,7 @@ import {
   attributeXpToNext,
   smithXpToNext,
   weaponXpToNext,
+  type AttributeId,
 } from '@alloy/game-rules';
 import { RARITY_ORDER, itemDisplayName, materialName, type ItemInstance } from '@alloy/item-gen';
 import { characterStats, type Session } from '../state/Session';
@@ -68,9 +70,23 @@ export class CharacterWindow {
     private onEquip: (id: string) => void,
     /** Asks the authority (server for accounts, this browser for guests); true when done. */
     private onDiscard: (id: string) => Promise<boolean>,
+    private onAllocate: (attr: AttributeId, n: number) => Promise<unknown>,
+    private onRespec: () => Promise<unknown>,
   ) {
     this.selected = session.inventory.equipped.weapon ?? session.inventory.itemOrder[0] ?? null;
     this.render();
+  }
+
+  /** True while a points request is with the authority (buttons are disabled meanwhile). */
+  private busy = false;
+  private spend(req: () => Promise<unknown>): void {
+    if (this.busy) return;
+    this.busy = true;
+    this.render();
+    void req().finally(() => {
+      this.busy = false;
+      this.render();
+    });
   }
 
   show(tab: CharacterTab): void {
@@ -129,22 +145,46 @@ export class CharacterWindow {
       doll.append(cell);
     }
 
+    const totals = s.attributeTotals();
+    const unspent = s.unspentPoints;
     const attrs = h('div', { class: 'attrs' });
     for (const id of ATTRIBUTE_IDS) {
       const a = s.attributes[id];
+      const pts = s.allocated[id];
       const def = ATTRIBUTES[id];
       const maxed = a.level >= ATTRIBUTE_MAX;
       const next = attributeXpToNext(a.level);
+      const canAdd = !this.busy && unspent > 0 && pts < ALLOCATED_MAX;
+      const add = h(
+        'button',
+        {
+          class: 'btn small plus',
+          'data-testid': `add-${id}`,
+          disabled: !canAdd,
+          title: unspent === 0 ? 'No stat points to spend' : pts >= ALLOCATED_MAX ? `At most ${ALLOCATED_MAX} points per attribute` : `Spend a point on ${def.name} (Shift: 5)`,
+          onclick: (ev: MouseEvent) => this.spend(() => this.onAllocate(id, Math.min(ev.shiftKey ? 5 : 1, unspent, ALLOCATED_MAX - pts))),
+        },
+        '+',
+      );
       attrs.append(
         h(
           'div',
           { class: 'attr', 'data-attr': id, title: `Grows from: ${def.grows}.\n${def.effect}.` },
-          h('div', { class: 'row' }, h('b', null, def.name), h('span', { class: 'spacer' }), h('span', { class: 'mono ember', 'data-testid': `attr-${id}` }, String(a.level))),
-          bar(a.xp, next, maxed ? 'MAX' : `${Math.floor(a.xp)} / ${next}`, maxed),
+          h('div', { class: 'row' }, h('b', null, def.name), h('span', { class: 'spacer' }), h('span', { class: 'mono ember attr-total', 'data-testid': `attr-${id}` }, String(totals[id])), add),
+          h('div', { class: 'small muted', 'data-testid': `attr-split-${id}` }, `${a.level} trained + ${pts} allocated`),
+          bar(a.xp, next, maxed ? 'TRAINED MAX' : `Training ${Math.floor(a.xp)} / ${next}`, maxed),
           h('div', { class: 'small muted' }, def.effect),
         ),
       );
     }
+    const spent = ATTRIBUTE_IDS.reduce((n, id) => n + s.allocated[id], 0);
+    const pointsBar = h(
+      'div',
+      { class: 'row points' },
+      h('span', null, 'Stat points: ', h('b', { class: unspent > 0 ? 'ember' : 'muted', 'data-testid': 'unspent-points' }, String(unspent))),
+      h('span', { class: 'spacer' }),
+      h('button', { class: 'btn small', 'data-testid': 'respec', disabled: this.busy || spent === 0, title: 'Refund every spent point (free for now)', onclick: () => this.spend(() => this.onRespec()) }, 'Reset'),
+    );
 
     const w = st.weapon;
     const derived = h(
@@ -177,7 +217,7 @@ export class CharacterWindow {
       'div',
       { class: 'panel-body char-grid' },
       h('div', { class: 'inv-col' }, h('h3', { style: 'margin-top:0' }, 'Equipment'), doll),
-      h('div', { class: 'inv-col' }, h('h3', { style: 'margin-top:0' }, 'Attributes'), h('div', { class: 'small muted', style: 'margin-bottom:6px' }, 'Attributes grow as you use them. Hover one to see how.'), attrs),
+      h('div', { class: 'inv-col' }, h('h3', { style: 'margin-top:0' }, 'Attributes'), h('div', { class: 'small muted', style: 'margin-bottom:6px' }, 'Each attribute is what you trained by use plus the points you spent. You earn 3 points per adventurer rank. Hover an attribute to see how it trains.'), pointsBar, attrs),
       h('div', { class: 'inv-col' }, h('h3', { style: 'margin-top:0' }, 'Stats'), derived, h('h3', null, 'Records'), records),
     );
   }

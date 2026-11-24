@@ -1,6 +1,9 @@
 /**
- * Attributes that grow by use (no point spending). XP comes from things the authority
- * observes: hits that land, hits aimed at the player, gathering, forging, kills.
+ * Attributes, in two layers that add up to one total per attribute:
+ * - trained: grows by use. XP comes from things the authority observes (hits that land,
+ *   hits aimed at the player, gathering, forging, kills).
+ * - allocated: stat points the player spends (3 per adventurer rank; free respec for now).
+ * Enemies have attributes too; some outcomes compare the player's totals with theirs.
  */
 import { STAMINA_CONFIG } from './stamina';
 
@@ -8,7 +11,12 @@ export const ATTRIBUTE_IDS = ['strength', 'dexterity', 'vitality', 'endurance'] 
 export type AttributeId = (typeof ATTRIBUTE_IDS)[number];
 export type AttributeState = Record<AttributeId, { level: number; xp: number }>;
 
+/** Highest trained level (by use). */
 export const ATTRIBUTE_MAX = 30;
+/** Most points that can be put into one attribute. */
+export const ALLOCATED_MAX = 50;
+export const STAT_POINTS_PER_RANK = 3;
+export type AttributeLevels = Record<AttributeId, number>;
 export const BASE_MAX_HEALTH = 200;
 
 export const ATTRIBUTES: Record<AttributeId, { name: string; grows: string; effect: string }> = {
@@ -60,8 +68,35 @@ export interface AttributeBonuses {
   maxStamina: number;
 }
 
-export function attributeBonuses(a: AttributeState): AttributeBonuses {
-  const above = (id: AttributeId) => Math.max(0, Math.min(ATTRIBUTE_MAX, a[id]?.level ?? 1) - 1);
+/** Stat points earned by an adventurer rank. */
+export const earnedStatPoints = (rank: number) => STAT_POINTS_PER_RANK * Math.max(0, Math.floor(rank) - 1);
+
+export function createAllocated(): AttributeLevels {
+  return { strength: 0, dexterity: 0, vitality: 0, endurance: 0 };
+}
+
+/** Fill in missing or malformed allocations (older saves have none). */
+export function normalizeAllocated(a: Partial<AttributeLevels> | undefined): AttributeLevels {
+  const out = createAllocated();
+  for (const id of ATTRIBUTE_IDS) {
+    const v = a?.[id];
+    if (Number.isInteger(v) && (v as number) > 0) out[id] = Math.min(ALLOCATED_MAX, v as number);
+  }
+  return out;
+}
+
+export const spentStatPoints = (a: AttributeLevels) => ATTRIBUTE_IDS.reduce((n, id) => n + a[id], 0);
+
+/** One total per attribute: trained level + allocated points. */
+export function attributeTotals(trained: AttributeState, allocated: AttributeLevels): AttributeLevels {
+  const out = createAllocated();
+  for (const id of ATTRIBUTE_IDS) out[id] = Math.min(ATTRIBUTE_MAX, trained[id]?.level ?? 1) + Math.min(ALLOCATED_MAX, allocated[id] ?? 0);
+  return out;
+}
+
+/** What attribute totals add to the character. */
+export function attributeBonuses(levels: AttributeLevels): AttributeBonuses {
+  const above = (id: AttributeId) => Math.max(0, Math.min(ATTRIBUTE_MAX + ALLOCATED_MAX, levels[id] ?? 1) - 1);
   return {
     damageBonus: 0.01 * above('strength'),
     critChance: 0.0025 * above('dexterity'),
@@ -98,3 +133,13 @@ export const ATTRIBUTE_XP = {
     return out;
   },
 };
+
+// ---------------- Contests: the player's totals against an enemy's attributes ----------------
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+/** Stagger the player deals: x0.6 .. x1.5, 2% per point of Strength difference. */
+export const staggerContest = (playerStr: number, enemyStr: number) => clamp(1 + 0.02 * (playerStr - enemyStr), 0.6, 1.5);
+/** Added to the player's crit chance: 0.4 percentage points per point of Dexterity difference. */
+export const critContest = (playerDex: number, enemyDex: number) => 0.004 * (playerDex - enemyDex);
+/** How hard an enemy's hit lands on the player: x0.7 .. x1.3, 1.5% per point of enemy Strength over player Vitality. */
+export const incomingContest = (enemyStr: number, playerVit: number) => clamp(1 + 0.015 * (enemyStr - playerVit), 0.7, 1.3);

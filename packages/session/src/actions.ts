@@ -6,7 +6,7 @@
  * only ever send the action (an intent), never its result.
  */
 import type { ForgeRequest } from '@alloy/crafting';
-import { ATTACKS, ATTRIBUTE_XP, ENEMIES, computeOutgoingHit, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
+import { ATTACKS, ATTRIBUTE_IDS, ATTRIBUTE_XP, ENEMIES, computeOutgoingHit, critContest, staggerContest, type AttackDefinition, type AttributeId, type AttributeLevels, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
 import { materialName, type ItemInstance, type WeaponStats } from '@alloy/item-gen';
 import { FORGE_ANVIL, NPCS } from '@alloy/world';
 import { NODE_RESPAWN_SECONDS, ensureNodes, nodeDef, nodeTraits, nodeYield, regrowNodes } from './nodes';
@@ -25,7 +25,9 @@ export type CharAction =
   | { k: 'equip'; item: string }
   | { k: 'discard'; item: string }
   | { k: 'talk'; npc: 'orla' }
-  | { k: 'event'; ev: 'open_merchant' };
+  | { k: 'event'; ev: 'open_merchant' }
+  | { k: 'allocate'; attr: AttributeId; n: number }
+  | { k: 'respec' };
 
 export interface ActionContext {
   /** Where the player is, as the authority knows it. Null = unknown (range-checked actions fail). */
@@ -119,6 +121,18 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
       const { events } = captureEvents(s, () => s.quest({ type: 'event', event: 'open_merchant' }));
       return { ok: true, events };
     }
+    case 'allocate': {
+      if (!(ATTRIBUTE_IDS as readonly string[]).includes(a.attr)) return no('unknown_attribute', 'Unknown attribute.');
+      const { value: r, events } = captureEvents(s, () => s.allocate(a.attr, a.n));
+      return r.ok ? { ok: true, events } : no(r.error, r.message, events);
+    }
+    case 'respec': {
+      const { events } = captureEvents(s, () => {
+        const n = s.respec();
+        s.notify({ type: 'toast', text: n > 0 ? `${n} stat points refunded` : 'No stat points to refund', tone: n > 0 ? 'good' : 'info' });
+      });
+      return { ok: true, events };
+    }
     default:
       return no('unknown_action', 'Unknown action.');
   }
@@ -149,14 +163,12 @@ export function rewardKill(s: Session, enemyType: string, enemyId: string, rng: 
  * Outgoing damage of one of the player's hits, from the character's own equipped weapon
  * and mastery (before the target's defense). Null if the attack isn't allowed.
  */
-export function playerHit(s: Session, attackId: string, rng: () => number): { damage: number; stagger: number; crit: boolean; guardBreak: boolean } | null {
+export function playerHit(s: Session, attackId: string, rng: () => number, target?: AttributeLevels): { damage: number; stagger: number; crit: boolean; guardBreak: boolean } | null {
   const atk = (ATTACKS as Record<string, (typeof ATTACKS)[AttackId] | undefined>)[attackId];
   if (!atk) return null;
   const w = s.equipped();
   if (atk.id === 'storm_arc' && !w?.result.imbuements.includes('storm_arc')) return null;
-  const st = characterStats(s);
-  const out = computeOutgoingHit(st.weapon, atk, st.damageBonus, rng());
-  return { ...out, guardBreak: !!atk.guardBreak };
+  return { ...hitAgainst(s, atk, rng(), target), guardBreak: !!atk.guardBreak };
 }
 
 /** Bare-handed stats when nothing is equipped. */
@@ -181,6 +193,19 @@ export function characterStats(s: Session): CharacterStats {
     damageBonus: weaponMasteryDamageBonus(s.weaponLevel) + b.damageBonus,
     weapon: { ...base, critChance: Math.min(1, base.critChance + b.critChance) },
   };
+}
+
+/**
+ * One of the player's hits against a target with the given attributes (none: no contest).
+ * Strength against theirs scales stagger; Dexterity against theirs shifts crit chance.
+ */
+export function hitAgainst(s: Session, atk: AttackDefinition, critRoll: number, target?: AttributeLevels): { damage: number; stagger: number; crit: boolean } {
+  const st = characterStats(s);
+  if (!target) return computeOutgoingHit(st.weapon, atk, st.damageBonus, critRoll);
+  const t = s.attributeTotals();
+  const weapon = { ...st.weapon, critChance: Math.max(0, Math.min(1, st.weapon.critChance + critContest(t.dexterity, target.dexterity))) };
+  const out = computeOutgoingHit(weapon, atk, st.damageBonus, critRoll);
+  return { ...out, stagger: out.stagger * staggerContest(t.strength, target.strength) };
 }
 
 /** Weapon mastery and attribute XP for a landed hit (none from dummies). */

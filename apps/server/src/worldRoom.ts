@@ -230,7 +230,7 @@ export class WorldRoom {
     if (dist2({ x: p.x, z: p.z }, e.pos2) > atk.range + e.def.radius + HIT_SLACK) return reject();
     if (me.char) {
       // Signed in: the damage comes from the server's copy of the weapon, not the report.
-      const out = playerHit(me.char.session, attackId, this.rng);
+      const out = playerHit(me.char.session, attackId, this.rng, e.def.attributes);
       if (!out) return reject();
       damage = mitigate(out.damage, e.def.defense);
       stagger = out.stagger;
