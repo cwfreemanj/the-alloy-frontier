@@ -1,6 +1,6 @@
-# Handoff: equipment slots and gear mechanics
+# Design record: equipment slots and gear mechanics
 
-Branch: `equipment-slots`. Read `AGENTS.md` and `docs/equipment-contract.md` first.
+Merged in PR #11. This was the handoff file for the task; it is kept as the record of what was decided and why. The interface with item generation is `docs/equipment-contract.md`.
 
 ## Goal
 Make every equipment slot real: equip/unequip anything into the right slot (checked by the
