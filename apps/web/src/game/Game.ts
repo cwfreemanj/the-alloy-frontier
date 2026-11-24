@@ -20,6 +20,7 @@ import {
   type Vec2,
 } from '@alloy/game-rules';
 import { cleanName, type AvatarState, type HitVerdict } from '@alloy/protocol';
+import { toolPower } from '@alloy/crafting';
 import { IMBUEMENTS, type ItemInstance } from '@alloy/item-gen';
 import { CameraRig } from '../core/CameraRig';
 import { Input } from '../core/Input';
@@ -29,7 +30,7 @@ import { PLAYER_RADIUS, Player } from '../entities/Player';
 import { Npc, ResourceNode } from '../entities/WorldObjects';
 import { Effects } from '../fx/Effects';
 import { SaveSystem } from '../state/Save';
-import { Session, applyAction, characterStats, ensureNodes, newSessionData, regrowNodes, hitAgainst, rewardHit, rewardHitTaken, rewardKill, type CharAction, type SessionData, type SessionEvent } from '../state/Session';
+import { Session, applyAction, characterStats, ensureNodes, newSessionData, regrowNodes, hitAgainst, rewardHit, rewardHitTaken, rewardKill, toolFor, type CharAction, type SessionData, type SessionEvent } from '../state/Session';
 import { CharacterWindow, type CharacterTab } from '../ui/CharacterWindow';
 import { ForgePanel } from '../ui/ForgePanel';
 import { Hud } from '../ui/Hud';
@@ -680,6 +681,7 @@ export class Game {
       name,
       () => this.closeModal(),
       (id) => void this.act({ k: 'equip', item: id }),
+      (slot) => void this.act({ k: 'unequip', slot }),
       async (id) => (await this.act({ k: 'discard', item: id })).ok,
       (attr, n) => this.act({ k: 'allocate', attr, n }),
       () => this.act({ k: 'respec' }),
@@ -1108,7 +1110,8 @@ export class Game {
     const toEnemy = new THREE.Vector2(e.position.x - this.player.position.x, e.position.z - this.player.position.z).normalize();
     const facingDot = toEnemy.dot(this.player.forward());
     // The enemy's Strength against your Vitality: how hard the hit lands.
-    const landed = damage * incomingContest(e.def.attributes.strength, this.session.attributeTotals().vitality);
+    // Then armor: mitigate(damage, total defense of equipped gear).
+    const landed = mitigate(damage * incomingContest(e.def.attributes.strength, this.session.attributeTotals().vitality), characterStats(this.session).defense);
     const out = c.receiveHit({ rawDamage: landed, facingDot, heavy });
     // Signed in, the server grants Vitality XP when it sends the attack.
     if (this.mode !== 'account' && e.def.kind !== 'dummy') rewardHitTaken(this.session, damage);
@@ -1234,12 +1237,31 @@ export class Game {
     this.hud.setGather(null);
     if (this.session.data.world.nodes[n.def.id].charges <= 0) return;
     // The quantity, quality and toast come from the rules (on the server when signed in).
-    void this.act({ k: 'gather', node: n.def.id }).then((r) => {
-      if (!r.ok) return;
+    void this.readyTool(n.def.material)
+      .then((ready) => (ready ? this.act({ k: 'gather', node: n.def.id }) : null))
+      .then((r) => {
+      if (!r?.ok) return;
       const p = n.object.position.clone();
       p.y += 0.8;
       this.effects.sparks(p, n.def.material === 'ironglass' ? '#7fdcff' : '#ffb06a', 10, 2.5);
     });
+  }
+
+  /**
+   * Gathering needs the right tool in the tool slot. If it's in the bag instead, equip the
+   * best one first (an ordinary equip action), so players don't have to swap tools by hand.
+   */
+  private async readyTool(material: string): Promise<boolean> {
+    const kind = toolFor(material);
+    if (this.session.toolPower(kind) > 0) return true;
+    const best = Object.values(this.session.inventory.items)
+      .filter((i) => toolPower(i, kind) > 0)
+      .sort((a, b) => toolPower(b, kind) - toolPower(a, kind))[0];
+    if (!best) {
+      this.hud.toast(kind === 'mining' ? 'You need a pickaxe to mine this.' : 'You need a hatchet to cut this.', 'warn');
+      return false;
+    }
+    return (await this.act({ k: 'equip', item: best.itemId, slot: 'tool' })).ok;
   }
 
   // ---------------- Presentation helpers ----------------

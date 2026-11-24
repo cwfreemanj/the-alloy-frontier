@@ -30,8 +30,8 @@ gathering, and the character sheet shows live slots.
 - [x] 2. Inventory: slots, equipItem/unequip, discard and validation rules, save migration
 - [x] 3. Session + actions + protocol: equip {item, slot?}, unequip {slot}; tool gate on gather;
       gear in characterStats; starter tools
-- [ ] 4. Client: defense on incoming hits, auto-equip tool on gather, live slots in the window
-- [ ] 5. Tests (unit, server, e2e); PR
+- [x] 4. Client: defense on incoming hits, auto-equip tool on gather, live slots in the window
+- [x] 5. Tests (unit, server, e2e); PR
 
 ## Current state
 Stages 1-3 done; typecheck clean, `npm test` passes.
@@ -46,7 +46,19 @@ Stages 1-3 done; typecheck clean, `npm test` passes.
   `characterStats` has `defense`, plus gear max health/stamina.
 - Server test: "checks equipment changes and the tool requirement on the server".
 
-Next: stage 4 (client).
+Stages 4-5 done:
+- Client: incoming hits are mitigated by gear defense; gathering equips the right tool from the
+  bag first (`Game.readyTool`); the window has 14 live slots, Equip/Unequip with the slot name,
+  a gear line for armor and tools, and a Defense stat. Weapon statistics are hidden for non-weapons.
+- Fixed a style leak: the window's `.slot`, `.tab` and other rules are now scoped under `.charwin`.
+  The HUD ability bar also uses `.slot`, and the leaked rule (shipped in PR #10) stretched it.
+- Tests: `npm test` passes (173). `npm run test:e2e`: 13 passed on the final run. The character-window
+  test covers the tool slot, the automatic hatchet swap, and Unequip/Equip.
+- Checked in a browser: an old guest save got the starter tools; the tool slot equips and
+  unequips; ironwood swaps in the hatchet.
+
+Next: owner review and merge. On merge, remove this file and its README entry, and tell the
+partner about `docs/equipment-contract.md`.
 
 ## Verify
 `npm run typecheck`, `npm test`, `npm run build`, `npm run test:e2e`.

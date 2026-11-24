@@ -5,7 +5,7 @@
  * - Skills: adventurer rank, weapon and blacksmithing mastery, and the attacks.
  * Everything shown comes from the session and the shared rules (no numbers of its own).
  */
-import { averageQuality, materialTotal } from '@alloy/crafting';
+import { averageQuality, equipInfo, materialTotal, slotOf, slotsFor, type EquipSlot } from '@alloy/crafting';
 import {
   ADVENTURER_RANK_MAX,
   ALLOCATED_MAX,
@@ -29,18 +29,24 @@ import { drawSword, itemHeader, provenanceText, sourceLabel, statTable, traitsBl
 export type CharacterTab = 'character' | 'inventory' | 'skills';
 type SortKey = 'rating' | 'recent' | 'name' | 'rarity';
 
-/** Equipment slots, in paper-doll order. Only the main hand has items so far. */
-const SLOTS: Array<{ id: string; label: string; live: boolean }> = [
-  { id: 'head', label: 'Head', live: false },
-  { id: 'trinket1', label: 'Trinket', live: false },
-  { id: 'chest', label: 'Chest', live: false },
-  { id: 'trinket2', label: 'Trinket', live: false },
-  { id: 'hands', label: 'Hands', live: false },
-  { id: 'legs', label: 'Legs', live: false },
-  { id: 'main', label: 'Main hand', live: true },
-  { id: 'feet', label: 'Feet', live: false },
-  { id: 'off', label: 'Off-hand', live: false },
+/** Equipment slots, in paper-doll order (3 per row). */
+const SLOTS: Array<{ id: EquipSlot; label: string }> = [
+  { id: 'head', label: 'Head' },
+  { id: 'shoulders', label: 'Shoulders' },
+  { id: 'neck', label: 'Neck' },
+  { id: 'cape', label: 'Cape' },
+  { id: 'chest', label: 'Chest' },
+  { id: 'belt', label: 'Belt' },
+  { id: 'hands', label: 'Hands' },
+  { id: 'legs', label: 'Legs' },
+  { id: 'feet', label: 'Feet' },
+  { id: 'ring1', label: 'Ring' },
+  { id: 'ring2', label: 'Ring' },
+  { id: 'tool', label: 'Tool' },
+  { id: 'weapon', label: 'Main hand' },
+  { id: 'offhand', label: 'Off-hand' },
 ];
+export const SLOT_LABEL: Record<EquipSlot, string> = Object.fromEntries(SLOTS.map((x) => [x.id, x.label])) as Record<EquipSlot, string>;
 
 const ATTACK_KEYS: Record<string, string> = { light1: 'LMB / J', light2: 'LMB / J', light3: 'LMB / J', heavy: 'F / K', guardbreaker: 'R', storm_arc: 'G' };
 const MIN_GRID_CELLS = 24;
@@ -53,6 +59,18 @@ const bar = (cur: number, max: number, label: string, maxed = false) =>
     h('div', { class: 'xpbar-fill', style: `width:${maxed ? 100 : Math.min(100, (cur / max) * 100)}%` }),
     h('span', null, label),
   );
+/** Armor and bonus lines of an item (defense, max health/stamina, attributes), if it has any. */
+function gearLine(item: ItemInstance): HTMLElement | null {
+  const r = item.result;
+  const parts: string[] = [];
+  if (r.defense) parts.push(`+${r.defense} defense`);
+  if (r.bonuses?.maxHealth) parts.push(`+${r.bonuses.maxHealth} max health`);
+  if (r.bonuses?.maxStamina) parts.push(`+${r.bonuses.maxStamina} max stamina`);
+  for (const [k, v] of Object.entries(r.bonuses?.attributes ?? {})) if (v) parts.push(`+${v} ${k}`);
+  const tool = equipInfo(item).tool;
+  if (tool) parts.push(`${tool.kind === 'mining' ? 'Mining' : 'Woodcutting'} tool, power ${tool.power}`);
+  return parts.length ? h('div', { class: 'small ember', style: 'margin-top:6px', 'data-testid': 'gear-line' }, parts.join(' · ')) : null;
+}
 const playTime = (s: number) => `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 const row3 = (k: string, v: string, note = '', vClass = '') => h('tr', { title: note }, h('td', null, k), h('td', { class: vClass, 'data-stat': k }, v), h('td', { class: 'muted' }, note));
 
@@ -68,6 +86,7 @@ export class CharacterWindow {
     private name: string,
     private onClose: () => void,
     private onEquip: (id: string) => void,
+    private onUnequip: (slot: EquipSlot) => void,
     /** Asks the authority (server for accounts, this browser for guests); true when done. */
     private onDiscard: (id: string) => Promise<boolean>,
     private onAllocate: (attr: AttributeId, n: number) => Promise<unknown>,
@@ -119,18 +138,22 @@ export class CharacterWindow {
     const st = characterStats(s);
     const eq = s.equipped();
 
+    const inv = s.inventory;
+    const twoHanded = !!eq && equipInfo(eq).hands === 2;
     const doll = h('div', { class: 'doll' });
     for (const slot of SLOTS) {
-      const item = slot.live ? eq : null;
+      const id = inv.equipped[slot.id];
+      const item = id ? (inv.items[id] ?? null) : null;
+      const blocked = slot.id === 'offhand' && twoHanded;
       const cell = h(
         'button',
         {
-          class: `slot ${slot.live ? '' : 'locked'} ${item ? 'filled' : ''}`,
+          class: `slot ${blocked ? 'locked' : ''} ${item ? 'filled' : ''}`,
           'data-slot': slot.id,
-          title: slot.live ? (item ? itemDisplayName(item) : 'Empty: equip a weapon from the Inventory tab') : `${slot.label}: coming soon`,
+          title: item ? `${itemDisplayName(item)} (click for details)` : blocked ? 'Your two-handed weapon uses both hands' : `${slot.label}: empty. Equip from the Inventory tab.`,
           style: item ? `border-color:${RARITY_COLORS[item.result.rarity]}` : '',
           onclick: () => {
-            if (!slot.live) return;
+            if (blocked) return;
             if (item) this.selected = item.itemId;
             this.show('inventory');
           },
@@ -141,11 +164,12 @@ export class CharacterWindow {
         const c = h('canvas', { class: 'slot-art' });
         cell.append(c, h('span', { class: 'slot-name', style: `color:${RARITY_COLORS[item.result.rarity]}` }, itemDisplayName(item)));
         requestAnimationFrame(() => drawSword(c, item));
-      } else cell.append(h('span', { class: 'slot-empty' }, slot.live ? 'Empty' : 'Coming soon'));
+      } else cell.append(h('span', { class: 'slot-empty' }, blocked ? 'Two-handed' : 'Empty'));
       doll.append(cell);
     }
 
     const totals = s.attributeTotals();
+    const gearAttr = s.gearAttributes();
     const unspent = s.unspentPoints;
     const attrs = h('div', { class: 'attrs' });
     for (const id of ATTRIBUTE_IDS) {
@@ -171,7 +195,7 @@ export class CharacterWindow {
           'div',
           { class: 'attr', 'data-attr': id, title: `Grows from: ${def.grows}.\n${def.effect}.` },
           h('div', { class: 'row' }, h('b', null, def.name), h('span', { class: 'spacer' }), h('span', { class: 'mono ember attr-total', 'data-testid': `attr-${id}` }, String(totals[id])), add),
-          h('div', { class: 'small muted', 'data-testid': `attr-split-${id}` }, `${a.level} trained + ${pts} allocated`),
+          h('div', { class: 'small muted', 'data-testid': `attr-split-${id}` }, `${a.level} trained + ${pts} allocated${gearAttr[id] ? ` + ${gearAttr[id]} gear` : ''}`),
           bar(a.xp, next, maxed ? 'TRAINED MAX' : `Training ${Math.floor(a.xp)} / ${next}`, maxed),
           h('div', { class: 'small muted' }, def.effect),
         ),
@@ -190,8 +214,9 @@ export class CharacterWindow {
     const derived = h(
       'table',
       { class: 'stat-table' },
-      row3('Max health', String(st.maxHealth), 'Vitality'),
-      row3('Max stamina', String(st.maxStamina), 'Endurance'),
+      row3('Max health', String(st.maxHealth), 'Vitality + gear'),
+      row3('Max stamina', String(st.maxStamina), 'Endurance + gear'),
+      row3('Defense', String(st.defense), `Gear: hits land ${Math.round((100 * 100) / (100 + st.defense))}% as hard`),
       row3('Weapon damage', w.damage.toFixed(1), eq ? 'Equipped weapon' : 'Unarmed'),
       row3('Damage bonus', `+${pct(st.damageBonus)}`, 'Mastery + Strength'),
       row3('Critical chance', pct(w.critChance, 1), 'Weapon + Dexterity'),
@@ -225,7 +250,6 @@ export class CharacterWindow {
   // ---------------- Inventory ----------------
   private inventoryTab(): HTMLElement {
     const inv = this.session.inventory;
-    const eq = this.session.equipped();
     const items = inv.itemOrder.map((id) => inv.items[id]).filter(Boolean);
     const sorted = [...items].sort((a, b) => {
       if (this.sort === 'rating') return b.result.rating - a.result.rating;
@@ -237,7 +261,7 @@ export class CharacterWindow {
     sortSel.addEventListener('change', () => ((this.sort = sortSel.value as SortKey), this.render()));
 
     const grid = h('div', { class: 'item-grid' });
-    for (const it of sorted) grid.append(this.tile(it, eq));
+    for (const it of sorted) grid.append(this.tile(it));
     for (let i = sorted.length; i < MIN_GRID_CELLS; i++) grid.append(h('div', { class: 'tile empty', 'aria-hidden': 'true' }));
 
     const mats = h('table', { class: 'stat-table' });
@@ -256,10 +280,10 @@ export class CharacterWindow {
       mats,
       h('details', null, h('summary', { class: 'small muted' }, `Material lots (${inv.lots.length})`), ...lots),
     );
-    return h('div', { class: 'panel-body inv-grid' }, left, this.detail(eq));
+    return h('div', { class: 'panel-body inv-grid' }, left, this.detail());
   }
 
-  private tile(it: ItemInstance, eq: ItemInstance | null): HTMLElement {
+  private tile(it: ItemInstance): HTMLElement {
     const c = h('canvas', { class: 'tile-art' });
     const t = h(
       'button',
@@ -276,13 +300,13 @@ export class CharacterWindow {
       },
       c,
       h('span', { class: 'tile-rating mono' }, String(it.result.rating)),
-      eq?.itemId === it.itemId ? h('span', { class: 'tile-eq', title: 'Equipped' }, 'E') : null,
+      slotOf(this.session.inventory, it.itemId) ? h('span', { class: 'tile-eq', title: `Equipped (${SLOT_LABEL[slotOf(this.session.inventory, it.itemId)!]})` }, 'E') : null,
     );
     requestAnimationFrame(() => drawSword(c, it));
     return t;
   }
 
-  private detail(eq: ItemInstance | null): HTMLElement {
+  private detail(): HTMLElement {
     const inv = this.session.inventory;
     const sel = this.selected ? inv.items[this.selected] : null;
     const right = h('div', { class: 'inv-col' });
@@ -291,7 +315,13 @@ export class CharacterWindow {
       return right;
     }
     const canvas = h('canvas', { style: 'width:100%;height:110px' });
-    const isEq = eq?.itemId === sel.itemId;
+    const inSlot = slotOf(inv, sel.itemId);
+    const isEq = inSlot !== null;
+    const target = slotsFor(sel)[0];
+    const isWeapon = target === 'weapon';
+    // Compare with whatever is in the slot this item would go in.
+    const otherId = target === 'ring1' ? (inv.equipped.ring1 ?? inv.equipped.ring2) : inv.equipped[target];
+    const other = !isEq && otherId ? (inv.items[otherId] ?? null) : null;
     const discard = this.confirmDiscard
       ? h(
           'span',
@@ -312,20 +342,19 @@ export class CharacterWindow {
           ),
           h('button', { class: 'btn small', onclick: () => ((this.confirmDiscard = false), this.render()) }, 'Keep'),
         )
-      : h('button', { class: 'btn small', disabled: isEq, title: isEq ? 'Cannot discard the equipped weapon' : '', onclick: () => ((this.confirmDiscard = true), this.render()) }, 'Discard…');
+      : h('button', { class: 'btn small', disabled: isEq, title: isEq ? 'Unequip it before discarding' : '', onclick: () => ((this.confirmDiscard = true), this.render()) }, 'Discard…');
+    const equipBtn = inSlot
+      ? h('button', { class: 'btn', 'data-testid': 'inv-unequip', title: `Take it off (${SLOT_LABEL[inSlot]})`, onclick: () => (this.onUnequip(inSlot), this.render()) }, `Unequip · ${SLOT_LABEL[inSlot]}`)
+      : h('button', { class: 'btn primary', 'data-testid': 'inv-equip', onclick: () => (this.onEquip(sel.itemId), this.render()) }, `Equip · ${SLOT_LABEL[target]}`);
     right.append(
       h('div', { class: 'preview-wrap', style: 'height:110px' }, canvas),
       h('div', { style: 'margin-top:8px' }, itemHeader(sel)),
       traitsBlock(sel),
-      h('h3', null, eq && !isEq ? `Compared with ${itemDisplayName(eq)}` : 'Statistics'),
-      statTable(sel, eq && !isEq ? eq : null),
-      h(
-        'div',
-        { class: 'row', style: 'margin-top:10px' },
-        h('button', { class: 'btn primary', disabled: isEq, 'data-testid': 'inv-equip', onclick: () => (this.onEquip(sel.itemId), this.render()) }, isEq ? 'Equipped' : 'Equip'),
-        h('span', { class: 'spacer' }),
-        discard,
-      ),
+      // Weapon statistics only mean something for weapons; other gear shows its gear line.
+      isWeapon ? h('h3', null, other ? `Compared with ${itemDisplayName(other)}` : 'Statistics') : '',
+      isWeapon ? statTable(sel, other) : '',
+      gearLine(sel) ?? '',
+      h('div', { class: 'row', style: 'margin-top:10px' }, equipBtn, h('span', { class: 'spacer' }), discard),
       h('h3', null, 'Provenance'),
       h('div', { class: 'prov' }, provenanceText(sel)),
     );
