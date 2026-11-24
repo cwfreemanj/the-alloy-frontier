@@ -9,7 +9,7 @@
  */
 import { ATTACKS, dist2, forwardPoint, inArc, inCircle, mitigate, type AttackId, type Vec2 } from '@alloy/game-rules';
 import { WORLD_LIMITS, WORLD_PROTOCOL, parseWorldClientMsg, type AvatarState, type CharAction, type EnemyNetState, type WorldPlayerInfo, type WorldServerMsg } from '@alloy/protocol';
-import { GATHER_SECONDS, RANGE_SLACK, applyAction, playerHit, rewardHit, rewardKill } from '@alloy/session';
+import { GATHER_SECONDS, RANGE_SLACK, applyAction, playerHit, rewardHit, rewardHitTaken, rewardKill } from '@alloy/session';
 import type { CharacterHost, LiveCharacter } from './characters';
 import { ENEMY_SPAWNS, EnemySim, buildWorldColliders, type ColliderWorld } from '@alloy/world';
 
@@ -242,7 +242,7 @@ export class WorldRoom {
     this.stats.acceptedHits++;
     if (!res.ignored) this.credit(e.id, me.id);
     if (me.char && !res.ignored && res.damage > 0) {
-      this.pushChar(me, rewardHit(me.char.session, e.spawn.type, res.damage), false);
+      this.pushChar(me, rewardHit(me.char.session, e.spawn.type, res.damage, attackId, crit), false);
       this.host?.changed(me.char);
     }
     me.send({ t: 'hitResult', enemyId, damage: res.damage, guarded: res.guarded, staggered: res.staggered, guardBroken: res.guardBroken, killed: res.killed, ignored: res.ignored, crit });
@@ -315,6 +315,10 @@ export class WorldRoom {
       this.stats.enemyHitsOnPlayers++;
       // The victim's client applies dodge i-frames and blocking to this raw hit.
       p.m.send({ t: 'playerHit', enemyId: e.id, damage: a.damage, heavy: !!a.heavy });
+      if (p.m.char) {
+        this.pushChar(p.m, rewardHitTaken(p.m.char.session, a.damage), false);
+        this.host?.changed(p.m.char);
+      }
     }
   }
 

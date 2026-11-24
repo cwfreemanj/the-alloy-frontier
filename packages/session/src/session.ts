@@ -17,6 +17,13 @@ import {
 } from '@alloy/crafting';
 import {
   QUEST_EDGE_YOU_MAKE,
+  ATTRIBUTE_XP,
+  addAttributeXp,
+  attributeBonuses,
+  normalizeAttributes,
+  type AttributeBonuses,
+  type AttributeId,
+  type AttributeState,
   addAdventurerXp,
   addSmithXp,
   addWeaponXp,
@@ -37,7 +44,7 @@ import type { SessionData } from '@alloy/save';
 
 export type SessionEvent =
   | { type: 'inventory' }
-  | { type: 'progress'; kind: 'weapon' | 'smith' | 'adventurer'; levels: number }
+  | { type: 'progress'; kind: 'weapon' | 'smith' | 'adventurer' | 'attribute'; levels: number; attr?: AttributeId }
   | { type: 'quest_step'; title: string; next: string | null }
   | { type: 'quest_complete' }
   | { type: 'toast'; text: string; tone?: 'info' | 'good' | 'warn' }
@@ -68,6 +75,7 @@ export class Session {
 
   constructor(data: SessionData) {
     this.data = data;
+    data.progression.attributes = normalizeAttributes(data.progression.attributes);
     this.txCounter = data.inventory.journal.length + 1;
   }
 
@@ -97,6 +105,20 @@ export class Session {
   }
   get weaponLevel(): number {
     return this.data.progression.weaponMastery.longsword.level;
+  }
+  get attributes(): AttributeState {
+    return (this.data.progression.attributes ??= normalizeAttributes(undefined));
+  }
+  /** What the character's attributes add (damage, crit, max health, max stamina). */
+  bonuses(): AttributeBonuses {
+    return attributeBonuses(this.attributes);
+  }
+  /** Grow attributes by use; announces each level-up. */
+  gainAttributes(gains: Array<[AttributeId, number]>): void {
+    for (const [id, xp] of gains) {
+      const levels = addAttributeXp(this.attributes, id, xp);
+      if (levels > 0) this.emit({ type: 'progress', kind: 'attribute', attr: id, levels });
+    }
   }
   equipped(): ItemInstance | null {
     return equippedWeapon(this.data.inventory);
@@ -204,6 +226,7 @@ export class Session {
     const g = addSmithXp(this.data.progression, xp);
     this.data.progression = g.state;
     if (g.levelsGained > 0) this.emit({ type: 'progress', kind: 'smith', levels: g.levelsGained });
+    this.gainAttributes(ATTRIBUTE_XP.forge());
     this.emit({ type: 'toast', text: `+${xp} blacksmithing XP`, tone: 'good' });
     this.emit({ type: 'inventory' });
     this.quest({ type: 'event', event: req.mode === 'quick' ? 'craft_quick' : 'craft_masterwork' });

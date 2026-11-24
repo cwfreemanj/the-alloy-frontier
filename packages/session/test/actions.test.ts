@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { FORGE_ANVIL, NPCS, RESOURCE_NODES } from '@alloy/world';
-import { NODE_MAX_CHARGES, NODE_RESPAWN_SECONDS, RANGE_SLACK, Session, applyAction, newSessionData, playerHit, rewardKill } from '../src';
+import { NODE_MAX_CHARGES, NODE_RESPAWN_SECONDS, RANGE_SLACK, Session, applyAction, characterStats, newSessionData, playerHit, rewardHit, rewardHitTaken, rewardKill } from '../src';
+import { BASE_MAX_HEALTH, attributeXpToNext } from '@alloy/game-rules';
 
 const fresh = () => new Session(newSessionData(1000));
 const ore = RESOURCE_NODES.find((n) => n.material === 'iron_ore')!;
@@ -111,5 +112,46 @@ describe('rewards', () => {
     expect(playerHit(s, 'storm_arc', () => 0.5)).toBeNull();
     expect(playerHit(s, 'not-an-attack', () => 0.5)).toBeNull();
     expect(playerHit(s, 'guardbreaker', () => 0.99)!.guardBreak).toBe(true);
+  });
+});
+
+describe('attributes in the session', () => {
+  it('fills attributes into an old save that has none', () => {
+    const d = newSessionData(1000);
+    delete d.progression.attributes;
+    const s = new Session(d);
+    expect(s.attributes.strength).toEqual({ level: 1, xp: 0 });
+    expect(characterStats(s).maxHealth).toBe(BASE_MAX_HEALTH);
+  });
+
+  it('grows Strength and Endurance from mining, through the shared action', () => {
+    const s = fresh();
+    applyAction(s, { k: 'gather', node: ore.id }, at(ore.pos));
+    expect(s.attributes.strength.xp).toBeGreaterThan(0);
+    expect(s.attributes.endurance.xp).toBeGreaterThan(0);
+  });
+
+  it('grows Dexterity from light hits and Strength from heavy ones, never from dummies', () => {
+    const s = fresh();
+    rewardHit(s, 'scavenger', 20, 'light1');
+    expect(s.attributes.dexterity.xp).toBeGreaterThan(0);
+    rewardHit(s, 'scavenger', 20, 'heavy');
+    expect(s.attributes.strength.xp).toBeGreaterThan(0);
+    const before = JSON.stringify(s.attributes);
+    rewardHit(s, 'dummy', 50, 'heavy');
+    expect(JSON.stringify(s.attributes)).toBe(before);
+  });
+
+  it('announces a level-up and applies its bonus to damage and health', () => {
+    const s = fresh();
+    s.talk('orla');
+    const base = playerHit(s, 'light1', () => 0.99)!.damage;
+    const ups: unknown[] = [];
+    s.on((e) => e.type === 'progress' && e.kind === 'attribute' && ups.push(e));
+    s.gainAttributes([['strength', attributeXpToNext(1)]]);
+    expect(ups).toEqual([{ type: 'progress', kind: 'attribute', attr: 'strength', levels: 1 }]);
+    expect(playerHit(s, 'light1', () => 0.99)!.damage).toBeGreaterThan(base);
+    for (let i = 0; i < 40; i++) rewardHitTaken(s, 100);
+    expect(characterStats(s).maxHealth).toBeGreaterThan(BASE_MAX_HEALTH);
   });
 });

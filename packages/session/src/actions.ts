@@ -6,8 +6,8 @@
  * only ever send the action (an intent), never its result.
  */
 import type { ForgeRequest } from '@alloy/crafting';
-import { ATTACKS, ENEMIES, computeOutgoingHit, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
-import { materialName, type ItemInstance } from '@alloy/item-gen';
+import { ATTACKS, ATTRIBUTE_XP, ENEMIES, computeOutgoingHit, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
+import { materialName, type ItemInstance, type WeaponStats } from '@alloy/item-gen';
 import { FORGE_ANVIL, NPCS } from '@alloy/world';
 import { NODE_RESPAWN_SECONDS, ensureNodes, nodeDef, nodeTraits, nodeYield, regrowNodes } from './nodes';
 import type { Session, SessionEvent } from './session';
@@ -77,6 +77,7 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
       const t = nodeTraits(def);
       const { value: ok, events } = captureEvents(s, () => {
         if (!s.gather(def.id, def.material, qty, t.quality, t.traits)) return false;
+        s.gainAttributes(ATTRIBUTE_XP.gather(def.material));
         rt.charges--;
         rt.gathers++;
         if (rt.charges <= 0) rt.respawnAt = s.data.playTime + NODE_RESPAWN_SECONDS;
@@ -138,6 +139,7 @@ export function rewardKill(s: Session, enemyType: string, enemyId: string, rng: 
       flux = 1 + Math.floor(rng() * 2);
       s.gather(`drop:${enemyId}`, 'binding_flux', flux, 0.5, {});
     }
+    s.gainAttributes(ATTRIBUTE_XP.kill(def.kind));
     s.recordKill(enemyType);
   });
   return { coins, flux, events };
@@ -152,14 +154,47 @@ export function playerHit(s: Session, attackId: string, rng: () => number): { da
   if (!atk) return null;
   const w = s.equipped();
   if (atk.id === 'storm_arc' && !w?.result.imbuements.includes('storm_arc')) return null;
-  const stats = w?.result ?? { damage: 8, attackSpeed: 1, stagger: 8, staminaCostMultiplier: 1, critChance: 0 };
-  const out = computeOutgoingHit(stats, atk, weaponMasteryDamageBonus(s.weaponLevel), rng());
+  const st = characterStats(s);
+  const out = computeOutgoingHit(st.weapon, atk, st.damageBonus, rng());
   return { ...out, guardBreak: !!atk.guardBreak };
 }
 
-/** Weapon mastery XP for a landed hit (none from dummies). */
-export function rewardHit(s: Session, enemyType: string, damage: number): SessionEvent[] {
+/** Bare-handed stats when nothing is equipped. */
+export const UNARMED: WeaponStats = { damage: 8, attackSpeed: 1, stagger: 8, staminaCostMultiplier: 1, critChance: 0 };
+
+export interface CharacterStats {
+  maxHealth: number;
+  maxStamina: number;
+  /** Total damage bonus: weapon mastery + Strength (0.1 = +10%). */
+  damageBonus: number;
+  /** The equipped weapon's stats with attribute bonuses applied (crit from Dexterity). */
+  weapon: WeaponStats;
+}
+
+/** Derived character stats: one implementation for the server, guests and the character screen. */
+export function characterStats(s: Session): CharacterStats {
+  const b = s.bonuses();
+  const base = s.equipped()?.result ?? UNARMED;
+  return {
+    maxHealth: b.maxHealth,
+    maxStamina: b.maxStamina,
+    damageBonus: weaponMasteryDamageBonus(s.weaponLevel) + b.damageBonus,
+    weapon: { ...base, critChance: Math.min(1, base.critChance + b.critChance) },
+  };
+}
+
+/** Weapon mastery and attribute XP for a landed hit (none from dummies). */
+export function rewardHit(s: Session, enemyType: string, damage: number, attackId?: string, crit = false): SessionEvent[] {
   const def = ENEMIES[enemyType];
   if (!def) return [];
-  return captureEvents(s, () => s.gainWeaponXp(weaponXpForHit(def.kind, damage))).events;
+  const atk = attackId ? (ATTACKS as Record<string, (typeof ATTACKS)[AttackId] | undefined>)[attackId] : undefined;
+  return captureEvents(s, () => {
+    s.gainWeaponXp(weaponXpForHit(def.kind, damage));
+    if (def.kind !== 'dummy') s.gainAttributes(ATTRIBUTE_XP.hit(!!atk?.heavy, crit, damage));
+  }).events;
+}
+
+/** Attribute XP for an enemy attack aimed at the player (raw damage, before dodge or block). */
+export function rewardHitTaken(s: Session, rawDamage: number): SessionEvent[] {
+  return captureEvents(s, () => s.gainAttributes(ATTRIBUTE_XP.hitTaken(rawDamage))).events;
 }
