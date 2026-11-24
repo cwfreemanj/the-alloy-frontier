@@ -551,6 +551,8 @@ export class Game {
     this.modal = m;
     this.modalEl = el;
     if (m !== 'forge') this.forgePanel = null;
+    // The character screens hold a 3D view and a key handler: release them.
+    if (this.panel instanceof CharacterWindow) this.panel.dispose();
     this.panel = null;
     if (el) this.ui.append(el);
     this.input.enabled = m === null;
@@ -559,6 +561,8 @@ export class Game {
       this.input.exitPointerLock();
     }
     this.hud.setVisible(m !== 'title');
+    // The character screens have their own top bar; the world-status pill would sit on it.
+    if (this.worldStatusEl) this.worldStatusEl.style.display = m === 'inventory' ? 'none' : '';
   }
 
   closeModal(): void {
@@ -676,12 +680,13 @@ export class Game {
     );
   }
 
-  openInventory(tab: CharacterTab = 'inventory'): void {
+  openInventory(tab: CharacterTab = 'character'): void {
     const name = this.mode === 'account' ? (this.accounts?.username ?? 'Character') : this.playerName || 'Character';
     const p = new CharacterWindow(
       this.session,
       tab,
       name,
+      this.character,
       () => this.closeModal(),
       (id) => void this.act({ k: 'equip', item: id }),
       (slot) => void this.act({ k: 'unequip', slot }),
@@ -807,19 +812,11 @@ export class Game {
       if (this.modal !== null) this.closeModal();
       else this.openPause();
     }
-    // I / O / U open the character window on its Inventory / Character / Skills tab;
-    // the same key again closes it.
-    const tabKeys: Array<['inventory' | 'character' | 'skills', CharacterTab]> = [
-      ['inventory', 'inventory'],
-      ['character', 'character'],
-      ['skills', 'skills'],
-    ];
-    for (const [action, tab] of tabKeys) {
-      if (!this.input.pressed(action) || !this.started) continue;
-      const w = this.panel instanceof CharacterWindow ? this.panel : null;
-      if (this.modal === 'inventory' && w?.tab === tab) this.closeModal();
-      else if (this.modal === 'inventory' && w) w.show(tab);
-      else if (this.modal === null) this.openInventory(tab);
+    // I opens the character screens (on Character) and closes them again.
+    // Inside, the top tabs (or Q / E) switch screens.
+    if (this.input.pressed('inventory') && this.started) {
+      if (this.modal === 'inventory') this.closeModal();
+      else if (this.modal === null) this.openInventory('character');
     }
   }
 

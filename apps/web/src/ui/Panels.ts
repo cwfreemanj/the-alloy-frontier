@@ -105,7 +105,7 @@ export function controlsGrid(): HTMLElement {
     ['G', 'Weapon ability (Storm Arc, if imbued)'],
     ['Tab / MMB / T', 'Target lock'],
     ['E', 'Interact / gather'],
-    ['I / O / U', 'Inventory / Character / Skills'],
+    ['I', 'Character, inventory, proficiencies, skills (Q / E switch)'],
     ['Esc / P', 'Pause menu'],
     ['F3 / `', 'Performance overlay'],
     ['Mouse wheel', 'Camera zoom'],

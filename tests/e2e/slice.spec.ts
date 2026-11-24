@@ -225,8 +225,8 @@ test('full loop: gather, forge (quick + masterwork UI), equip, elite, report, sa
 
 test('character window: tabs, attributes that grow by use, derived stats', async ({ page }) => {
   const errors = await newGame(page);
-  // O opens the Character tab; I and U switch tabs; the same key again closes the window.
-  await page.keyboard.press('KeyO');
+  // I opens the Character screen; the top tabs and Q / E switch screens; I again closes.
+  await page.keyboard.press('KeyI');
   const win = page.getByTestId('character-window');
   await expect(win).toHaveAttribute('data-tab', 'character');
   await expect(page.getByTestId('attr-strength')).toHaveText('1');
@@ -235,13 +235,20 @@ test('character window: tabs, attributes that grow by use, derived stats', async
   await expect(win.locator('[data-slot="weapon"]')).toContainText('Empty');
   await expect(win.locator('[data-slot="head"]')).toContainText('Empty');
   await expect(win.locator('[data-slot="tool"]')).toContainText('Worn Pickaxe');
-  await page.keyboard.press('KeyI');
+  await expect(page.getByTestId('character-preview')).toBeVisible(); // the live 3D model
+  await page.getByTestId('tab-inventory').click();
   await expect(win).toHaveAttribute('data-tab', 'inventory');
-  await page.getByTestId('tab-skills').click();
-  await expect(page.getByTestId('character-window')).toHaveAttribute('data-tab', 'skills');
+  await page.keyboard.press('KeyE'); // next screen
+  await expect(win).toHaveAttribute('data-tab', 'proficiencies');
   await expect(page.getByTestId('skill-smith')).toContainText('Blacksmithing');
   await expect(page.getByTestId('skill-longsword')).toContainText('Longsword mastery');
-  await page.keyboard.press('KeyU');
+  await expect(page.getByTestId('prof-mining')).toContainText('Mining');
+  await page.getByTestId('tab-skills').click();
+  await expect(win).toHaveAttribute('data-tab', 'skills');
+  await expect(win.locator('[data-attack="guardbreaker"]')).toContainText('Guardbreaker');
+  await page.keyboard.press('KeyQ'); // previous screen
+  await expect(win).toHaveAttribute('data-tab', 'proficiencies');
+  await page.keyboard.press('KeyI');
   await expect.poll(async () => (await state(page)).modal).toBeNull();
 
   // Mining ore grows Strength and Endurance (the shared rules, run locally for a guest).
@@ -270,7 +277,7 @@ test('character window: tabs, attributes that grow by use, derived stats', async
   expect(await toolOf()).toBe('worn_hatchet');
 
   // The tool slot on the sheet: Unequip and Equip again from the item details.
-  await page.keyboard.press('KeyO');
+  await page.keyboard.press('KeyI');
   await expect(page.getByTestId('character-window').locator('[data-slot="tool"]')).toContainText('Worn Hatchet');
   await page.getByTestId('character-window').locator('[data-slot="tool"]').click();
   await page.getByTestId('inv-unequip').click();
@@ -283,7 +290,7 @@ test('character window: tabs, attributes that grow by use, derived stats', async
   // A Vitality level raises max health in play and on the character sheet.
   await page.evaluate(() => (window as unknown as { __alloy: { session: () => { gainAttributes: (g: Array<[string, number]>) => void } } }).__alloy.session().gainAttributes([['vitality', 40]]));
   await expect.poll(async () => (await state(page)).maxHealth).toBe(205);
-  await page.keyboard.press('KeyO');
+  await page.keyboard.press('KeyI');
   await expect(page.getByTestId('attr-vitality')).toHaveText('2');
   await expect(page.getByTestId('character-window').locator('[data-stat="Max health"]')).toHaveText('205');
 
@@ -292,9 +299,9 @@ test('character window: tabs, attributes that grow by use, derived stats', async
   await expect(page.getByTestId('add-strength')).toBeDisabled();
   await page.evaluate(() => (window as unknown as { __alloy: { session: () => { gainAdventurer: (xp: number) => void } } }).__alloy.session().gainAdventurer(100));
   // Reopen the window so it shows the new points (wait for the close: two quick presses can land in one frame).
-  await page.keyboard.press('KeyO');
+  await page.keyboard.press('KeyI');
   await expect.poll(async () => (await state(page)).modal).toBeNull();
-  await page.keyboard.press('KeyO');
+  await page.keyboard.press('KeyI');
   await expect(page.getByTestId('unspent-points')).toHaveText('3');
   const str = Number(await page.getByTestId('attr-strength').textContent());
   await page.getByTestId('add-strength').click();

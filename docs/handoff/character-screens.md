@@ -28,10 +28,23 @@ Rebuild the character window as full-screen tabbed screens in the style of the o
 
 ## Stages
 - [x] 1. Proficiency rules (shared, server-awarded) + tests
-- [ ] 2. Full-screen shell (top bar, tabs, keys)
-- [ ] 3. Character screen + live 3D model
-- [ ] 4. Inventory, Proficiencies, Skills screens
-- [ ] 5. Browser check, tests (unit, e2e), PR
+- [x] 2. Full-screen shell (top bar, tabs, keys)
+- [x] 3. Character screen + live 3D model
+- [x] 4. Inventory, Proficiencies, Skills screens
+- [x] 5. Browser check, tests (unit, e2e), PR
 
 ## Current state
-Stage 1 done (`npm test` 180 passed): `GATHERING_PROFICIENCIES`, `addProficiencyXp`, `proficiencyFor` in `packages/game-rules/src/progression.ts`; `Session.gainProficiency`; gather grants 5 XP and adds 1%/level to the extra-unit chance. Next: stage 2.
+All stages done; PR open.
+- Rules: gathering proficiencies in `packages/game-rules/src/progression.ts`; awarded in the shared
+  gather action (server for accounts).
+- UI: `apps/web/src/ui/CharacterWindow.ts` (full-screen shell + 4 screens), `CharacterPreview.ts`
+  (live 3D model, own renderer, disposed on close), `icons.ts` (inline SVG). Styles: the
+  "Character screens" block in `ui/styles.css`, all under `.cs`.
+- Game: I opens on Character and closes; `setModal` disposes the window and hides the
+  world-status pill while it's open. O/U bindings removed.
+- Checked in a browser at 1280x720: all four screens, the model, Q/E switching.
+- Tests: `npm test` 180 passed. `npm run test:e2e`: 12 passed, 1 failed (full loop: the Warden
+  wasn't killed in time). That test passed on 2 reruns. The character-window test covers all
+  four screens, Q/E and the 3D preview.
+
+Next: owner review; then close out this handoff.
