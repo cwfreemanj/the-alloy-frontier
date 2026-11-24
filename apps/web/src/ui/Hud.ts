@@ -1,6 +1,6 @@
 /** Main HUD (GDD 7.2): vitals upper-left, minimap + objective upper-right, abilities bottom-centre. */
 import * as THREE from 'three';
-import { ATTACKS, QUEST_EDGE_YOU_MAKE, STAMINA_CONFIG, describeProgress, weaponXpToNext, type PlayerCombat } from '@alloy/game-rules';
+import { ATTACKS, QUEST_EDGE_YOU_MAKE, STAMINA_CONFIG, describeProgress, weaponXpToNext, type PlayerCombat, WEAPON_FAMILIES } from '@alloy/game-rules';
 import { IMBUEMENTS, itemDisplayName, materialName, type ItemInstance, type MaterialId } from '@alloy/item-gen';
 import type { Session } from '../state/Session';
 import { PATH, ZONES, type Zone } from '@alloy/world';
@@ -167,8 +167,10 @@ export class Hud {
     this.stBar.classList.toggle('low', st.current < st.max * STAMINA_CONFIG.lowThreshold);
     this.stLabel.innerHTML = `<span>STAMINA${st.regenDelayRemaining > 0 ? '' : st.current < st.max ? ' ↑' : ''}</span><span>${st.current.toFixed(1)} / ${st.max}</span>`;
     const p = session.data.progression;
-    const wm = p.weaponMastery.longsword;
-    this.mastery.innerHTML = `<span>Longsword <b>${wm.level}</b> <span style="opacity:.7">(${Math.floor(wm.xp)}/${weaponXpToNext(wm.level)})</span></span><span>Blacksmith <b>${p.professions.blacksmithing.mastery}</b></span><span>Rank <b>${p.adventurer.rank}</b></span><span><b>${session.inventory.coins}</b> c</span>`;
+    // Mastery of the family in hand (longsword when unarmed, as before).
+    const fam = session.weaponFamily ?? 'longsword';
+    const wm = p.weaponMastery[fam] ?? { level: 1, xp: 0 };
+    this.mastery.innerHTML = `<span>${WEAPON_FAMILIES[fam].name} <b>${wm.level}</b> <span style="opacity:.7">(${Math.floor(wm.xp)}/${weaponXpToNext(wm.level)})</span></span><span>Blacksmith <b>${p.professions.blacksmithing.mastery}</b></span><span>Rank <b>${p.adventurer.rank}</b></span><span><b>${session.inventory.coins}</b> c</span>`;
     this.vignette.style.boxShadow = lowHpFlash ? 'inset 0 0 160px rgba(160,20,10,0.55)' : 'inset 0 0 160px rgba(160,20,10,0)';
 
     // Objective tracker

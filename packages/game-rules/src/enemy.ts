@@ -2,6 +2,7 @@
  * Enemy archetypes and a small explicit AI state machine (GDD 3.1, 6.1 "small explicit
  * ability/state machine first"). Pure logic: the client maps intents to movement.
  */
+import type { DamageType } from '@alloy/item-gen';
 import type { AttributeLevels } from './attributes';
 import { SwingTracker } from './combat';
 
@@ -67,6 +68,8 @@ export interface EnemyArchetype {
   scale: number;
   /** Attributes compared with the player's (stagger, crits, how hard hits land). */
   attributes: AttributeLevels;
+  /** Damage-type multipliers after defense (missing = x1). */
+  resist?: Partial<Record<DamageType, number>>;
 }
 
 export const ENEMIES: Record<string, EnemyArchetype> = {
@@ -94,6 +97,8 @@ export const ENEMIES: Record<string, EnemyArchetype> = {
     radius: 0.45,
     scale: 1,
     attributes: { strength: 2, dexterity: 3, vitality: 2, endurance: 2 },
+    // Hide armor: a bit weak to piercing, shrugs off some blunt force.
+    resist: { pierce: 1.2, blunt: 0.9 },
   },
   sentinel: {
     id: 'sentinel',
@@ -120,6 +125,8 @@ export const ENEMIES: Record<string, EnemyArchetype> = {
     radius: 0.75,
     scale: 1.35,
     attributes: { strength: 4, dexterity: 1, vitality: 5, endurance: 3 },
+    // Stone and iron construct: blades skid off, hammers crack it, it conducts magic.
+    resist: { slash: 0.75, pierce: 0.6, blunt: 1.35, magic: 1.15 },
   },
   warden: {
     id: 'warden',
@@ -148,6 +155,8 @@ export const ENEMIES: Record<string, EnemyArchetype> = {
     radius: 1.1,
     scale: 1.8,
     attributes: { strength: 6, dexterity: 3, vitality: 8, endurance: 6 },
+    // Plated furnace core: piercing finds few gaps, heavy blows dent it, magic overloads it.
+    resist: { pierce: 0.85, blunt: 1.15, magic: 1.2 },
   },
   dummy: {
     id: 'dummy',

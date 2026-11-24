@@ -1,4 +1,4 @@
-import type { EquipInfo, ForgeMode, ItemFamily, MaterialId, Specialization } from './types';
+import type { DamageType, EquipInfo, ForgeMode, ItemFamily, MaterialId, Specialization } from './types';
 
 export interface MaterialRequirement {
   materialId: MaterialId;
@@ -12,6 +12,8 @@ export interface BlueprintDefinition {
   family: ItemFamily;
   /** Where it goes when equipped. Omitted: a one-handed main-hand weapon. See docs/equipment-contract.md. */
   equip?: EquipInfo;
+  /** Weapons: overrides the family's default damage type. */
+  damageType?: DamageType;
   tier: string;
   description: string;
   baseDamage: number;

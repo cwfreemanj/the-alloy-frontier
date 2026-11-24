@@ -113,8 +113,12 @@ describe('server-owned characters', () => {
     p.at(e.x + 1.2, e.z);
     const hp = e.brain.health;
     p.hit(e.id, 'light1', 200);
-    const expected = mitigate(playerHit(new Session(newSessionData(0)), 'light1', () => 0.99)!.damage, ENEMIES.scavenger.defense);
+    // Unarmed fists are blunt; scavengers resist blunt a little.
+    const expected = mitigate(playerHit(new Session(newSessionData(0)), 'light1', () => 0.99)!.damage, ENEMIES.scavenger.defense) * ENEMIES.scavenger.resist!.blunt!;
     expect(hp - e.brain.health).toBeCloseTo(expected, 1); // enemies round damage to 0.1
+    // The server counts damage by type and family (unarmed here: blunt fists).
+    expect(ctx.room.stats.damageByType.blunt).toBeCloseTo(expected, 1);
+    expect(ctx.room.stats.damageByFamily.unarmed).toBeCloseTo(expected, 1);
     expect(expected).toBeLessThan(20);
     // An ability the server-side weapon doesn't have is refused outright.
     const before = ctx.room.stats.rejectedHits;
@@ -125,6 +129,7 @@ describe('server-owned characters', () => {
   it('rolls kill rewards on the server for signed-in contributors', async () => {
     const ctx = setup();
     const p = await signedIn(ctx, 'acct-6');
+    p.char.session.talk('orla'); // the starter longsword: weapon XP needs a weapon in hand
     const coins = p.char.session.inventory.coins;
     const e = ctx.room.enemies.find((x) => x.id === scav.id)!;
     p.at(e.x + 1.2, e.z);

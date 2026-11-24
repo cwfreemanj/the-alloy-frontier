@@ -18,10 +18,12 @@ import {
   attributeXpToNext,
   smithXpToNext,
   weaponXpToNext,
+  DAMAGE_TYPE_NAMES,
+  WEAPON_FAMILIES,
   type AttributeId,
 } from '@alloy/game-rules';
-import { RARITY_ORDER, itemDisplayName, materialName, type ItemInstance } from '@alloy/item-gen';
-import { characterStats, type Session } from '../state/Session';
+import { RARITY_ORDER, itemDisplayName, materialName, type ItemInstance, type WeaponFamily } from '@alloy/item-gen';
+import { characterStats, weaponDamageType, type Session } from '../state/Session';
 import { RARITY_COLORS } from '../entities/Weapons';
 import { clear, h } from './dom';
 import { drawSword, itemHeader, provenanceText, sourceLabel, statTable, traitsBlock } from './ItemView';
@@ -218,6 +220,7 @@ export class CharacterWindow {
       row3('Max stamina', String(st.maxStamina), 'Endurance + gear'),
       row3('Defense', String(st.defense), `Gear: hits land ${Math.round((100 * 100) / (100 + st.defense))}% as hard`),
       row3('Weapon damage', w.damage.toFixed(1), eq ? 'Equipped weapon' : 'Unarmed'),
+      row3('Damage type', DAMAGE_TYPE_NAMES[weaponDamageType(s)], s.weaponFamily ? WEAPON_FAMILIES[s.weaponFamily].name : 'Fists'),
       row3('Damage bonus', `+${pct(st.damageBonus)}`, 'Mastery + Strength'),
       row3('Critical chance', pct(w.critChance, 1), 'Weapon + Dexterity'),
       row3('Attack speed', `${w.attackSpeed.toFixed(2)}×`),
@@ -366,21 +369,28 @@ export class CharacterWindow {
   private skillsTab(): HTMLElement {
     const s = this.session;
     const p = s.data.progression;
-    const wm = p.weaponMastery.longsword;
     const sm = p.professions.blacksmithing;
     const st = characterStats(s);
     const skill = (testid: string, name: string, level: string, b: HTMLElement, note: string) =>
       h('div', { class: 'attr', 'data-testid': testid }, h('div', { class: 'row' }, h('b', null, name), h('span', { class: 'spacer' }), h('span', { class: 'mono ember' }, level)), b, h('div', { class: 'small muted' }, note));
     const adv = p.adventurer.rank >= ADVENTURER_RANK_MAX;
-    const wmax = wm.level >= WEAPON_MASTERY_MAX;
     const advNext = adventurerXpToNext(p.adventurer.rank);
-    const wNext = weaponXpToNext(wm.level);
     const sNext = smithXpToNext(sm.mastery);
+    // Weapon families: the one in hand, plus any trained before. The rest are listed by name.
+    const trained = (f: WeaponFamily) => f === s.weaponFamily || f === 'longsword' || (p.weaponMastery[f]?.level ?? 1) > 1 || (p.weaponMastery[f]?.xp ?? 0) > 0;
+    const families = Object.keys(WEAPON_FAMILIES) as WeaponFamily[];
+    const weaponSkills = families.filter(trained).map((f) => [f, p.weaponMastery[f] ?? { level: 1, xp: 0 }] as const);
+    const untrained = families.filter((f) => !trained(f)).map((f) => WEAPON_FAMILIES[f].name);
     const masteries = h(
       'div',
       { class: 'attrs' },
       skill('skill-adventurer', 'Adventurer rank', String(p.adventurer.rank), bar(p.adventurer.xp, advNext, adv ? 'MAX' : `${Math.floor(p.adventurer.xp)} / ${advNext}`, adv), 'Grows from defeating enemies and finishing quests.'),
-      skill('skill-longsword', 'Longsword mastery', `${wm.level} / ${WEAPON_MASTERY_MAX}`, bar(wm.xp, wNext, wmax ? 'MAX' : `${Math.floor(wm.xp)} / ${wNext}`, wmax), `+${wm.level - 1}% longsword damage. Grows from hits on real enemies.`),
+      ...weaponSkills.map(([f, m]) => {
+        const max = m.level >= WEAPON_MASTERY_MAX;
+        const next = weaponXpToNext(m.level);
+        const held = s.weaponFamily === f ? ' (in hand)' : '';
+        return skill(`skill-${f}`, `${WEAPON_FAMILIES[f].name} mastery${held}`, `${m.level} / ${WEAPON_MASTERY_MAX}`, bar(m.xp, next, max ? 'MAX' : `${Math.floor(m.xp)} / ${next}`, max), `+${m.level - 1}% damage with ${WEAPON_FAMILIES[f].name.toLowerCase()}s (${DAMAGE_TYPE_NAMES[WEAPON_FAMILIES[f].damageType].toLowerCase()}). Grows from hits on real enemies.`);
+      }),
       skill('skill-smith', 'Blacksmithing', String(sm.mastery), bar(sm.xp, sNext, `${Math.floor(sm.xp)} / ${sNext}`), 'Grows from forging. Higher mastery makes better weapons.'),
     );
     const imbued = s.equipped()?.result.imbuements ?? [];
@@ -400,8 +410,8 @@ export class CharacterWindow {
     return h(
       'div',
       { class: 'panel-body char-grid two' },
-      h('div', { class: 'inv-col' }, h('h3', { style: 'margin-top:0' }, 'Masteries'), masteries),
-      h('div', { class: 'inv-col' }, h('h3', { style: 'margin-top:0' }, 'Attacks'), h('div', { class: 'small muted', style: 'margin-bottom:6px' }, "Damage before the target's defense, without critical hits."), attacks),
+      h('div', { class: 'inv-col' }, h('h3', { style: 'margin-top:0' }, 'Masteries'), masteries, untrained.length ? h('div', { class: 'small muted', style: 'margin-top:8px' }, `Not trained yet: ${untrained.join(', ')}.`) : ''),
+      h('div', { class: 'inv-col' }, h('h3', { style: 'margin-top:0' }, 'Attacks'), h('div', { class: 'small muted', style: 'margin-bottom:6px' }, `${DAMAGE_TYPE_NAMES[weaponDamageType(s)]} damage, before the target's defense and resistances, without critical hits.`), attacks),
     );
   }
 }

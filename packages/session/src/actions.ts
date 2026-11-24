@@ -6,8 +6,8 @@
  * only ever send the action (an intent), never its result.
  */
 import { EQUIP_SLOTS, type EquipSlot, type ForgeRequest } from '@alloy/crafting';
-import { ATTACKS, ATTRIBUTE_IDS, ATTRIBUTE_XP, ENEMIES, computeOutgoingHit, critContest, staggerContest, type AttackDefinition, type AttributeId, type AttributeLevels, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
-import { Rng, materialName, type ItemInstance, type ToolKind, type WeaponStats } from '@alloy/item-gen';
+import { ATTACKS, ATTRIBUTE_IDS, damageTypeOf, mitigate, resistanceMultiplier, ATTRIBUTE_XP, ENEMIES, computeOutgoingHit, critContest, staggerContest, type AttackDefinition, type AttributeId, type AttributeLevels, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
+import { Rng, getBlueprint, materialName, type DamageType, type ItemInstance, type ToolKind, type WeaponStats } from '@alloy/item-gen';
 import { FORGE_ANVIL, NPCS } from '@alloy/world';
 import { NODE_RESPAWN_SECONDS, ensureNodes, nodeDef, nodeTraits, nodeYield, regrowNodes } from './nodes';
 import type { Session, SessionEvent } from './session';
@@ -233,6 +233,22 @@ export function hitAgainst(s: Session, atk: AttackDefinition, critRoll: number, 
   const weapon = { ...st.weapon, critChance: Math.max(0, Math.min(1, st.weapon.critChance + critContest(t.dexterity, target.dexterity))) };
   const out = computeOutgoingHit(weapon, atk, st.damageBonus, critRoll);
   return { ...out, stagger: out.stagger * staggerContest(t.strength, target.strength) };
+}
+
+/** The damage type of the equipped weapon (unarmed: blunt). */
+export function weaponDamageType(s: Session): DamageType {
+  const w = s.equipped();
+  return w ? damageTypeOf(w.family, getBlueprint(w.blueprintId)?.damageType) : 'blunt';
+}
+
+/**
+ * Damage that lands on an enemy: defense first (mitigate), then its resistance to the
+ * weapon's damage type. The same function runs on the server and for guests.
+ */
+export function damageAgainst(s: Session, rawDamage: number, enemy: { defense: number; resist?: Partial<Record<DamageType, number>> }): { damage: number; type: DamageType; multiplier: number } {
+  const type = weaponDamageType(s);
+  const multiplier = resistanceMultiplier(enemy.resist, type);
+  return { damage: mitigate(rawDamage, enemy.defense) * multiplier, type, multiplier };
 }
 
 /** Weapon mastery and attribute XP for a landed hit (none from dummies). */

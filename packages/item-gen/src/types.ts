@@ -38,7 +38,9 @@ export interface ConsumedMaterial {
   quality: number;
 }
 
-export type WeaponFamily = 'longsword';
+export type WeaponFamily = 'longsword' | 'shortsword' | 'greatsword' | 'axe' | 'mace' | 'dagger' | 'staff' | 'bow';
+/** What kind of damage a weapon deals (see packages/game-rules/src/damage.ts). */
+export type DamageType = 'slash' | 'pierce' | 'blunt' | 'magic';
 /** Every kind of item. Gathering tools are not weapons (no weapon mastery). */
 export type ItemFamily = WeaponFamily | 'tool';
 

@@ -7,6 +7,8 @@ import {
   ATTRIBUTES,
   STAT_POINTS_PER_RANK,
   incomingContest,
+  resistanceMultiplier,
+  WEAPON_FAMILIES,
   ATTACKS,
   DODGE,
   dist2,
@@ -30,7 +32,7 @@ import { PLAYER_RADIUS, Player } from '../entities/Player';
 import { Npc, ResourceNode } from '../entities/WorldObjects';
 import { Effects } from '../fx/Effects';
 import { SaveSystem } from '../state/Save';
-import { Session, applyAction, characterStats, ensureNodes, newSessionData, regrowNodes, hitAgainst, rewardHit, rewardHitTaken, rewardKill, toolFor, type CharAction, type SessionData, type SessionEvent } from '../state/Session';
+import { Session, applyAction, characterStats, ensureNodes, newSessionData, regrowNodes, damageAgainst, hitAgainst, weaponDamageType, rewardHit, rewardHitTaken, rewardKill, toolFor, type CharAction, type SessionData, type SessionEvent } from '../state/Session';
 import { CharacterWindow, type CharacterTab } from '../ui/CharacterWindow';
 import { ForgePanel } from '../ui/ForgePanel';
 import { Hud } from '../ui/Hud';
@@ -428,6 +430,7 @@ export class Game {
       if (r.guardBroken) this.hud.damageNumber(sp.x, sp.y - 24, 'GUARD BROKEN', 'info');
       else if (r.guarded) this.hud.damageNumber(sp.x, sp.y - 24, 'GUARDED — use Guardbreaker (R)', 'info');
       else if (r.staggered) this.hud.damageNumber(sp.x, sp.y - 24, 'STAGGERED', 'info');
+      else this.typeHint(sp, resistanceMultiplier(e.def.resist, weaponDamageType(this.session)));
     }
     // Signed in, the server grants weapon and attribute XP for the hits it accepts.
     if (this.mode !== 'account') rewardHit(this.session, e.spawn.type, r.damage, this.player.combat.attack?.id ?? 'light1', r.crit);
@@ -483,7 +486,7 @@ export class Game {
           this.player.setWeapon(e.item);
           break;
         case 'progress':
-          if (e.kind === 'weapon') this.hud.toast(`Longsword mastery ${this.session.weaponLevel} (+${e.levels})`, 'good');
+          if (e.kind === 'weapon') this.hud.toast(`${WEAPON_FAMILIES[e.family ?? 'longsword'].name} mastery ${this.session.masteryOf(e.family ?? 'longsword')} (+${e.levels})`, 'good');
           if (e.kind === 'smith') this.hud.toast(`Blacksmithing mastery ${this.session.smithMastery}`, 'good');
           if (e.kind === 'adventurer') this.hud.toast(`Adventurer rank ${this.session.data.progression.adventurer.rank} · +${STAT_POINTS_PER_RANK * e.levels} stat points (O)`, 'good');
           if (e.kind === 'attribute' && e.attr) {
@@ -1036,7 +1039,8 @@ export class Game {
       if (!inArc(this.player.pos2, this.player.yaw, e.pos2, a.range, a.arcDeg, e.def.radius)) continue;
       if (!c.tryRegisterHit(e.id)) continue;
       const out = hitAgainst(this.session, a, Math.random(), e.def.attributes);
-      const dmg = mitigate(out.damage, e.def.defense);
+      const landed = damageAgainst(this.session, out.damage, e.def);
+      const dmg = landed.damage;
       if (this.online.online && e.def.kind !== 'dummy') {
         // The server decides the outcome; show impact now, numbers when it answers.
         this.online.sendHit(e, a.id, dmg, out.stagger, a.guardBreak, out.crit);
@@ -1062,10 +1066,17 @@ export class Game {
         if (res.guardBroken) this.hud.damageNumber(sp.x, sp.y - 24, 'GUARD BROKEN', 'info');
         else if (res.guarded) this.hud.damageNumber(sp.x, sp.y - 24, 'GUARDED — use Guardbreaker (R)', 'info');
         else if (res.staggered) this.hud.damageNumber(sp.x, sp.y - 24, 'STAGGERED', 'info');
+        else this.typeHint(sp, landed.multiplier);
       }
       if (this.mode !== 'account') rewardHit(this.session, e.spawn.type, res.damage, a.id, out.crit);
       if (res.killed) this.onEnemyKilled(e);
     }
+  }
+
+  /** A short hint when the damage type matters against this enemy. */
+  private typeHint(sp: { x: number; y: number }, multiplier: number): void {
+    if (multiplier >= 1.15) this.hud.damageNumber(sp.x, sp.y - 24, 'WEAK SPOT', 'info');
+    else if (multiplier <= 0.85) this.hud.damageNumber(sp.x, sp.y - 24, 'RESISTED', 'info');
   }
 
   private onEnemyKilled(e: Enemy): void {

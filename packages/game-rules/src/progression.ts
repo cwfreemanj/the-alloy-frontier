@@ -8,7 +8,8 @@ import { createAllocated, createAttributes, type AttributeLevels, type Attribute
 export interface ProgressionState {
   version: 1;
   adventurer: { rank: number; xp: number };
-  weaponMastery: Record<WeaponFamily, { level: number; xp: number }>;
+  /** Mastery per weapon family. Longsword always exists (older saves only have it). */
+  weaponMastery: { longsword: { level: number; xp: number } } & Partial<Record<WeaponFamily, { level: number; xp: number }>>;
   /** Open-ended profession mastery (1-100 foundational ranks, continued growth proposed). */
   professions: { blacksmithing: { mastery: number; xp: number } };
   /** Grow-by-use attributes. Optional: saves from before attributes have none (filled on load). */

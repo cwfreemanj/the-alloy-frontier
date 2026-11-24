@@ -7,9 +7,9 @@
  * (computed from the server-side weapon). Client-owned: the player's own movement
  * (sanity-checked), and a guest's character (kept in their browser).
  */
-import { ATTACKS, dist2, forwardPoint, inArc, inCircle, mitigate, type AttackId, type Vec2 } from '@alloy/game-rules';
+import { ATTACKS, dist2, forwardPoint, inArc, inCircle, type AttackId, type Vec2 } from '@alloy/game-rules';
 import { WORLD_LIMITS, WORLD_PROTOCOL, parseWorldClientMsg, type AvatarState, type CharAction, type EnemyNetState, type WorldPlayerInfo, type WorldServerMsg } from '@alloy/protocol';
-import { GATHER_SECONDS, RANGE_SLACK, applyAction, playerHit, rewardHit, rewardHitTaken, rewardKill } from '@alloy/session';
+import { GATHER_SECONDS, RANGE_SLACK, applyAction, damageAgainst, playerHit, rewardHit, rewardHitTaken, rewardKill } from '@alloy/session';
 import type { CharacterHost, LiveCharacter } from './characters';
 import { ENEMY_SPAWNS, EnemySim, buildWorldColliders, type ColliderWorld } from '@alloy/world';
 
@@ -49,6 +49,12 @@ export interface WorldStats {
   kills: number;
   acts: number;
   rejectedActs: number;
+  /**
+   * Damage signed-in players dealt, by damage type and by weapon family (unarmed: 'unarmed').
+   * Groundwork for an adapting world (docs/design-backlog.md); not persisted yet.
+   */
+  damageByType: Record<string, number>;
+  damageByFamily: Record<string, number>;
 }
 
 let sharedColliders: ColliderWorld | null = null;
@@ -64,7 +70,7 @@ export class WorldRoom {
   private contributors = new Map<string, Map<string, number>>();
   private lastSent = new Map<string, string>();
   private nextId = 1;
-  stats: WorldStats = { malformed: 0, rateLimited: 0, rejectedHits: 0, acceptedHits: 0, enemyHitsOnPlayers: 0, kills: 0, acts: 0, rejectedActs: 0 };
+  stats: WorldStats = { malformed: 0, rateLimited: 0, rejectedHits: 0, acceptedHits: 0, enemyHitsOnPlayers: 0, kills: 0, acts: 0, rejectedActs: 0, damageByType: {}, damageByFamily: {} };
 
   constructor(
     private now: () => number = () => Date.now(),
@@ -228,11 +234,15 @@ export class WorldRoom {
       return reject();
     }
     if (dist2({ x: p.x, z: p.z }, e.pos2) > atk.range + e.def.radius + HIT_SLACK) return reject();
+    let dealtType: string | null = null;
     if (me.char) {
       // Signed in: the damage comes from the server's copy of the weapon, not the report.
       const out = playerHit(me.char.session, attackId, this.rng, e.def.attributes);
       if (!out) return reject();
-      damage = mitigate(out.damage, e.def.defense);
+      // Defense, then the enemy's resistance to the weapon's damage type.
+      const landed = damageAgainst(me.char.session, out.damage, e.def);
+      damage = landed.damage;
+      dealtType = landed.type;
       stagger = out.stagger;
       crit = out.crit;
       guardBreak = out.guardBreak;
@@ -242,6 +252,9 @@ export class WorldRoom {
     this.stats.acceptedHits++;
     if (!res.ignored) this.credit(e.id, me.id);
     if (me.char && !res.ignored && res.damage > 0) {
+      const family = me.char.session.weaponFamily ?? 'unarmed';
+      if (dealtType) this.stats.damageByType[dealtType] = (this.stats.damageByType[dealtType] ?? 0) + res.damage;
+      this.stats.damageByFamily[family] = (this.stats.damageByFamily[family] ?? 0) + res.damage;
       this.pushChar(me, rewardHit(me.char.session, e.spawn.type, res.damage, attackId, crit), false);
       this.host?.changed(me.char);
     }
