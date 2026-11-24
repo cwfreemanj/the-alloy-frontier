@@ -14,6 +14,8 @@ import type { Enemy } from '../entities/Enemy';
 import { WorldClient, type WorldStatus } from '../net/WorldClient';
 
 export interface OnlineGameHooks {
+  /** Move the local player back to a server-accepted position. */
+  correctPosition: (x: number, z: number) => void;
   scene: THREE.Scene;
   enemies: Enemy[];
   localAvatar(): AvatarState;
@@ -198,6 +200,10 @@ export class Online {
       }
       case 'char':
         this.g.character(m.data, m.events);
+        break;
+      case 'correct':
+        // The server refused our position (moved too fast): go back to the last accepted one.
+        this.g.correctPosition(m.x, m.z);
         break;
       case 'kill': {
         const e = this.enemy(m.enemyId);

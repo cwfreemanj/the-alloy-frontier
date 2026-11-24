@@ -137,7 +137,12 @@ type CharAction =
 - **Known limitations:**
   - A guest save can be edited before it's imported into an account; only coins are capped (1000).
   - If the final save on leave fails (database down), that change is logged and lost.
-  - The player's own movement is still client-reported (only bounds-checked), so range checks trust the reported position. A speed check on `state` messages is the next step.
+  - The player's own movement is still client-reported, but since PR #13 the server runs a speed check on every `state` message (`packages/game-rules/src/movement.ts`, `WorldRoom.guardMove`):
+    - **Budget:** distance allowance refills at 8.5 m/s (above sprint 7.6 and dodge 8) and banks up to 12 m for lag.
+    - **Refused moves:** the server keeps the last accepted position, which is what others see and what range checks use, and sends the browser a `correct` message (at most two a second).
+    - **Exceptions:** respawning at the respawn point after a death. A signed-in player's first position after connecting must be within 5 m of the saved position.
+    - **Tests:** the local browser-test server sets `ALLOW_TELEPORT=1` for the debug teleport; a hosted server never does (`RENDER` overrides it).
+    - **Not checked yet:** height (flying), because the server would need the terrain heights.
 - **On deploy:** players with the old page open get "A new version of the game is out. Reload the page."
   Old browser saves are unaffected. Account characters already in the database keep working (same save format).
 

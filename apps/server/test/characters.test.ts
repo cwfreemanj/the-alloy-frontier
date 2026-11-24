@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { ENEMIES, mitigate } from '@alloy/game-rules';
 import { WORLD_PROTOCOL, type AvatarState, type WorldServerMsg } from '@alloy/protocol';
 import { Session, newSessionData, playerHit } from '@alloy/session';
-import { ENEMY_SPAWNS, FORGE_ANVIL, NPCS, RESOURCE_NODES } from '@alloy/world';
+import { ENEMY_SPAWNS, FORGE_ANVIL, NPCS, RESOURCE_NODES, RESPAWN_POINT } from '@alloy/world';
 import { CharacterHost, MemoryCharacterStore, SAVE_DELAY_MS } from '../src/characters';
 import { WorldRoom } from '../src/worldRoom';
 
@@ -20,7 +20,8 @@ function setup() {
   const clock = { now: () => t, advance: (ms: number) => (t += ms) };
   const store = new MemoryCharacterStore();
   const host = new CharacterHost(store, clock.now);
-  const room = new WorldRoom(clock.now, host, () => 0.99); // 0.99: no crits, top of coin range
+  // 0.99: no crits, top of coin range. allowTeleport: these tests jump between places; the speed check has its own tests.
+  const room = new WorldRoom(clock.now, host, () => 0.99, true);
   return { clock, store, host, room };
 }
 
@@ -241,5 +242,74 @@ describe('server-owned characters', () => {
     p.at(0, 0);
     ctx.room.step(1);
     expect(p.char.session.data.playTime).toBe(t0 + 1);
+  });
+});
+
+describe('movement speed check', () => {
+  /** A room with the speed check on (the default). */
+  function checked() {
+    let t = 1_000_000;
+    const clock = { now: () => t, advance: (ms: number) => (t += ms) };
+    const host = new CharacterHost(new MemoryCharacterStore(), clock.now);
+    const room = new WorldRoom(clock.now, host, () => 0.99);
+    return { clock, host, room };
+  }
+  const corrections = (inbox: WorldServerMsg[]) => inbox.filter((m) => m.t === 'correct') as Array<Extract<WorldServerMsg, { t: 'correct' }>>;
+
+  it('accepts sprinting speed and refuses a teleport, keeping the last good position', async () => {
+    const ctx = checked();
+    const p = await signedIn(ctx as never, 'acct-run');
+    const start = { ...p.char.session.data.player };
+    p.at(start.x, start.z);
+    // 2 s of sprinting in 100 ms steps (7.6 m/s).
+    for (let i = 1; i <= 20; i++) {
+      ctx.clock.advance(100);
+      p.at(start.x + 0.76 * i, start.z);
+    }
+    expect(ctx.room.stats.speedRejected).toBe(0);
+    expect(p.char.session.data.player.x).toBeCloseTo(start.x + 15.2, 1);
+    ctx.clock.advance(100);
+    p.at(start.x + 200, start.z);
+    expect(ctx.room.stats.speedRejected).toBe(1);
+    expect(corrections(p.inbox).at(-1)).toMatchObject({ x: expect.closeTo(start.x + 15.2, 1) });
+    // Range checks use the accepted position: Orla is far away, and stays far away.
+    expect(p.char.session.data.player.x).toBeCloseTo(start.x + 15.2, 1);
+  });
+
+  it('refuses sustained speed hacks even in small steps', async () => {
+    const ctx = checked();
+    const p = await signedIn(ctx as never, 'acct-fast');
+    const start = { ...p.char.session.data.player };
+    p.at(start.x, start.z);
+    for (let i = 1; i <= 40; i++) {
+      ctx.clock.advance(100);
+      p.at(start.x + 2 * i, start.z); // 20 m/s
+    }
+    expect(ctx.room.stats.speedRejected).toBeGreaterThan(10);
+    // Corrections are throttled to two a second.
+    expect(corrections(p.inbox).length).toBeLessThanOrEqual(9);
+  });
+
+  it('allows a dodge plus lag burst, and respawning at the respawn point after a death', async () => {
+    const ctx = checked();
+    const p = await signedIn(ctx as never, 'acct-dodge');
+    const start = { ...p.char.session.data.player };
+    p.at(start.x, start.z);
+    ctx.clock.advance(1000);
+    p.at(start.x + 10, start.z); // a second of lag arriving at once
+    expect(ctx.room.stats.speedRejected).toBe(0);
+    p.at(start.x + 10, start.z, { ph: 'dead', hp: 0 });
+    ctx.clock.advance(50);
+    p.at(RESPAWN_POINT.x, RESPAWN_POINT.z);
+    expect(ctx.room.stats.speedRejected).toBe(0);
+  });
+
+  it("puts a signed-in player back where the server saved them if they connect somewhere else", async () => {
+    const ctx = checked();
+    const p = await signedIn(ctx as never, 'acct-tp');
+    const saved = { ...p.char.session.data.player };
+    p.at(saved.x + 60, saved.z + 60);
+    expect(ctx.room.stats.speedRejected).toBe(1);
+    expect(corrections(p.inbox)[0]).toMatchObject({ x: saved.x, z: saved.z });
   });
 });

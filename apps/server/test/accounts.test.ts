@@ -195,7 +195,7 @@ describe('HTTP API and signed-in world', () => {
 
   it('the server owns a signed-in character: it applies actions and saves the result itself', async () => {
     const svc = new AccountService(new MemoryKV());
-    server = await startWorldServer({ port: 0, accounts: svc });
+    server = await startWorldServer({ port: 0, accounts: svc, allowTeleport: true }); // the test places the player at Orla directly
     const base = `http://127.0.0.1:${server.port}`;
     const reg = await (await post(base, '/api/register', { username: 'Owner', password: 'password1' })).json();
     const c = new WebSocket(base.replace('http', 'ws') + '/world');

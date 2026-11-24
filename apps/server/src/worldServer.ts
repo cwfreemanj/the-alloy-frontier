@@ -28,6 +28,8 @@ export interface WorldServerOptions {
   trustProxy?: boolean;
   /** Where signed-in characters live (defaults to the account saves). For tests. */
   characters?: CharacterStore;
+  /** Skip the movement speed check (debug teleports in local browser tests). Never on a hosted server. */
+  allowTeleport?: boolean;
 }
 
 export interface RunningWorldServer {
@@ -87,7 +89,7 @@ export function startWorldServer(opts: WorldServerOptions = {}): Promise<Running
   const accounts = opts.accounts ?? null;
   const store = opts.characters ?? (accounts ? accountCharacterStore(accounts) : null);
   const characters = store ? new CharacterHost(store) : null;
-  const room = new WorldRoom(undefined, characters);
+  const room = new WorldRoom(undefined, characters, Math.random, !!opts.allowTeleport);
   const root = opts.staticDir ? resolve(opts.staticDir) : null;
   const allowed = new Set(opts.allowedOrigins ?? []);
   const http = createServer((req, res) => {
