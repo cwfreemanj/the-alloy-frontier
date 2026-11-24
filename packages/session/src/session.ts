@@ -80,6 +80,11 @@ export class Session {
     for (const l of this.listeners) l(e);
   }
 
+  /** Announce an event to listeners (used to replay events the server reports). */
+  notify(e: SessionEvent): void {
+    this.emit(e);
+  }
+
   nextTxId(kind: string): string {
     return `${kind}-${this.data.inventory.ownerId}-${Date.now().toString(36)}-${this.txCounter++}`;
   }

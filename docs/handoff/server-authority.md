@@ -120,24 +120,27 @@ type CharAction =
 - [x] Stage 2: protocol v2 (`WORLD_PROTOCOL = 2`). `act`, `actResult` and `char` were added, and `charAction` validates every field. A `hello` with any other protocol number gets `error: 'outdated_client'`. Parser rejection is tested in `apps/server/test/characters.test.ts`.
 - [x] Stage 3: `apps/server/src/characters.ts` (CharacterHost, plus a store backed by account saves via `AccountService.serverPutSave`). `worldRoom.ts` handles `act`, kill rewards, weapon XP, server-side damage, play time, position and deaths. `worldServer.ts` opens the character before join, saves every second if it's been due for 5 s, and saves everything on close. `worldMain.ts` saves on SIGTERM/SIGINT. Tests: `apps/server/test/characters.test.ts` (9), plus one end-to-end test in `accounts.test.ts`.
 - [x] Stage 4: `PUT /api/save` now returns 410 `server_owned`. `POST /api/character/new` makes the server build a fresh character. `POST /api/character/import` takes a guest save once, validated, with coins capped at `MAX_IMPORT_COINS` = 1000. Both return 409 `in_world` while the character is loaded in the world. `AccountService.putSave` was replaced by `importCharacter`. Tests are updated in `accounts.test.ts`.
-- [ ] Stage 5: client `CharacterLink`, with panels routed through it in account mode.
-- [ ] Stage 6: browser tests. Update `tests/e2e/accounts.spec.ts`, and add a cheat test: in account mode, the debug give/coins and a forged `act` with out-of-range positions are refused, and edited saves can't be PUT.
-- [ ] Stage 7: README/AGENTS updates, then open the PR (don't merge; Neal decides).
+- [x] Stage 5: client. `Game.act(action)` is the single entry point: in account mode it calls `Online.act` (protocol `act`, 8 s timeout); for guests it runs `applyAction` locally. `Game.characterUpdate` adopts the server's `char` and replays its events through `Session.notify`. The Inventory, Merchant and Forge panels take callbacks that go through `act`. `CloudSaver` and `writeSave` are removed; the title screen uses `newCharacter` and `importCharacter`. Kill rewards, weapon XP and death counting are guest-only in the browser. The debug `give`/`coins` hooks refuse account characters, and `__alloy.act` was added for tests. Outdated clients are shown a reload message. (The handoff plan named a separate `CharacterLink.ts`; it ended up as `Game.act` + `Online.act`.)
+- [x] Stage 6: `tests/e2e/accounts.spec.ts` now goes through real actions. The cheat test checks that the debug grants refuse, that local edits are overwritten by the server's copy, that out-of-range actions are refused, and that `PUT /api/save` gets 410. The second-device sign-out became its own test. After a teleport, tests retry `act` until the server has the new position (`actWhenThere`).
+- [x] Stage 7: README and AGENTS updated; PR opened (not merged).
 
 ## Current state
 
-- Stages 1 to 4 are done and committed. Verified: typecheck passes and `npm test` passes (server suites 35/35; full run in the commit message).
-  `npm run test:e2e` has **not** been rerun since stage 1.
-- **Expected break until stage 5:** the browser client still says protocol 1, so a client built from this branch
-  gets `outdated_client` and plays offline. Stage 5 fixes this. Don't merge before then.
-- **Server behaviour now:**
-  - Signed-in players get a `char` message right after `welcome`, and after every change.
-  - Act replies (`actResult`) are sent immediately. Weapon-XP updates are coalesced to at most 4 per second (`CHAR_PUSH_INTERVAL_MS`).
-  - Guests get `actResult` with `error: 'guest'`.
-- **Known limitation:** if a character's final save on leave fails (database down), it is logged and lost,
-  because the character is no longer loaded to retry. Saves while the player is still in the world are retried.
-- **The browser client still calls `PUT /api/save`** (`apps/web/src/net/Accounts.ts` `writeSave`, via `CloudSaver`), which now gets 410. Stage 5 removes that.
-- **Next:** stage 5 (client).
+- All stages are done; the PR is open for review.
+- **Verified on this branch:**
+  - typecheck passes
+  - `npm test` passes (139 tests)
+  - `npm run build` passes
+  - `npm run test:e2e` passes (12/12, run locally in Chrome)
+- **Not verified in a browser:**
+  - The forge panel's account path (asking the server, waiting, showing the item). It's covered by the server tests (`characters.test.ts`) and the shared-rules tests, but no e2e test forges as a signed-in player.
+  - A signed-in kill in the browser. Server tests cover the rewards; `world.spec.ts` covers guests.
+- **Known limitations:**
+  - A guest save can be edited before it's imported into an account; only coins are capped (1000).
+  - If the final save on leave fails (database down), that change is logged and lost.
+  - The player's own movement is still client-reported (only bounds-checked), so range checks trust the reported position. A speed check on `state` messages is the next step.
+- **On deploy:** players with the old page open get "A new version of the game is out. Reload the page."
+  Old browser saves are unaffected. Account characters already in the database keep working (same save format).
 
 ## How to verify
 

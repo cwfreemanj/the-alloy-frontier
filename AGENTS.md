@@ -27,12 +27,14 @@ A browser 3D action RPG / small MMO prototype ("The First Forge" vertical slice)
 ```
 apps/web/        game client (Three.js scene, UI, input, entities, networking)
 apps/server/     world server: worldServer.ts (HTTP + WS), worldRoom.ts (shared world sim),
+                 characters.ts (signed-in characters the server owns and saves),
                  accounts/ (KV storage, account service, HTTP API), worldMain.ts (entry)
 packages/        plain TypeScript, no rendering, shared by client and server
   game-rules/    combat, stamina, enemy AI, progression, quest
   item-gen/      seeded item generation, materials, blueprints
   crafting/      inventory, forge transactions (idempotent, evidence-replayed), merchant
   save/          save format + validation (used by browser and server)
+  session/       the character (Session) + the rules for changing it: applyAction, rewardKill, playerHit
   protocol/      network message types + validation (world.ts is the live protocol)
   world/         layout, terrain, colliders, enemy movement (EnemySim)
 tests/e2e/       Playwright browser tests

@@ -75,12 +75,15 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
       if (rt.charges <= 0) return no('depleted', 'This deposit is depleted. It will replenish.');
       const qty = nodeYield(def, rt.gathers);
       const t = nodeTraits(def);
-      const { value: ok, events } = captureEvents(s, () => s.gather(def.id, def.material, qty, t.quality, t.traits));
+      const { value: ok, events } = captureEvents(s, () => {
+        if (!s.gather(def.id, def.material, qty, t.quality, t.traits)) return false;
+        rt.charges--;
+        rt.gathers++;
+        if (rt.charges <= 0) rt.respawnAt = s.data.playTime + NODE_RESPAWN_SECONDS;
+        s.notify({ type: 'toast', text: `+${qty} ${materialName(def.material)} (quality ${Math.round(t.quality * 100)}%)${t.rich ? ' · rich deposit!' : ''}`, tone: 'good' });
+        return true;
+      });
       if (!ok) return no('inventory', warnText(events, 'Could not gather.'), events);
-      rt.charges--;
-      rt.gathers++;
-      if (rt.charges <= 0) rt.respawnAt = s.data.playTime + NODE_RESPAWN_SECONDS;
-      events.unshift({ type: 'toast', text: `+${qty} ${materialName(def.material)} (quality ${Math.round(t.quality * 100)}%)${t.rich ? ' · rich deposit!' : ''}`, tone: 'good' });
       return { ok: true, events, gathered: { node: def.id, qty } };
     }
     case 'buy': {
