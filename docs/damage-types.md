@@ -1,6 +1,6 @@
-# Handoff: weapon families and damage types
+# Design record: weapon families and damage types
 
-Branch: `damage-types`. Read `AGENTS.md` and `docs/equipment-contract.md` first.
+Merged in PR #12. This was the handoff file for the task; it is kept as the record of what was decided and why.
 
 ## Goal
 Get combat ready for the partner's weapon families: damage types and enemy resistances,
