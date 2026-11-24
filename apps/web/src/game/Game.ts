@@ -191,6 +191,11 @@ export class Game {
       },
       kicked: (reason) => this.endSession(reason),
       character: (data, events) => this.characterUpdate(data, events),
+      correctPosition: (x, z) => {
+        this.player.spawn(x, z, this.player.yaw);
+        this.gatherTarget = null;
+        this.player.gathering = 0;
+      },
     });
     this.worldStatusEl = h('div', { class: 'world-status', 'data-testid': 'world-status' });
     uiRoot.append(this.worldStatusEl);

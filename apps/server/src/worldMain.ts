@@ -36,7 +36,11 @@ if (kv.kind === 'file' && cloud) {
 const trustProxy = process.env.RENDER === 'true' || process.env.TRUST_PROXY === '1';
 if (!existsSync(resolve(dist, 'index.html'))) console.warn('No game build found yet (run "npm run build"); the page will 404 until it exists.');
 
-startWorldServer({ port, host: cloud || lan ? '0.0.0.0' : '127.0.0.1', staticDir, allowedOrigins, accounts, trustProxy }).then((s) => {
+// Debug teleports for local browser tests only; a hosted server (PORT set by the host, e.g. Render) never allows them.
+const allowTeleport = process.env.ALLOW_TELEPORT === '1' && !process.env.RENDER;
+if (allowTeleport) console.warn('ALLOW_TELEPORT=1: the movement speed check is OFF (local testing only).');
+
+startWorldServer({ port, host: cloud || lan ? '0.0.0.0' : '127.0.0.1', staticDir, allowedOrigins, accounts, trustProxy, allowTeleport }).then((s) => {
   console.log(`Alloy Frontier world server listening on port ${s.port} (serving the game too). Account storage: ${kv.kind}.`);
   if (!cloud) console.log(`Play: http://localhost:${s.port}`);
   // Hosts stop the old server on every deploy (SIGTERM): write characters before exiting.

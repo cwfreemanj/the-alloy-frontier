@@ -91,6 +91,8 @@ export type WorldServerMsg =
   | { t: 'actResult'; id: number; ok: boolean; error?: string; message?: string; item?: ItemInstance }
   /** The authoritative character (signed-in players), with the events its last changes produced. */
   | { t: 'char'; data: SessionData; events: SessionEvent[] }
+  /** The server refused a reported position (too fast): move back to this point. */
+  | { t: 'correct'; x: number; z: number }
   | { t: 'error'; error: string };
 
 /** Hard caps the server enforces. */
