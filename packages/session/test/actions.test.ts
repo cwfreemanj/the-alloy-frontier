@@ -3,7 +3,7 @@ import { grantItem } from '@alloy/crafting';
 import { BLUEPRINTS, type BlueprintDefinition } from '@alloy/item-gen';
 import { FORGE_ANVIL, NPCS, RESOURCE_NODES } from '@alloy/world';
 import { NODE_MAX_CHARGES, NODE_RESPAWN_SECONDS, RANGE_SLACK, Session, applyAction, characterStats, damageAgainst, hitAgainst, newSessionData, playerHit, rewardHit, rewardHitTaken, rewardKill } from '../src';
-import { ATTACKS, BASE_MAX_HEALTH, ENEMIES, adventurerXpToNext, attributeXpToNext, mitigate } from '@alloy/game-rules';
+import { ATTACKS, BASE_MAX_HEALTH, ENEMIES, adventurerXpToNext, attributeXpToNext, mitigate, GATHER_PROFICIENCY_XP, PROFICIENCY_MAX, proficiencyXpToNext } from '@alloy/game-rules';
 
 const fresh = () => new Session(newSessionData(1000));
 const ore = RESOURCE_NODES.find((n) => n.material === 'iron_ore')!;
@@ -285,5 +285,29 @@ describe('weapon families', () => {
     expect(blunt.type).toBe('blunt');
     expect(blunt.damage).toBeGreaterThan(slash.damage);
     expect(blunt.damage).toBeCloseTo(mitigate(100, sentinel.defense) * sentinel.resist!.blunt!, 5);
+  });
+});
+
+describe('gathering proficiencies', () => {
+  it('mining grows from ore, woodcutting from ironwood, through the shared gather action', () => {
+    const s = fresh();
+    const wood = RESOURCE_NODES.find((n) => n.material === 'ironwood')!;
+    applyAction(s, { k: 'gather', node: ore.id }, at(ore.pos));
+    expect(s.data.progression.professions.mining?.xp).toBe(GATHER_PROFICIENCY_XP);
+    const hatchet = Object.values(s.inventory.items).find((i) => i.blueprintId === 'worn_hatchet')!;
+    s.equip(hatchet.itemId);
+    applyAction(s, { k: 'gather', node: wood.id }, at(wood.pos));
+    expect(s.data.progression.professions.woodcutting?.xp).toBe(GATHER_PROFICIENCY_XP);
+    expect(s.data.progression.professions.herbalism).toBeUndefined();
+  });
+
+  it('levels up with an event and caps at the maximum', () => {
+    const s = fresh();
+    const ups: unknown[] = [];
+    s.on((e) => e.type === 'progress' && e.kind === 'proficiency' && ups.push(e));
+    s.gainProficiency('mining', proficiencyXpToNext(1));
+    expect(ups).toEqual([{ type: 'progress', kind: 'proficiency', proficiency: 'mining', levels: 1 }]);
+    for (let i = 0; i < 2000; i++) s.gainProficiency('mining', 1000);
+    expect(s.data.progression.professions.mining).toEqual({ level: PROFICIENCY_MAX, xp: 0 });
   });
 });

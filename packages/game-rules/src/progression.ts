@@ -11,7 +11,7 @@ export interface ProgressionState {
   /** Mastery per weapon family. Longsword always exists (older saves only have it). */
   weaponMastery: { longsword: { level: number; xp: number } } & Partial<Record<WeaponFamily, { level: number; xp: number }>>;
   /** Open-ended profession mastery (1-100 foundational ranks, continued growth proposed). */
-  professions: { blacksmithing: { mastery: number; xp: number } };
+  professions: { blacksmithing: { mastery: number; xp: number } } & Partial<Record<GatheringProficiency, { level: number; xp: number }>>;
   /** Grow-by-use attributes. Optional: saves from before attributes have none (filled on load). */
   attributes?: AttributeState;
   /** Stat points spent per attribute. Unspent points are derived from the adventurer rank. */
@@ -19,6 +19,39 @@ export interface ProgressionState {
 }
 
 export const WEAPON_MASTERY_MAX = 30;
+
+/** Gathering proficiencies: improve by gathering (mining ore and ironglass, cutting ironwood, picking herbs). */
+export const GATHERING_PROFICIENCIES = ['mining', 'woodcutting', 'herbalism'] as const;
+export type GatheringProficiency = (typeof GATHERING_PROFICIENCIES)[number];
+export const PROFICIENCY_MAX = 100;
+export const proficiencyXpToNext = (level: number) => 20 + 6 * level;
+/** XP for one gather. */
+export const GATHER_PROFICIENCY_XP = 5;
+/** Extra-unit chance per level above 1 (added to the tool's). */
+export const PROFICIENCY_YIELD_BONUS = 0.01;
+
+/** Which proficiency a material trains. */
+export function proficiencyFor(material: string): GatheringProficiency {
+  return material === 'ironwood' ? 'woodcutting' : material === 'herb' ? 'herbalism' : 'mining';
+}
+
+/** Add XP to a gathering proficiency in place. Returns the levels gained. */
+export function addProficiencyXp(p: ProgressionState, id: GatheringProficiency, xp: number): number {
+  if (!Number.isFinite(xp) || xp <= 0) return 0;
+  const s = (p.professions[id] ??= { level: 1, xp: 0 });
+  if (s.level >= PROFICIENCY_MAX) return 0;
+  s.xp += Math.min(xp, 1000);
+  let levels = 0;
+  while (s.level < PROFICIENCY_MAX && s.xp >= proficiencyXpToNext(s.level)) {
+    s.xp -= proficiencyXpToNext(s.level);
+    s.level++;
+    levels++;
+  }
+  if (s.level >= PROFICIENCY_MAX) s.xp = 0;
+  return levels;
+}
+
+export const proficiencyLevel = (p: ProgressionState, id: GatheringProficiency) => p.professions[id]?.level ?? 1;
 export const ADVENTURER_RANK_MAX = 50;
 /** PROTOTYPE DECISION: the player starts as an apprentice smith (mastery 10). */
 export const STARTING_SMITH_MASTERY = 10;
