@@ -4,12 +4,12 @@
  * - Usernames: 3-20 letters, digits, _ or -, unique ignoring case; shown to other players.
  * - Passwords: 8-128 characters, stored only as scrypt(salt, password).
  * - Sessions: random 256-bit bearer tokens; only their SHA-256 is stored; 30-day expiry.
- * - Saves: validated with the game's own save validation before storing; a revision
- *   number rejects stale writes from an older device.
+ * - Characters: owned and saved by the world server while the player is in the world
+ *   (see ../characters.ts). Browsers can only start a new character or import a guest one.
  * - Abuse limits: attempts per IP per window, and a short lock after repeated failures.
  */
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual, type ScryptOptions } from 'node:crypto';
-import { MAX_SAVE_BYTES, deserialize } from '@alloy/save';
+import { MAX_SAVE_BYTES, deserialize, serialize } from '@alloy/save';
 import type { KV } from './kv';
 
 const scrypt = (pw: string, salt: Buffer, len: number, opts: ScryptOptions) =>
@@ -17,6 +17,8 @@ const scrypt = (pw: string, salt: Buffer, len: number, opts: ScryptOptions) =>
 const SCRYPT = { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
 const SESSION_DAYS = 30;
 const USERNAME_RE = /^[A-Za-z0-9_-]{3,20}$/;
+/** Coins a guest character may bring into an account (more than an honest playthrough earns). */
+export const MAX_IMPORT_COINS = 1000;
 const RESERVED = new Set(['admin', 'administrator', 'moderator', 'mod', 'system', 'server', 'guest', 'orla', 'bram']);
 
 export interface Account {
@@ -180,21 +182,23 @@ export class AccountService {
   }
 
   /**
-   * Store a character save. `baseRevision` is the revision the client last loaded or saved;
-   * a mismatch means another device saved in between, and the write is refused.
+   * Bring a guest character (made in a browser) into an account that has none yet.
+   * The save is validated like any other, and values the browser could have inflated
+   * are capped. Accepted risk: a guest save can be edited before import (see
+   * docs/handoff/server-authority.md); after import, the server owns the character.
    */
-  async putSave(accountId: string, raw: unknown, baseRevision: unknown, savedAt: number): Promise<Result<{ revision: number }>> {
+  async importCharacter(accountId: string, raw: unknown): Promise<Result<{ revision: number }>> {
     if (typeof raw !== 'string' || raw.length > MAX_SAVE_BYTES) return err(413, 'too_large', 'Save is too large.');
-    if (typeof baseRevision !== 'number' || !Number.isInteger(baseRevision) || baseRevision < 0) return err(400, 'bad_revision', 'Missing save revision.');
     const check = deserialize(raw);
     if (!check.ok) return err(422, 'invalid_save', `Save rejected: ${check.reason}`);
+    const data = check.data;
+    data.inventory.coins = Math.min(data.inventory.coins, MAX_IMPORT_COINS);
     return this.withLock(accountId, async () => {
-      const cur = await this.kv.get<SaveRec>(`save:${accountId}`);
-      const curRev = cur?.revision ?? 0;
-      if (baseRevision !== curRev) return err(409, 'conflict', 'This character was saved from another device. Reload to get the latest.');
-      const rec: SaveRec = { raw, revision: curRev + 1, savedAt, updatedAt: this.now() };
+      if (await this.kv.get<SaveRec>(`save:${accountId}`)) return err(409, 'has_character', 'This account already has a character.');
+      const t = this.now();
+      const rec: SaveRec = { raw: serialize(data, t), revision: 1, savedAt: t, updatedAt: t };
       await this.kv.put(`save:${accountId}`, rec);
-      return { ok: true as const, value: { revision: rec.revision } };
+      return { ok: true as const, value: { revision: 1 } };
     });
   }
 

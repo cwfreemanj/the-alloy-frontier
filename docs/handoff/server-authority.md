@@ -119,14 +119,14 @@ type CharAction =
 - [x] Stage 1: `@alloy/session` created (Session and node rules moved; `applyAction`, `rewardKill`, `playerHit` and `rewardHit` added; `packages/session/test/actions.test.ts` has 9 tests). The web client imports through `apps/web/src/state/Session.ts` (a re-export) and still applies changes itself. It is routed through `applyAction` in stage 5.
 - [x] Stage 2: protocol v2 (`WORLD_PROTOCOL = 2`). `act`, `actResult` and `char` were added, and `charAction` validates every field. A `hello` with any other protocol number gets `error: 'outdated_client'`. Parser rejection is tested in `apps/server/test/characters.test.ts`.
 - [x] Stage 3: `apps/server/src/characters.ts` (CharacterHost, plus a store backed by account saves via `AccountService.serverPutSave`). `worldRoom.ts` handles `act`, kill rewards, weapon XP, server-side damage, play time, position and deaths. `worldServer.ts` opens the character before join, saves every second if it's been due for 5 s, and saves everything on close. `worldMain.ts` saves on SIGTERM/SIGINT. Tests: `apps/server/test/characters.test.ts` (9), plus one end-to-end test in `accounts.test.ts`.
-- [ ] Stage 4: HTTP API lock-down (`new` / `import`), plus updating `apps/server/test/accounts.test.ts`.
+- [x] Stage 4: `PUT /api/save` now returns 410 `server_owned`. `POST /api/character/new` makes the server build a fresh character. `POST /api/character/import` takes a guest save once, validated, with coins capped at `MAX_IMPORT_COINS` = 1000. Both return 409 `in_world` while the character is loaded in the world. `AccountService.putSave` was replaced by `importCharacter`. Tests are updated in `accounts.test.ts`.
 - [ ] Stage 5: client `CharacterLink`, with panels routed through it in account mode.
 - [ ] Stage 6: browser tests. Update `tests/e2e/accounts.spec.ts`, and add a cheat test: in account mode, the debug give/coins and a forged `act` with out-of-range positions are refused, and edited saves can't be PUT.
 - [ ] Stage 7: README/AGENTS updates, then open the PR (don't merge; Neal decides).
 
 ## Current state
 
-- Stages 1 to 3 are done and committed. Verified: typecheck passes, `npm test` passes (139 tests), and `npm run build` passes.
+- Stages 1 to 4 are done and committed. Verified: typecheck passes and `npm test` passes (server suites 35/35; full run in the commit message).
   `npm run test:e2e` has **not** been rerun since stage 1.
 - **Expected break until stage 5:** the browser client still says protocol 1, so a client built from this branch
   gets `outdated_client` and plays offline. Stage 5 fixes this. Don't merge before then.
@@ -136,7 +136,8 @@ type CharAction =
   - Guests get `actResult` with `error: 'guest'`.
 - **Known limitation:** if a character's final save on leave fails (database down), it is logged and lost,
   because the character is no longer loaded to retry. Saves while the player is still in the world are retried.
-- **Next:** stage 4 (lock down the HTTP save API), then stage 5 (client).
+- **The browser client still calls `PUT /api/save`** (`apps/web/src/net/Accounts.ts` `writeSave`, via `CloudSaver`), which now gets 410. Stage 5 removes that.
+- **Next:** stage 5 (client).
 
 ## How to verify
 

@@ -102,7 +102,7 @@ export function startWorldServer(opts: WorldServerOptions = {}): Promise<Running
         res.writeHead(503, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'accounts_off', message: 'Accounts are not enabled on this server.' }));
         return;
       }
-      void handleApi(accounts, { allowedOrigins: allowed, trustProxy: !!opts.trustProxy }, req, res);
+      void handleApi(accounts, { allowedOrigins: allowed, trustProxy: !!opts.trustProxy, characters }, req, res);
       return;
     }
     if (root) serveStatic(root, req, res);

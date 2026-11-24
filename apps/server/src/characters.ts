@@ -130,6 +130,16 @@ export class CharacterHost {
     return this.live.size;
   }
 
+  /** Is this account's character in the world right now (on any device)? */
+  isLoaded(accountId: string): boolean {
+    return this.live.has(accountId);
+  }
+
+  /** Resolves once any save of this account that is still being written has landed. */
+  async settled(accountId: string): Promise<void> {
+    await this.writing.get(accountId);
+  }
+
   private write(c: LiveCharacter): Promise<void> {
     const prev = this.writing.get(c.accountId) ?? Promise.resolve();
     c.dirty = false;
