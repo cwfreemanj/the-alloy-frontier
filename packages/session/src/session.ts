@@ -26,6 +26,8 @@ import {
   ATTRIBUTE_XP,
   ALLOCATED_MAX,
   addAttributeXp,
+  addProficiencyXp,
+  type GatheringProficiency,
   isWeaponFamily,
   attributeBonuses,
   attributeTotals,
@@ -59,7 +61,7 @@ export type SessionEvent =
   | { type: 'inventory' }
   /** Stat points were spent or refunded. */
   | { type: 'stats' }
-  | { type: 'progress'; kind: 'weapon' | 'smith' | 'adventurer' | 'attribute'; levels: number; attr?: AttributeId; family?: WeaponFamily }
+  | { type: 'progress'; kind: 'weapon' | 'smith' | 'adventurer' | 'attribute' | 'proficiency'; levels: number; attr?: AttributeId; family?: WeaponFamily; proficiency?: GatheringProficiency }
   | { type: 'quest_step'; title: string; next: string | null }
   | { type: 'quest_complete' }
   | { type: 'toast'; text: string; tone?: 'info' | 'good' | 'warn' }
@@ -396,6 +398,12 @@ export class Session {
     const g = addWeaponXp(this.data.progression, family, xp);
     this.data.progression = g.state;
     if (g.levelsGained > 0) this.emit({ type: 'progress', kind: 'weapon', levels: g.levelsGained, family });
+  }
+
+  /** Gathering proficiency XP (mining, woodcutting, herbalism). */
+  gainProficiency(id: GatheringProficiency, xp: number): void {
+    const levels = addProficiencyXp(this.data.progression, id, xp);
+    if (levels > 0) this.emit({ type: 'progress', kind: 'proficiency', proficiency: id, levels });
   }
 
   gainAdventurer(xp: number): void {

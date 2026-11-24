@@ -6,7 +6,7 @@
  * only ever send the action (an intent), never its result.
  */
 import { EQUIP_SLOTS, type EquipSlot, type ForgeRequest } from '@alloy/crafting';
-import { ATTACKS, ATTRIBUTE_IDS, damageTypeOf, mitigate, resistanceMultiplier, ATTRIBUTE_XP, ENEMIES, computeOutgoingHit, critContest, staggerContest, type AttackDefinition, type AttributeId, type AttributeLevels, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
+import { ATTACKS, ATTRIBUTE_IDS, GATHER_PROFICIENCY_XP, PROFICIENCY_YIELD_BONUS, proficiencyFor, proficiencyLevel, damageTypeOf, mitigate, resistanceMultiplier, ATTRIBUTE_XP, ENEMIES, computeOutgoingHit, critContest, staggerContest, type AttackDefinition, type AttributeId, type AttributeLevels, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
 import { Rng, getBlueprint, materialName, type DamageType, type ItemInstance, type ToolKind, type WeaponStats } from '@alloy/item-gen';
 import { FORGE_ANVIL, NPCS } from '@alloy/world';
 import { NODE_RESPAWN_SECONDS, ensureNodes, nodeDef, nodeTraits, nodeYield, regrowNodes } from './nodes';
@@ -79,13 +79,17 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
       const kind = toolFor(def.material);
       const power = s.toolPower(kind);
       if (power <= 0) return no('no_tool', kind === 'mining' ? 'Put a pickaxe in your tool slot to mine this.' : 'Put a hatchet in your tool slot to cut this.');
-      // Better tools: each point of power above 1 adds a 25% chance of one extra unit.
-      const bonus = new Rng(`tool:${def.id}:${rt.gathers}`).next() < 0.25 * (power - 1) ? 1 : 0;
+      // Better tools (25% per point of power above 1) and proficiency (1% per level above 1)
+      // add a chance of one extra unit.
+      const prof = proficiencyFor(def.material);
+      const chance = 0.25 * (power - 1) + PROFICIENCY_YIELD_BONUS * (proficiencyLevel(s.data.progression, prof) - 1);
+      const bonus = new Rng(`tool:${def.id}:${rt.gathers}`).next() < chance ? 1 : 0;
       const qty = nodeYield(def, rt.gathers) + bonus;
       const t = nodeTraits(def);
       const { value: ok, events } = captureEvents(s, () => {
         if (!s.gather(def.id, def.material, qty, t.quality, t.traits)) return false;
         s.gainAttributes(ATTRIBUTE_XP.gather(def.material));
+        s.gainProficiency(prof, GATHER_PROFICIENCY_XP);
         rt.charges--;
         rt.gathers++;
         if (rt.charges <= 0) rt.respawnAt = s.data.playTime + NODE_RESPAWN_SECONDS;
