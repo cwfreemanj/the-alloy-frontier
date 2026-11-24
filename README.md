@@ -47,8 +47,10 @@ apps/
     src/entities/models/  character models + animation library; animSets.ts maps game states to clips
     src/game/       Game.ts (main loop), Online.ts (shared world glue), dialogue
     src/ui/         HUD, forge, inventory, menus, styles
-  server/     world server (worldRoom = the shared world, worldServer = HTTP + WebSocket)
+  server/     world server (worldRoom = the shared world, worldServer = HTTP + WebSocket,
+              characters = signed-in characters the server owns and saves, accounts/ = sign-in + storage)
 packages/     plain TypeScript, no rendering; shared by client and server
+  session/    the character and the rules for changing it (gather, buy, forge, equip, kill rewards)
   game-rules/ combat, stamina, enemy AI brains, progression, quest
   item-gen/   seeded item generation, formulas, materials, blueprints
   crafting/   inventory, forge transactions, Masterwork puzzle, merchant
@@ -60,6 +62,13 @@ docs/         playtest guide, performance capture, screenshots
 ```
 
 Gameplay rules live in `packages/` so the server can run them too. Rendering-only code stays in `apps/web`.
+
+**Who decides what:**
+- **Signed-in players:** the server owns the character. The browser sends actions such as gather, buy,
+  forge, equip or talk. The server checks them against where the player is, the quest and what they own,
+  applies them with the rules in `packages/session`, and sends the character back. Kill rewards, weapon
+  XP and hit damage are worked out on the server too.
+- **Guests:** their character lives in their browser and runs the same rules locally.
 
 ## Assets
 

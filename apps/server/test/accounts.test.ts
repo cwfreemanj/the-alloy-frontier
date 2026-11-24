@@ -4,9 +4,9 @@ import WebSocket from 'ws';
 import { newDb } from 'pg-mem';
 import { WORLD_PROTOCOL, type WorldServerMsg } from '@alloy/protocol';
 import { serialize } from '@alloy/save';
-import { newSessionData } from '../../web/src/state/Session';
+import { newSessionData } from '@alloy/session';
 import { MemoryKV, PostgresKV, type KV, type PgLike } from '../src/accounts/kv';
-import { AccountService } from '../src/accounts/service';
+import { AccountService, MAX_IMPORT_COINS } from '../src/accounts/service';
 import { startWorldServer, type RunningWorldServer } from '../src/worldServer';
 
 const goodSave = (x = 0) => {
@@ -77,31 +77,34 @@ for (const [label, make] of [
       expect(locked.ok === false && locked.error).toBe('locked');
     });
 
-    it('saves validate, increment revisions, and refuse stale writes from another device', async () => {
+    it('imports a guest character once, then only the server writes it', async () => {
       const svc = new AccountService(make());
       const r = await svc.register('Saver', 'password1', 'ip');
       if (!r.ok) throw new Error('register failed');
       const id = (await svc.accountFor(r.value.token))!.id;
       expect(await svc.getSave(id)).toBeNull();
-      const s1 = await svc.putSave(id, goodSave(1), 0, 1);
-      expect(s1.ok && s1.value.revision).toBe(1);
-      const s2 = await svc.putSave(id, goodSave(2), 1, 2);
-      expect(s2.ok && s2.value.revision).toBe(2);
-      const stale = await svc.putSave(id, goodSave(3), 1, 3); // a device that never saw revision 2
-      expect(stale.ok === false && stale.status).toBe(409);
-      expect(JSON.parse((await svc.getSave(id))!.raw).data.player.x).toBe(2);
+      const i1 = await svc.importCharacter(id, goodSave(1));
+      expect(i1.ok && i1.value.revision).toBe(1);
+      const again = await svc.importCharacter(id, goodSave(2));
+      expect(again.ok === false && again.error).toBe('has_character');
+      expect((await svc.serverPutSave(id, goodSave(3), 3)).revision).toBe(2);
+      expect(JSON.parse((await svc.getSave(id))!.raw).data.player.x).toBe(3);
     });
 
-    it('rejects tampered, corrupted and oversized saves', async () => {
+    it('rejects tampered, corrupted and oversized imports, and caps imported coins', async () => {
       const svc = new AccountService(make());
       const r = await svc.register('Cheater', 'password1', 'ip');
       if (!r.ok) throw new Error('register failed');
       const id = (await svc.accountFor(r.value.token))!.id;
       const env = JSON.parse(goodSave());
       env.data.inventory.coins = 999999; // edited without fixing the checksum
-      expect((await svc.putSave(id, JSON.stringify(env), 0, 1)).ok).toBe(false);
-      expect((await svc.putSave(id, '{not json', 0, 1)).ok).toBe(false);
-      expect((await svc.putSave(id, 'x'.repeat(600 * 1024), 0, 1)).ok).toBe(false);
+      expect((await svc.importCharacter(id, JSON.stringify(env))).ok).toBe(false);
+      expect((await svc.importCharacter(id, '{not json')).ok).toBe(false);
+      expect((await svc.importCharacter(id, 'x'.repeat(600 * 1024))).ok).toBe(false);
+      const rich = newSessionData(1);
+      rich.inventory.coins = 999999;
+      expect((await svc.importCharacter(id, serialize(rich, 1))).ok).toBe(true);
+      expect(JSON.parse((await svc.getSave(id))!.raw).data.inventory.coins).toBe(MAX_IMPORT_COINS);
     });
   });
 }
@@ -114,19 +117,26 @@ describe('HTTP API and signed-in world', () => {
   const post = (base: string, path: string, body: unknown, headers: Record<string, string> = {}) =>
     fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
 
-  it('register → save → load from a "second device"', async () => {
+  it('register → import a guest character → load it from a "second device"; uploads are refused', async () => {
     const base = await boot();
     const reg = await (await post(base, '/api/register', { username: 'Traveler', password: 'password1' })).json();
     expect(reg.username).toBe('Traveler');
-    const auth = { authorization: `Bearer ${reg.token}`, 'content-type': 'application/json' };
-    const put = await fetch(`${base}/api/save`, { method: 'PUT', headers: auth, body: JSON.stringify({ save: goodSave(7), revision: 0 }) });
-    expect((await put.json()).revision).toBe(1);
+    const auth = { authorization: `Bearer ${reg.token}` };
+    const imp = await post(base, '/api/character/import', { save: goodSave(7) }, auth);
+    expect((await imp.json()).revision).toBe(1);
     // Second device logs in with the password and gets the same character.
     const login = await (await post(base, '/api/login', { username: 'traveler', password: 'password1' })).json();
     const got = await (await fetch(`${base}/api/save`, { headers: { authorization: `Bearer ${login.token}` } })).json();
     expect(got.revision).toBe(1);
     expect(JSON.parse(got.save).data.player.x).toBe(7);
     expect((await fetch(`${base}/api/save`)).status).toBe(401);
+    // A browser can no longer write a character directly, even a valid one.
+    const put = await fetch(`${base}/api/save`, { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ save: goodSave(9), revision: 1 }) });
+    expect(put.status).toBe(410);
+    // Starting over: the server builds the new character itself.
+    const fresh = await post(base, '/api/character/new', {}, auth);
+    expect((await fresh.json()).revision).toBe(2);
+    expect(JSON.parse((await (await fetch(`${base}/api/save`, { headers: auth })).json()).save).data.player.x).toBe(0);
   });
 
   it('allows the configured Vercel origin and refuses other websites', async () => {
@@ -181,5 +191,40 @@ describe('HTTP API and signed-in world', () => {
     await waitFor(badBox, (m) => m.t === 'error' && m.error === 'signed_out');
     second.close();
     bad.close();
+  });
+
+  it('the server owns a signed-in character: it applies actions and saves the result itself', async () => {
+    const svc = new AccountService(new MemoryKV());
+    server = await startWorldServer({ port: 0, accounts: svc });
+    const base = `http://127.0.0.1:${server.port}`;
+    const reg = await (await post(base, '/api/register', { username: 'Owner', password: 'password1' })).json();
+    const c = new WebSocket(base.replace('http', 'ws') + '/world');
+    const box: WorldServerMsg[] = [];
+    c.on('message', (d) => box.push(JSON.parse(d.toString())));
+    await new Promise((r) => c.once('open', r));
+    const waitFor = async (pred: (m: WorldServerMsg) => boolean) => {
+      for (let i = 0; i < 200; i++) {
+        const m = box.find(pred);
+        if (m) return m;
+        await new Promise((r) => setTimeout(r, 15));
+      }
+      throw new Error('timeout');
+    };
+    c.send(JSON.stringify({ t: 'hello', name: 'x', protocol: WORLD_PROTOCOL, token: reg.token }));
+    await waitFor((m) => m.t === 'char');
+    // Stand next to Orla and talk: the server grants the starter sword.
+    c.send(JSON.stringify({ t: 'state', s: { x: -9, y: 0, z: 7.5, yaw: 0, spd: 0, ph: 'idle', atk: null, pr: 0, hp: 200, mhp: 200, wpn: null } }));
+    c.send(JSON.stringify({ t: 'act', id: 1, a: { k: 'talk', npc: 'orla' } }));
+    expect(await waitFor((m) => m.t === 'actResult' && m.id === 1)).toMatchObject({ ok: true });
+    // While the character is in the world, the title-screen endpoints can't replace it.
+    const blocked = await post(base, '/api/character/new', {}, { authorization: `Bearer ${reg.token}` });
+    expect(blocked.status).toBe(409);
+    c.close();
+    await server.close(); // writes changed characters before stopping
+    server = null;
+    const id = (await svc.accountFor(reg.token))!.id;
+    const saved = JSON.parse((await svc.getSave(id))!.raw).data;
+    expect(saved.inventory.equipped.weapon).toBeTruthy();
+    expect(saved.quest.stepIndex).toBe(1);
   });
 });

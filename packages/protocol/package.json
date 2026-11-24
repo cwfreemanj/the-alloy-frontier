@@ -8,6 +8,8 @@
   "dependencies": {
     "@alloy/item-gen": "*",
     "@alloy/crafting": "*",
-    "@alloy/game-rules": "*"
+    "@alloy/game-rules": "*",
+    "@alloy/save": "*",
+    "@alloy/session": "*"
   }
 }

@@ -15,7 +15,8 @@
     "@alloy/protocol": "*",
     "three": "^0.187.0",
     "@alloy/world": "*",
-    "@alloy/save": "*"
+    "@alloy/save": "*",
+    "@alloy/session": "*"
   },
   "devDependencies": {
     "@types/three": "^0.187.0"

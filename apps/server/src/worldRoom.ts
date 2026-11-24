@@ -2,11 +2,15 @@
  * The shared world (one persistent instance). Transport-agnostic so tests can drive it.
  *
  * Server-owned: every enemy (AI, movement, health, attacks, deaths, respawns), who an
- * enemy targets, whether an enemy attack reached a player, and kill credit.
- * Client-owned for now: the player's own movement (sanity-checked) and progression.
+ * enemy targets, whether an enemy attack reached a player, and kill credit. For signed-in
+ * players also the character: actions ('act'), kill rewards, weapon XP and hit damage
+ * (computed from the server-side weapon). Client-owned: the player's own movement
+ * (sanity-checked), and a guest's character (kept in their browser).
  */
-import { ATTACKS, dist2, forwardPoint, inArc, inCircle, type AttackId, type Vec2 } from '@alloy/game-rules';
-import { WORLD_LIMITS, WORLD_PROTOCOL, parseWorldClientMsg, type AvatarState, type EnemyNetState, type WorldPlayerInfo, type WorldServerMsg } from '@alloy/protocol';
+import { ATTACKS, dist2, forwardPoint, inArc, inCircle, mitigate, type AttackId, type Vec2 } from '@alloy/game-rules';
+import { WORLD_LIMITS, WORLD_PROTOCOL, parseWorldClientMsg, type AvatarState, type CharAction, type EnemyNetState, type WorldPlayerInfo, type WorldServerMsg } from '@alloy/protocol';
+import { GATHER_SECONDS, RANGE_SLACK, applyAction, playerHit, rewardHit, rewardKill } from '@alloy/session';
+import type { CharacterHost, LiveCharacter } from './characters';
 import { ENEMY_SPAWNS, EnemySim, buildWorldColliders, type ColliderWorld } from '@alloy/world';
 
 const PLAYER_RADIUS = 0.4;
@@ -16,6 +20,10 @@ const HIT_SLACK = 2.5;
 /** The Foundry Warden has no respawn in single-player; in the shared world it returns. */
 const ELITE_SHARED_RESPAWN = 180;
 const RESPAWN_CLEAR_RADIUS = 35;
+/** Minimum time between two gathers (the browser channels for GATHER_SECONDS). */
+const MIN_GATHER_INTERVAL_MS = GATHER_SECONDS * 900;
+/** At most this often, a character update caused by hits/XP is sent (actions reply at once). */
+const CHAR_PUSH_INTERVAL_MS = 250;
 
 interface Member {
   id: string;
@@ -28,6 +36,8 @@ interface Member {
   windowStart: number;
   msgs: number;
   hits: number;
+  /** The server-owned character of a signed-in player (null for guests). */
+  char: LiveCharacter | null;
 }
 
 export interface WorldStats {
@@ -37,6 +47,8 @@ export interface WorldStats {
   acceptedHits: number;
   enemyHitsOnPlayers: number;
   kills: number;
+  acts: number;
+  rejectedActs: number;
 }
 
 let sharedColliders: ColliderWorld | null = null;
@@ -52,9 +64,13 @@ export class WorldRoom {
   private contributors = new Map<string, Map<string, number>>();
   private lastSent = new Map<string, string>();
   private nextId = 1;
-  stats: WorldStats = { malformed: 0, rateLimited: 0, rejectedHits: 0, acceptedHits: 0, enemyHitsOnPlayers: 0, kills: 0 };
+  stats: WorldStats = { malformed: 0, rateLimited: 0, rejectedHits: 0, acceptedHits: 0, enemyHitsOnPlayers: 0, kills: 0, acts: 0, rejectedActs: 0 };
 
-  constructor(private now: () => number = () => Date.now()) {
+  constructor(
+    private now: () => number = () => Date.now(),
+    private host: CharacterHost | null = null,
+    private rng: () => number = Math.random,
+  ) {
     const colliders = worldColliders();
     this.enemies = ENEMY_SPAWNS.filter((s) => s.type !== 'dummy').map((s) => new EnemySim(s, colliders));
   }
@@ -79,6 +95,10 @@ export class WorldRoom {
     }
     if (msg.t === 'hello') {
       if (connId && this.members.has(connId)) return connId;
+      if (msg.protocol !== WORLD_PROTOCOL) {
+        send({ t: 'error', error: 'outdated_client' });
+        return connId;
+      }
       // Guests are marked so nobody can pass as a signed-in player.
       return this.join(`${msg.name} (guest)`, send, null, () => {});
     }
@@ -99,19 +119,72 @@ export class WorldRoom {
     }
     if (msg.t === 'state') {
       const first = me.state === null;
+      const wasDead = me.state?.ph === 'dead';
       me.state = msg.s;
+      if (me.char) this.trackAvatar(me.char, msg.s, wasDead);
       // Players appear to others once they are actually in the world (not on the title screen).
       if (first) this.broadcast({ t: 'joined', player: { id: me.id, name: me.name, state: me.state } }, me.id);
     }
     else if (msg.t === 'hit') this.hit(me, msg.enemyId, msg.attackId, msg.damage, msg.stagger, msg.guardBreak, msg.crit);
+    else if (msg.t === 'act') this.act(me, msg.id, msg.a);
     return me.id;
+  }
+
+  /** The character follows the avatar: position for the save, and deaths for the stats. */
+  private trackAvatar(c: LiveCharacter, s: AvatarState, wasDead: boolean): void {
+    const p = c.session.data.player;
+    p.x = Math.round(s.x * 100) / 100;
+    p.z = Math.round(s.z * 100) / 100;
+    p.yaw = Math.round(s.yaw * 1000) / 1000;
+    p.health = Math.max(1, Math.round(s.hp));
+    if (s.ph === 'dead' && !wasDead) c.session.data.stats.deaths++;
+    this.host?.changed(c);
+  }
+
+  private act(me: Member, id: number, a: CharAction): void {
+    const c = me.char;
+    const refuse = (error: string, message: string): void => {
+      this.stats.rejectedActs++;
+      me.send({ t: 'actResult', id, ok: false, error, message });
+    };
+    if (!c) return refuse('guest', 'Guests keep their character in their browser.');
+    if (me.state && (me.state.hp <= 0 || me.state.ph === 'dead')) return refuse('dead', 'You are down.');
+    const t = this.now();
+    if (a.k === 'gather' && t - c.lastGatherAt < MIN_GATHER_INTERVAL_MS) return refuse('too_fast', 'Still gathering.');
+    const pos = me.state ? { x: me.state.x, z: me.state.z } : null;
+    const r = applyAction(c.session, a, { pos, slack: RANGE_SLACK });
+    if (!r.ok) return refuse(r.error, r.message);
+    this.stats.acts++;
+    if (a.k === 'gather') c.lastGatherAt = t;
+    this.host?.changed(c);
+    me.send({ t: 'actResult', id, ok: true, ...(r.item ? { item: r.item } : {}) });
+    this.pushChar(me, r.events, true);
+  }
+
+  /** Send the character now, or soon (coalesced) for frequent changes like weapon XP. */
+  private pushChar(me: Member, events: LiveCharacter['pending'], now: boolean): void {
+    const c = me.char;
+    if (!c) return;
+    c.pending.push(...events);
+    c.due = true;
+    if (now) this.sendChar(me);
+  }
+
+  private sendChar(me: Member): void {
+    const c = me.char;
+    if (!c) return;
+    const events = c.pending;
+    c.pending = [];
+    c.due = false;
+    c.lastSentAt = this.now();
+    me.send({ t: 'char', data: c.session.data, events });
   }
 
   /**
    * Join the world. For a signed-in account, an older connection of the same account is
    * signed out of the world first, so one character is never played twice at once.
    */
-  join(name: string, send: (m: WorldServerMsg) => void, accountId: string | null, close: () => void): string | null {
+  join(name: string, send: (m: WorldServerMsg) => void, accountId: string | null, close: () => void, char: LiveCharacter | null = null): string | null {
     if (accountId) {
       for (const old of [...this.members.values()]) {
         if (old.accountId !== accountId) continue;
@@ -122,12 +195,14 @@ export class WorldRoom {
     }
     if (this.members.size >= WORLD_LIMITS.maxPlayers) {
       send({ t: 'error', error: 'world_full' });
+      if (char) this.host?.release(char);
       return null;
     }
     const id = `p${this.nextId++}`;
-    const m: Member = { id, name, accountId, close, state: null, send, windowStart: this.now(), msgs: 0, hits: 0 };
+    const m: Member = { id, name, accountId, close, state: null, send, windowStart: this.now(), msgs: 0, hits: 0, char };
     this.members.set(id, m);
     send({ t: 'welcome', id, players: this.infos(), enemies: this.enemies.map(netState), protocol: WORLD_PROTOCOL });
+    if (char) this.sendChar(m);
     return id;
   }
 
@@ -135,6 +210,7 @@ export class WorldRoom {
     const m = id ? this.members.get(id) : undefined;
     if (!m) return;
     this.members.delete(m.id);
+    if (m.char) this.host?.release(m.char);
     if (m.state) this.broadcast({ t: 'left', id: m.id, name: m.name });
   }
 
@@ -152,10 +228,23 @@ export class WorldRoom {
       return reject();
     }
     if (dist2({ x: p.x, z: p.z }, e.pos2) > atk.range + e.def.radius + HIT_SLACK) return reject();
+    if (me.char) {
+      // Signed in: the damage comes from the server's copy of the weapon, not the report.
+      const out = playerHit(me.char.session, attackId, this.rng);
+      if (!out) return reject();
+      damage = mitigate(out.damage, e.def.defense);
+      stagger = out.stagger;
+      crit = out.crit;
+      guardBreak = out.guardBreak;
+    }
     // Guard-break is only legitimate on the Guardbreaker attack.
     const res = e.brain.receiveHit({ damage, stagger, guardBreak: guardBreak && atk.guardBreak });
     this.stats.acceptedHits++;
     if (!res.ignored) this.credit(e.id, me.id);
+    if (me.char && !res.ignored && res.damage > 0) {
+      this.pushChar(me, rewardHit(me.char.session, e.spawn.type, res.damage), false);
+      this.host?.changed(me.char);
+    }
     me.send({ t: 'hitResult', enemyId, damage: res.damage, guarded: res.guarded, staggered: res.staggered, guardBroken: res.guardBroken, killed: res.killed, ignored: res.ignored, crit });
     if (res.killed) this.kill(e);
   }
@@ -173,6 +262,15 @@ export class WorldRoom {
     this.stats.kills++;
     this.broadcast({ t: 'enemies', list: [netState(e)] });
     this.broadcast({ t: 'kill', enemyId: e.id, type: e.spawn.type, contributors: list });
+    // Rewards for signed-in contributors are rolled here; guests roll their own.
+    for (const id of list) {
+      const m = this.members.get(id);
+      if (!m?.char) continue;
+      const r = rewardKill(m.char.session, e.spawn.type, e.id, this.rng);
+      this.host?.changed(m.char);
+      const loot = `${e.def.name} defeated · +${r.coins} coins${r.flux ? ` · +${r.flux} Binding Flux` : ''}`;
+      this.pushChar(m, [{ type: 'toast', text: loot, tone: 'good' }, ...r.events], true);
+    }
   }
 
   private livingPlayers(): Array<{ m: Member; pos: Vec2; y: number }> {
@@ -184,6 +282,7 @@ export class WorldRoom {
   /** Advance the world. Called at a fixed rate by the transport (and directly by tests). */
   step(dt: number): void {
     if (this.members.size === 0) return;
+    for (const m of this.members.values()) if (m.char && m.state) m.char.session.data.playTime += dt;
     const players = this.livingPlayers();
     for (const e of this.enemies) {
       // Target: the nearest living player.
@@ -230,6 +329,8 @@ export class WorldRoom {
   /** Relay avatars and changed enemies (called at the network rate). */
   publish(): void {
     if (this.members.size === 0) return;
+    const t = this.now();
+    for (const m of this.members.values()) if (m.char?.due && t - m.char.lastSentAt >= CHAR_PUSH_INTERVAL_MS) this.sendChar(m);
     if (this.members.size > 1) {
       const list = [...this.members.values()].filter((m) => m.state).map((m) => ({ id: m.id, s: m.state! }));
       if (list.length) this.broadcast({ t: 'players', list });

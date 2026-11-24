@@ -6,11 +6,16 @@
  *   POST /api/login    {username, password}        -> {token, username}
  *   POST /api/logout                               -> {ok}
  *   GET  /api/me                                   -> {username}
- *   GET  /api/save                                 -> {save: string|null, revision}
- *   PUT  /api/save     {save, revision}            -> {revision}
+ *   GET  /api/save                                 -> {save: string|null, revision}   (read-only)
+ *   POST /api/character/new                        -> {revision}   (server builds a fresh character)
+ *   POST /api/character/import {save}              -> {revision}   (a guest character, once)
+ *
+ * Browsers never upload a signed-in character: the world server owns and saves it.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { MAX_SAVE_BYTES, savedAtOf } from '@alloy/save';
+import { MAX_SAVE_BYTES, serialize } from '@alloy/save';
+import { ensureNodes, newSessionData } from '@alloy/session';
+import type { CharacterHost } from '../characters';
 import type { AccountService } from './service';
 
 const MAX_BODY = MAX_SAVE_BYTES + 4096;
@@ -20,6 +25,8 @@ export interface ApiOptions {
   allowedOrigins: Set<string>;
   /** Trust X-Forwarded-For (only behind a known proxy such as Render's). */
   trustProxy: boolean;
+  /** Live characters, so the title screen can't replace one that is in the world. */
+  characters?: CharacterHost | null;
 }
 
 function clientIp(req: IncomingMessage, trustProxy: boolean): string {
@@ -85,7 +92,7 @@ export async function handleApi(svc: AccountService, opts: ApiOptions, req: Inco
   }
   if (req.method === 'OPTIONS') {
     res
-      .writeHead(204, { ...headers, 'access-control-allow-methods': 'GET, POST, PUT, OPTIONS', 'access-control-allow-headers': 'authorization, content-type', 'access-control-max-age': '600' })
+      .writeHead(204, { ...headers, 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'authorization, content-type', 'access-control-max-age': '600' })
       .end();
     return true;
   }
@@ -119,13 +126,27 @@ export async function handleApi(svc: AccountService, opts: ApiOptions, req: Inco
     } else if (route === 'GET /api/save') {
       const s = await svc.getSave(acct.id);
       send(200, { save: s?.raw ?? null, revision: s?.revision ?? 0 });
+    } else if (route === 'POST /api/character/new' || route === 'POST /api/character/import') {
+      const host = opts.characters ?? null;
+      if (host?.isLoaded(acct.id)) {
+        send(409, { error: 'in_world', message: 'This character is in the world on another device. Leave there first.' });
+        return true;
+      }
+      await host?.settled(acct.id);
+      if (route.endsWith('/new')) {
+        const t = Date.now();
+        const data = newSessionData(t);
+        ensureNodes(data);
+        send(200, await svc.serverPutSave(acct.id, serialize(data, t), t));
+      } else {
+        const body = await readJson(req);
+        if (!body) return send(413, { error: 'too_large', message: 'Save is too large or invalid.' }), true;
+        const r = await svc.importCharacter(acct.id, body.save);
+        if (r.ok) send(200, r.value);
+        else fail(r);
+      }
     } else if (route === 'PUT /api/save') {
-      const body = await readJson(req);
-      if (!body) return send(413, { error: 'too_large', message: 'Save is too large or invalid.' }), true;
-      const raw = body.save;
-      const r = await svc.putSave(acct.id, raw, body.revision, typeof raw === 'string' ? savedAtOf(raw) : 0);
-      if (r.ok) send(200, r.value);
-      else fail(r);
+      send(410, { error: 'server_owned', message: 'Characters are saved by the server now. Reload the page to update the game.' });
     } else {
       send(404, { error: 'not_found' });
     }

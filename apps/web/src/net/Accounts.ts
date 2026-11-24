@@ -1,6 +1,7 @@
 /**
- * Browser side of accounts and server-side saves. The sign-in token is kept in this
- * browser's storage (never in code or URLs) and sent as a bearer header.
+ * Browser side of accounts. The sign-in token is kept in this browser's storage (never in
+ * code or URLs) and sent as a bearer header. A signed-in character is owned and saved by
+ * the world server; the browser only reads it, starts a new one, or imports a guest one.
  */
 const AUTH_KEY = 'alloy-frontier.auth.v1';
 
@@ -120,75 +121,15 @@ export class AccountClient {
     return r.save;
   }
 
-  async writeSave(raw: string, keepalive = false): Promise<void> {
-    const r = await this.call<{ revision: number }>('PUT', '/api/save', { save: raw, revision: this.revision }, keepalive);
+  /** Start a fresh character on the server (replaces any existing one). */
+  async newCharacter(): Promise<void> {
+    const r = await this.call<{ revision: number }>('POST', '/api/character/new', {});
     this.revision = r.revision;
   }
-}
 
-/**
- * Sends the newest save, one request at a time, retrying after network errors. Older
- * queued saves are dropped in favour of the newest. Conflicts and sign-outs stop it.
- */
-export class CloudSaver {
-  private pending: string | null = null;
-  private inFlight = false;
-  private retryTimer: ReturnType<typeof setTimeout> | null = null;
-  stopped = false;
-  lastResult = 'Not saved yet this session.';
-
-  constructor(
-    private api: AccountClient,
-    private onFatal: (e: ApiError) => void,
-  ) {}
-
-  push(raw: string): void {
-    if (this.stopped) return;
-    this.pending = raw;
-    void this.pump();
-  }
-
-  get busy(): boolean {
-    return this.inFlight || this.pending !== null;
-  }
-
-  private async pump(): Promise<void> {
-    if (this.inFlight || this.pending === null || this.stopped) return;
-    const raw = this.pending;
-    this.pending = null;
-    this.inFlight = true;
-    try {
-      await this.api.writeSave(raw);
-      this.lastResult = `Saved to your account at ${new Date().toLocaleTimeString()} · ${(raw.length / 1024).toFixed(1)} KB`;
-    } catch (e) {
-      const err = e as ApiError;
-      if (err.status === 0 || err.status >= 500) {
-        // Keep the newest unsent save and try again shortly.
-        this.pending ??= raw;
-        this.lastResult = 'Saving… (waiting for the server)';
-        this.retryTimer ??= setTimeout(() => {
-          this.retryTimer = null;
-          void this.pump();
-        }, 5000);
-      } else {
-        this.stopped = true;
-        this.lastResult = `Save failed: ${err.message}`;
-        this.onFatal(err);
-      }
-    } finally {
-      this.inFlight = false;
-    }
-    if (this.pending !== null && !this.retryTimer) void this.pump();
-  }
-
-  /** Best effort on tab close (small saves only, as browsers cap keepalive requests). */
-  flushOnExit(raw: string): void {
-    if (this.stopped || this.inFlight || raw.length > 60_000) return;
-    void this.api.writeSave(raw, true).catch(() => undefined);
-  }
-
-  stop(): void {
-    this.stopped = true;
-    if (this.retryTimer) clearTimeout(this.retryTimer);
+  /** Bring this browser's guest character into the account (only when it has none). */
+  async importCharacter(raw: string): Promise<void> {
+    const r = await this.call<{ revision: number }>('POST', '/api/character/import', { save: raw });
+    this.revision = r.revision;
   }
 }

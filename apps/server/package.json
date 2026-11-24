@@ -13,6 +13,7 @@
     "@alloy/item-gen": "*",
     "@alloy/protocol": "*",
     "@alloy/save": "*",
+    "@alloy/session": "*",
     "@alloy/world": "*",
     "pg": "^8.23.1",
     "three": "^0.187.0",

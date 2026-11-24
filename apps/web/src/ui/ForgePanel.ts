@@ -64,6 +64,8 @@ export class ForgePanel {
     private session: Session,
     private onClose: () => void,
     private onEquip: (itemId: string) => void,
+    /** Asks the authority to forge (server for accounts, this browser for guests). */
+    private onForge: (req: Omit<ForgeRequest, 'maker' | 'createdAt'>) => Promise<{ ok: boolean; item?: ItemInstance }>,
   ) {
     this.el = h('div', { class: 'overlay', role: 'dialog', 'aria-label': 'Forge' });
     this.txId = session.nextTxId('forge');
@@ -557,14 +559,15 @@ export class ForgePanel {
   private commit(): void {
     if (this.busy) return;
     this.busy = true;
-    const r = this.session.forge(this.request());
-    this.busy = false;
-    if (r.ok) {
-      this.result = r.item;
-      this.stage = 'done';
-      this.txId = this.session.nextTxId('forge');
-    }
-    this.render();
+    void this.onForge(this.request()).then((r) => {
+      this.busy = false;
+      if (r.ok && r.item) {
+        this.result = r.item;
+        this.stage = 'done';
+        this.txId = this.session.nextTxId('forge');
+      }
+      this.render();
+    });
   }
 
   private renderResult(): HTMLElement {

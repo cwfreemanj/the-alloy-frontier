@@ -21,6 +21,8 @@ export class InventoryPanel {
     private session: Session,
     private onClose: () => void,
     private onEquip: (id: string) => void,
+    /** Asks the authority (server for accounts, this browser for guests); true when done. */
+    private onDiscard: (id: string) => Promise<boolean>,
   ) {
     this.selected = session.inventory.equipped.weapon ?? session.inventory.itemOrder[0] ?? null;
     this.render();
@@ -73,7 +75,7 @@ export class InventoryPanel {
           h('button', { class: 'btn primary', disabled: eq?.itemId === sel.itemId, 'data-testid': 'inv-equip', onclick: () => (this.onEquip(sel.itemId), this.render()) }, eq?.itemId === sel.itemId ? 'Equipped' : 'Equip'),
           h('span', { class: 'spacer' }),
           this.confirmDiscard
-            ? h('span', { class: 'row' }, h('span', { class: 'small bad' }, 'Discard permanently?'), h('button', { class: 'btn small', onclick: () => (this.session.discard(sel.itemId) && (this.selected = null), (this.confirmDiscard = false), this.render()) }, 'Yes, discard'), h('button', { class: 'btn small', onclick: () => ((this.confirmDiscard = false), this.render()) }, 'Keep'))
+            ? h('span', { class: 'row' }, h('span', { class: 'small bad' }, 'Discard permanently?'), h('button', { class: 'btn small', onclick: () => void this.onDiscard(sel.itemId).then((ok) => (ok && (this.selected = null), (this.confirmDiscard = false), this.render())) }, 'Yes, discard'), h('button', { class: 'btn small', onclick: () => ((this.confirmDiscard = false), this.render()) }, 'Keep'))
             : h('button', { class: 'btn small', disabled: eq?.itemId === sel.itemId, title: eq?.itemId === sel.itemId ? 'Cannot discard the equipped weapon' : '', onclick: () => ((this.confirmDiscard = true), this.render()) }, 'Discard…'),
         ),
         h('h3', null, 'Provenance'),
@@ -91,6 +93,8 @@ export class MerchantPanel {
   constructor(
     private session: Session,
     private onClose: () => void,
+    /** Asks the authority to buy (server for accounts, this browser for guests). */
+    private onBuy: (stockId: string, qty: number) => Promise<unknown>,
   ) {
     this.render();
   }
@@ -113,7 +117,7 @@ export class MerchantPanel {
             `Forge comparison: with your mastery (${this.session.smithMastery}) the same basic steel in an Iron Longsword already projects above this. Orla's mastery-100 hands would make ~42 damage.`,
           ),
         );
-        row.append(h('div', { class: 'row', style: 'margin-top:6px' }, h('span', { class: 'spacer' }), h('button', { class: 'btn', 'data-buy': s.id, disabled: this.session.inventory.coins < s.price, onclick: () => (this.session.buy(s.id, 1), this.render()) }, 'Buy')));
+        row.append(h('div', { class: 'row', style: 'margin-top:6px' }, h('span', { class: 'spacer' }), h('button', { class: 'btn', 'data-buy': s.id, disabled: this.session.inventory.coins < s.price, onclick: () => void this.onBuy(s.id, 1).then(() => this.render()) }, 'Buy')));
       } else {
         row.append(h('div', { class: 'small muted' }, `Buffer material for every forge recipe. Owned: ${materialTotal(this.session.inventory, 'binding_flux')}`));
         row.append(
@@ -121,7 +125,7 @@ export class MerchantPanel {
             'div',
             { class: 'row', style: 'margin-top:6px' },
             h('span', { class: 'spacer' }),
-            ...[1, 5, 10].map((n) => h('button', { class: 'btn small', 'data-buy': `${s.id}x${n}`, disabled: this.session.inventory.coins < s.price * n, onclick: () => (this.session.buy(s.id, n), this.render()) }, `Buy ${n}`)),
+            ...[1, 5, 10].map((n) => h('button', { class: 'btn small', 'data-buy': `${s.id}x${n}`, disabled: this.session.inventory.coins < s.price * n, onclick: () => void this.onBuy(s.id, n).then(() => this.render()) }, `Buy ${n}`)),
           ),
         );
       }

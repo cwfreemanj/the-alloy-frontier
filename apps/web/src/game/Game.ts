@@ -20,16 +20,16 @@ import {
   type Vec2,
 } from '@alloy/game-rules';
 import { cleanName, type AvatarState, type HitVerdict } from '@alloy/protocol';
-import { IMBUEMENTS, materialName, type ItemInstance } from '@alloy/item-gen';
+import { IMBUEMENTS, type ItemInstance } from '@alloy/item-gen';
 import { CameraRig } from '../core/CameraRig';
 import { Input } from '../core/Input';
 import { PerfMonitor } from '../core/Perf';
 import { Enemy } from '../entities/Enemy';
 import { PLAYER_RADIUS, Player } from '../entities/Player';
-import { NODE_MAX_CHARGES, NODE_RESPAWN_SECONDS, Npc, ResourceNode, nodeYield } from '../entities/WorldObjects';
+import { Npc, ResourceNode } from '../entities/WorldObjects';
 import { Effects } from '../fx/Effects';
 import { SaveSystem } from '../state/Save';
-import { Session, newSessionData, type SessionData } from '../state/Session';
+import { Session, applyAction, ensureNodes, newSessionData, regrowNodes, rewardKill, type CharAction, type SessionData, type SessionEvent } from '../state/Session';
 import { ForgePanel } from '../ui/ForgePanel';
 import { Hud } from '../ui/Hud';
 import { InventoryPanel, MerchantPanel, dialogPanel, pausePanel, summaryPanel, titleScreen, type Settings } from '../ui/Panels';
@@ -40,10 +40,10 @@ import { EmberholdWorld } from '../world/EmberholdWorld';
 import { orlaDialogue } from './Dialogue';
 import type { RemotePlayer } from '../entities/RemotePlayer';
 import { findWorld } from '../net/WorldClient';
-import { AccountClient, CloudSaver, type ApiError } from '../net/Accounts';
+import { AccountClient, type ApiError } from '../net/Accounts';
 import { deserialize as parseSave, serialize as encodeSave } from '@alloy/save';
 import type { AccountView } from '../ui/Panels';
-import { Online } from './Online';
+import { Online, type ActReply } from './Online';
 import { DEFAULT_PLAYER_CHARACTER, PLAYER_CHARACTERS, charactersReady, isPlayerCharacter, type PlayerCharacterId } from '../entities/models/Characters';
 
 const NAME_KEY = 'alloy-frontier.name.v1';
@@ -132,8 +132,9 @@ export class Game {
   /** World server address (null when playing offline). */
   private worldUrl: string | null = null;
   private accounts: AccountClient | null = null;
-  private cloud: CloudSaver | null = null;
-  /** 'account' = character saved on the server; 'guest' = saved in this browser. */
+  /** The open inventory/merchant panel, re-rendered when the server's character changes. */
+  private panel: { render(): void } | null = null;
+  /** 'account' = character owned and saved by the server; 'guest' = saved in this browser. */
   mode: 'guest' | 'account' = 'guest';
   private accountView: AccountView = { state: 'checking' };
   private cloudRaw: string | null = null;
@@ -185,6 +186,7 @@ export class Game {
         this.lockTarget = null;
       },
       kicked: (reason) => this.endSession(reason),
+      character: (data, events) => this.characterUpdate(data, events),
     });
     this.worldStatusEl = h('div', { class: 'world-status', 'data-testid': 'world-status' });
     uiRoot.append(this.worldStatusEl);
@@ -274,8 +276,6 @@ export class Game {
   }
 
   private async signOut(): Promise<void> {
-    this.cloud?.stop();
-    this.cloud = null;
     await this.accounts?.logout();
     this.cloudRaw = null;
     this.setAccountView({ state: 'signed_out' });
@@ -284,9 +284,6 @@ export class Game {
   /** Start playing a character (from the title screen). */
   private startPlaying(data: SessionData, mode: 'guest' | 'account', banner: 'new' | 'continue'): void {
     this.mode = mode;
-    this.cloud?.stop();
-    this.cloud = null;
-    if (mode === 'account' && this.accounts) this.cloud = new CloudSaver(this.accounts, (e) => this.onCloudError(e));
     this.loadSession(data);
     this.started = true;
     this.closeModal();
@@ -298,16 +295,37 @@ export class Game {
     this.connectWorld();
   }
 
-  private onCloudError(e: ApiError): void {
-    if (e.code === 'conflict') this.endSession('This character was saved from another device. Continue again to load the latest version.');
-    else if (e.status === 401) this.endSession('Your sign-in expired. Please sign in again.');
-    else this.hud.toast(`Could not save to your account: ${e.message}`, 'warn');
+  // ---------------- Character changes ----------------
+  /**
+   * Every change to the character goes through here. Signed in: the server decides and
+   * sends back the character. Guest: the same rules run in this browser.
+   */
+  async act(a: CharAction): Promise<ActReply> {
+    if (this.mode === 'account') {
+      const r = await this.online.act(a);
+      if (!r.ok && r.message) this.hud.toast(r.message, 'warn');
+      return r;
+    }
+    const r = applyAction(this.session, a, { pos: this.player.pos2 });
+    // Refusals from the rules themselves were already shown as toasts by the session.
+    if (!r.ok && !r.events.some((e) => e.type === 'toast' && e.tone === 'warn')) this.hud.toast(r.message, 'warn');
+    return r.ok ? { ok: true, item: r.item } : { ok: false, error: r.error, message: r.message };
+  }
+
+  /** The server's copy of our character (signed in): adopt it and show what happened. */
+  private characterUpdate(data: SessionData, events: SessionEvent[]): void {
+    if (this.mode !== 'account') return;
+    ensureNodes(data);
+    const before = this.session.equipped()?.itemId ?? null;
+    this.session.data = data;
+    for (const e of events) this.session.notify(e);
+    if ((this.session.equipped()?.itemId ?? null) !== before) this.player.setWeapon(this.session.equipped());
+    this.forgePanel?.render();
+    this.panel?.render();
   }
 
   /** Leave play and return to the title screen with a reason (no further saves from here). */
   private endSession(reason: string): void {
-    this.cloud?.stop();
-    this.cloud = null;
     this.online.disconnect();
     this.started = false;
     this.modal = null;
@@ -408,7 +426,8 @@ export class Game {
       else if (r.guarded) this.hud.damageNumber(sp.x, sp.y - 24, 'GUARDED — use Guardbreaker (R)', 'info');
       else if (r.staggered) this.hud.damageNumber(sp.x, sp.y - 24, 'STAGGERED', 'info');
     }
-    this.session.gainWeaponXp(weaponXpForHit(e.def.kind, r.damage));
+    // Signed in, the server grants weapon XP for the hits it accepts.
+    if (this.mode !== 'account') this.session.gainWeaponXp(weaponXpForHit(e.def.kind, r.damage));
   }
 
   // ---------------- Setup ----------------
@@ -493,7 +512,7 @@ export class Game {
         e.deadTime = 99;
       }
     }
-    for (const n of ALL_RESOURCE_NODES) data.world.nodes[n.id] ??= { charges: NODE_MAX_CHARGES, respawnAt: 0, gathers: 0 };
+    ensureNodes(data);
     this.lockTarget = null;
     this.zone = zoneAt(this.player.pos2);
   }
@@ -503,11 +522,7 @@ export class Game {
     const d = this.session.data;
     d.player = { x: this.player.position.x, z: this.player.position.z, yaw: this.player.yaw, health: this.player.combat.alive ? this.player.combat.health : this.player.combat.maxHealth };
     if (this.mode === 'account') {
-      if (!this.cloud) return;
-      const raw = encodeSave(d, Date.now());
-      if (reason === 'exit') this.cloud.flushOnExit(raw);
-      else this.cloud.push(raw);
-      this.lastSave = this.cloud.lastResult;
+      this.lastSave = this.online.online ? 'Your character is saved by the server as you play.' : 'Not connected: changes are paused until you reconnect.';
       return;
     }
     const r = this.saves.save(d);
@@ -521,6 +536,7 @@ export class Game {
     this.modal = m;
     this.modalEl = el;
     if (m !== 'forge') this.forgePanel = null;
+    this.panel = null;
     if (el) this.ui.append(el);
     this.input.enabled = m === null;
     if (m !== null) {
@@ -566,19 +582,30 @@ export class Game {
           }
           this.startPlaying(r.data, 'account', 'continue');
         },
-        onAccountNew: () => {
-          this.startPlaying(newSessionData(Date.now()), 'account', 'new');
-          this.save('new');
-        },
-        onImport: () => {
-          const r = this.saves.load();
-          if (!r.ok) return;
-          this.startPlaying(r.data, 'account', 'continue');
-          this.save('import');
-          this.hud.toast('Your browser character now lives in your account.', 'good');
-        },
+        onAccountNew: () => void this.accountCharacter('new'),
+        onImport: () => void this.accountCharacter('import'),
       }),
     );
+  }
+
+  /** Start a new account character, or bring this browser's guest character in (server-side). */
+  private async accountCharacter(kind: 'new' | 'import'): Promise<void> {
+    if (!this.accounts || this.accountView.state !== 'signed_in') return;
+    const view = this.accountView;
+    const local = kind === 'import' ? this.saves.load() : null;
+    if (local && !local.ok) return;
+    this.setAccountView({ ...view, busy: true, error: undefined });
+    try {
+      if (kind === 'new') await this.accounts.newCharacter();
+      else await this.accounts.importCharacter(encodeSave(local!.ok ? local!.data : newSessionData(Date.now()), Date.now()));
+    } catch (e) {
+      this.setAccountView({ ...view, busy: false, error: (e as ApiError).message });
+      return;
+    }
+    this.cloudRaw = await this.accounts.loadSave().catch(() => null);
+    const r = this.cloudRaw ? parseSave(this.cloudRaw) : null;
+    this.startPlaying(r?.ok ? r.data : newSessionData(Date.now()), 'account', kind === 'new' ? 'new' : 'continue');
+    if (kind === 'import') this.hud.toast('Your browser character now lives in your account.', 'good');
   }
 
   /** New guest game (saved in this browser). */
@@ -635,8 +662,14 @@ export class Game {
   }
 
   openInventory(): void {
-    const p = new InventoryPanel(this.session, () => this.closeModal(), (id) => this.session.equip(id));
+    const p = new InventoryPanel(
+      this.session,
+      () => this.closeModal(),
+      (id) => void this.act({ k: 'equip', item: id }),
+      async (id) => (await this.act({ k: 'discard', item: id })).ok,
+    );
     this.setModal('inventory', p.el);
+    this.panel = p;
   }
 
   openForge(): void {
@@ -647,16 +680,18 @@ export class Game {
     const p = new ForgePanel(
       this.session,
       () => this.closeModal(),
-      (id) => this.session.equip(id),
+      (id) => void this.act({ k: 'equip', item: id }),
+      (req) => this.act({ k: 'forge', req }),
     );
     this.setModal('forge', p.el);
     this.forgePanel = p;
   }
 
   openMerchant(): void {
-    const p = new MerchantPanel(this.session, () => this.closeModal());
+    const p = new MerchantPanel(this.session, () => this.closeModal(), (stock, qty) => this.act({ k: 'buy', stock, qty }));
     this.setModal('merchant', p.el);
-    this.session.quest({ type: 'event', event: 'open_merchant' });
+    this.panel = p;
+    void this.act({ k: 'event', ev: 'open_merchant' });
   }
 
   openOrla(): void {
@@ -670,16 +705,7 @@ export class Game {
         primary: o.primary,
         action: () => {
           if (o.kind === 'talk') {
-            const wasReport = this.session.step()?.id === 'report';
-            this.session.talk('orla');
-            if (wasReport && this.session.data.quest.completed) {
-              this.setModal('summary', summaryPanel(this.session, () => this.closeModal()));
-              return;
-            }
-            this.closeModal();
-            if (this.session.step()?.id === 'first_blood') {
-              this.hud.toast('Light: LMB/J · Heavy: F · Block: RMB/L · Dodge: Q · Guardbreaker: R · Lock: Tab', 'info');
-            }
+            void this.talkToOrla();
           } else if (o.kind === 'forge') {
             this.openForge();
           } else this.closeModal();
@@ -687,6 +713,20 @@ export class Game {
       })),
     );
     this.setModal('dialog', el);
+  }
+
+  private async talkToOrla(): Promise<void> {
+    const wasReport = this.session.step()?.id === 'report';
+    const r = await this.act({ k: 'talk', npc: 'orla' });
+    if (!r.ok) return;
+    if (wasReport && this.session.data.quest.completed) {
+      this.setModal('summary', summaryPanel(this.session, () => this.closeModal()));
+      return;
+    }
+    this.closeModal();
+    if (this.session.step()?.id === 'first_blood') {
+      this.hud.toast('Light: LMB/J · Heavy: F · Block: RMB/L · Dodge: Q · Guardbreaker: R · Lock: Tab', 'info');
+    }
   }
 
   // ---------------- Frame ----------------
@@ -832,16 +872,9 @@ export class Game {
     // NPCs look at the player when near
     for (const n of this.npcs) n.update(dt, dist2(n.pos2, this.player.pos2) < 6 ? this.player.position : null);
 
-    // Nodes
-    const now = this.session.data.playTime;
-    for (const n of this.nodes) {
-      const rt = this.session.data.world.nodes[n.def.id];
-      if (rt.charges < NODE_MAX_CHARGES && rt.respawnAt > 0 && now >= rt.respawnAt) {
-        rt.charges = NODE_MAX_CHARGES;
-        rt.respawnAt = 0;
-      }
-      n.setState(rt, this.time);
-    }
+    // Nodes (regrowth is a rule; signed in, the server's copy is what counts)
+    regrowNodes(this.session.data);
+    for (const n of this.nodes) n.setState(this.session.data.world.nodes[n.def.id], this.time);
 
     this.updateGathering(dt);
     this.updateInteraction();
@@ -994,23 +1027,19 @@ export class Game {
         else if (res.guarded) this.hud.damageNumber(sp.x, sp.y - 24, 'GUARDED — use Guardbreaker (R)', 'info');
         else if (res.staggered) this.hud.damageNumber(sp.x, sp.y - 24, 'STAGGERED', 'info');
       }
-      this.session.gainWeaponXp(weaponXpForHit(e.def.kind, res.damage));
+      if (this.mode !== 'account') this.session.gainWeaponXp(weaponXpForHit(e.def.kind, res.damage));
       if (res.killed) this.onEnemyKilled(e);
     }
   }
 
   private onEnemyKilled(e: Enemy): void {
     const d = e.def;
-    const [lo, hi] = d.coins;
-    const coins = lo + Math.floor(Math.random() * (hi - lo + 1));
-    if (coins > 0) this.session.addCoins(coins);
-    this.session.gainAdventurer(d.xp);
-    if (d.kind === 'melee' && Math.random() < 0.5) {
-      this.session.gather(`drop:${e.id}`, 'binding_flux', 1 + Math.floor(Math.random() * 2), 0.5, {});
-      this.hud.toast('Scavenger dropped Binding Flux', 'info');
+    // Signed in, the server rolls the rewards and sends them with the character.
+    if (this.mode !== 'account') {
+      const r = rewardKill(this.session, e.spawn.type, e.id, Math.random);
+      if (r.flux) this.hud.toast('Scavenger dropped Binding Flux', 'info');
+      this.hud.toast(`${d.name} defeated · +${r.coins} coins`, 'good');
     }
-    this.hud.toast(`${d.name} defeated · +${coins} coins`, 'good');
-    this.session.recordKill(e.spawn.type);
     if (this.lockTarget === e) this.lockTarget = null;
     if (d.kind === 'elite') {
       this.effects.ring(e.position, '#ff8a3d', 10, 1.2);
@@ -1061,7 +1090,7 @@ export class Game {
     if (sp.visible) this.hud.damageNumber(sp.x, sp.y, out.blocked ? `BLOCKED ${Math.round(out.damage)}` : out.guardBroken ? 'GUARD BROKEN' : `-${Math.round(out.damage)}`, 'player');
     if (out.killed) {
       this.deathTimer = 3.5;
-      this.session.data.stats.deaths++;
+      if (this.mode !== 'account') this.session.data.stats.deaths++; // the server counts these for accounts
       this.lockTarget = null;
     }
   }
@@ -1165,18 +1194,14 @@ export class Game {
     const n = this.gatherTarget;
     this.gatherTarget = null;
     this.hud.setGather(null);
-    const rt = this.session.data.world.nodes[n.def.id];
-    if (rt.charges <= 0) return;
-    const qty = nodeYield(n.def, rt.gathers);
-    if (this.session.gather(n.def.id, n.def.material, qty, n.traits.quality, n.traits.traits)) {
-      rt.charges--;
-      rt.gathers++;
-      if (rt.charges <= 0) rt.respawnAt = this.session.data.playTime + NODE_RESPAWN_SECONDS;
-      this.hud.toast(`+${qty} ${materialName(n.def.material)} (quality ${Math.round(n.traits.quality * 100)}%)${n.traits.rich ? ' · rich deposit!' : ''}`, 'good');
+    if (this.session.data.world.nodes[n.def.id].charges <= 0) return;
+    // The quantity, quality and toast come from the rules (on the server when signed in).
+    void this.act({ k: 'gather', node: n.def.id }).then((r) => {
+      if (!r.ok) return;
       const p = n.object.position.clone();
       p.y += 0.8;
       this.effects.sparks(p, n.def.material === 'ironglass' ? '#7fdcff' : '#ffb06a', 10, 2.5);
-    }
+    });
   }
 
   // ---------------- Presentation helpers ----------------
@@ -1344,8 +1369,10 @@ export class Game {
         this.player.spawn(x, z, this.player.yaw);
         return terrainHeight(x, z);
       },
-      give: (material: 'iron_ore' | 'ironwood' | 'ironglass' | 'binding_flux', qty: number, quality = 0.6) => this.session.gather('debug', material, qty, quality, {}),
-      coins: (n: number) => this.session.addCoins(n),
+      // Grants only work on guest characters: an account character belongs to the server.
+      give: (material: 'iron_ore' | 'ironwood' | 'ironglass' | 'binding_flux', qty: number, quality = 0.6) => this.mode !== 'account' && this.session.gather('debug', material, qty, quality, {}),
+      coins: (n: number) => (this.mode !== 'account' ? (this.session.addCoins(n), true) : false),
+      act: (a: CharAction) => this.act(a),
       heal: () => this.player.combat.revive(),
       face: (yaw: number) => {
         this.player.yaw = yaw;

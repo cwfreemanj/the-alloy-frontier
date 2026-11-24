@@ -39,6 +39,20 @@ if (!existsSync(resolve(dist, 'index.html'))) console.warn('No game build found 
 startWorldServer({ port, host: cloud || lan ? '0.0.0.0' : '127.0.0.1', staticDir, allowedOrigins, accounts, trustProxy }).then((s) => {
   console.log(`Alloy Frontier world server listening on port ${s.port} (serving the game too). Account storage: ${kv.kind}.`);
   if (!cloud) console.log(`Play: http://localhost:${s.port}`);
+  // Hosts stop the old server on every deploy (SIGTERM): write characters before exiting.
+  let stopping = false;
+  for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+    process.on(sig, () => {
+      if (stopping) return;
+      stopping = true;
+      console.log(`${sig}: saving characters and stopping.`);
+      const force = setTimeout(() => process.exit(1), 10_000);
+      void s.close().then(() => {
+        clearTimeout(force);
+        process.exit(0);
+      });
+    });
+  }
   let last = -1;
   setInterval(() => {
     if (s.room.playerCount !== last) {

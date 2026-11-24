@@ -1,10 +1,14 @@
 /**
  * Shared-world glue between the network client and the Game. While online, the server
  * runs every enemy; this mirrors them, shows other players, sends our hits, and applies
- * the server's verdicts (hit results, enemy attacks on us, kill credit).
+ * the server's verdicts (hit results, enemy attacks on us, kill credit). For a signed-in
+ * player it also sends character actions and hands the server's character to the Game.
  */
 import type * as THREE from 'three';
-import type { AvatarState, HitVerdict, WorldServerMsg } from '@alloy/protocol';
+import type { ItemInstance } from '@alloy/item-gen';
+import type { SessionData } from '@alloy/save';
+import type { SessionEvent } from '@alloy/session';
+import type { AvatarState, CharAction, HitVerdict, WorldServerMsg } from '@alloy/protocol';
 import { RemotePlayer } from '../entities/RemotePlayer';
 import type { Enemy } from '../entities/Enemy';
 import { WorldClient, type WorldStatus } from '../net/WorldClient';
@@ -23,7 +27,19 @@ export interface OnlineGameHooks {
   authorityChanged(online: boolean): void;
   /** The server ended this session (signed in elsewhere, or the sign-in expired). */
   kicked(reason: string): void;
+  /** The server's copy of our character changed (signed-in players). */
+  character(data: SessionData, events: SessionEvent[]): void;
 }
+
+/** The server's answer to a character action. */
+export interface ActReply {
+  ok: boolean;
+  error?: string;
+  message?: string;
+  item?: ItemInstance;
+}
+
+const ACT_TIMEOUT_MS = 8000;
 
 export class Online {
   client: WorldClient | null = null;
@@ -32,6 +48,8 @@ export class Online {
   message = 'Offline';
   private colorIndex = 0;
   private announced = false;
+  private actSeq = 0;
+  private waiting = new Map<number, (r: ActReply) => void>();
 
   constructor(private g: OnlineGameHooks) {}
 
@@ -56,10 +74,29 @@ export class Online {
     );
   }
 
+  /** Ask the server to apply a character action; resolves with its answer. */
+  act(a: CharAction): Promise<ActReply> {
+    if (!this.client || !this.online) return Promise.resolve({ ok: false, error: 'offline', message: 'Not connected to the world. Your character can only change while connected.' });
+    const id = ++this.actSeq;
+    this.client.send({ t: 'act', id, a });
+    return new Promise((resolve) => {
+      this.waiting.set(id, resolve);
+      setTimeout(() => {
+        if (this.waiting.delete(id)) resolve({ ok: false, error: 'timeout', message: 'The server did not answer. Try again.' });
+      }, ACT_TIMEOUT_MS);
+    });
+  }
+
+  private failWaiting(): void {
+    for (const r of this.waiting.values()) r({ ok: false, error: 'offline', message: 'Lost connection to the world.' });
+    this.waiting.clear();
+  }
+
   disconnect(): void {
     const c = this.client;
     this.client = null;
     c?.stop();
+    this.failWaiting();
     this.clearRemotes();
     if (this.status === 'online') this.g.authorityChanged(false);
     this.status = 'offline';
@@ -80,6 +117,7 @@ export class Online {
     } else {
       this.message = reason ?? 'Offline';
       this.clearRemotes();
+      this.failWaiting();
       if (was === 'online') this.g.toast(reason ?? 'Disconnected.', 'warn');
     }
     if ((was === 'online') !== (s === 'online')) this.g.authorityChanged(s === 'online');
@@ -152,6 +190,15 @@ export class Online {
         if (e) this.g.hitLocalPlayer(e, m.damage, m.heavy);
         break;
       }
+      case 'actResult': {
+        const r = this.waiting.get(m.id);
+        this.waiting.delete(m.id);
+        r?.({ ok: m.ok, error: m.error, message: m.message, item: m.item });
+        break;
+      }
+      case 'char':
+        this.g.character(m.data, m.events);
+        break;
       case 'kill': {
         const e = this.enemy(m.enemyId);
         if (e && me && m.contributors.includes(me)) this.g.creditKill(e);
@@ -159,6 +206,11 @@ export class Online {
       }
       case 'error':
         if (m.error === 'world_full') this.g.toast('The world is full right now; playing offline.', 'warn');
+        if (m.error === 'outdated_client') {
+          this.client?.stop();
+          this.message = 'A new version of the game is out. Reload the page.';
+          this.g.kicked('A new version of the game is out. Reload the page (F5) to keep playing online.');
+        }
         if (m.error === 'signed_in_elsewhere' || m.error === 'signed_out') {
           this.client?.stop();
           this.g.kicked(m.error === 'signed_in_elsewhere' ? 'You signed in on another device, so this one was signed out of the world.' : 'Your sign-in expired. Please sign in again.');
