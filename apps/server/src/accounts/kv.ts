@@ -78,11 +78,38 @@ export interface PgLike {
 }
 
 /**
+ * Tidy a connection string pasted into a host's settings: surrounding spaces and one pair of
+ * matching quotes are removed (dashboards store them literally if pasted with the value).
+ */
+export function cleanDbUrl(raw: string): string {
+  let v = raw.trim();
+  if (v.length >= 2 && (v[0] === '"' || v[0] === "'") && v[v.length - 1] === v[0]) v = v.slice(1, -1).trim();
+  return v;
+}
+
+/**
+ * Parse a connection string. On failure the error names the setting but never contains the
+ * value: it carries the database password, and startup errors end up in the host's logs.
+ */
+function parseDbUrl(url: string, name: string): URL {
+  let u: URL | null = null;
+  try {
+    u = new URL(cleanDbUrl(url));
+  } catch {
+    u = null;
+  }
+  if (!u || (u.protocol !== 'postgres:' && u.protocol !== 'postgresql:')) {
+    throw new Error(`${name} is not a valid postgresql:// connection string. Check the setting for extra quotes, spaces or a missing part.`);
+  }
+  return u;
+}
+
+/**
  * Always verify the server certificate and hostname. node-postgres treats sslmode=require as
  * verify-full today but will weaken it to libpq semantics in its next major version.
  */
-export function strictTls(url: string): string {
-  const u = new URL(url);
+export function strictTls(url: string, name = 'DATABASE_URL'): string {
+  const u = parseDbUrl(url, name);
   const mode = u.searchParams.get('sslmode');
   if (!mode || mode === 'require' || mode === 'prefer' || mode === 'verify-ca') u.searchParams.set('sslmode', 'verify-full');
   return u.toString();
@@ -116,8 +143,8 @@ export class PostgresKV implements KV {
   }
   /** Production: node-postgres over TLS (the connection strings carry sslmode). */
   static fromUrls(pooledUrl: string, directUrl?: string): PostgresKV {
-    const pool = new pg.Pool({ connectionString: strictTls(pooledUrl), max: 5, idleTimeoutMillis: 30_000 });
-    const direct = directUrl ? new pg.Pool({ connectionString: strictTls(directUrl), max: 1 }) : null;
+    const pool = new pg.Pool({ connectionString: strictTls(pooledUrl, 'DATABASE_URL'), max: 5, idleTimeoutMillis: 30_000 });
+    const direct = directUrl ? new pg.Pool({ connectionString: strictTls(directUrl, 'DATABASE_URL_UNPOOLED'), max: 1 }) : null;
     return new PostgresKV(pool, direct);
   }
   async get<T>(key: string): Promise<T | null> {
@@ -152,6 +179,8 @@ export class PostgresKV implements KV {
 
 /** Pick storage from the environment. */
 export function kvFromEnv(env: NodeJS.ProcessEnv, defaultFile: string): KV {
-  if (env.DATABASE_URL) return PostgresKV.fromUrls(env.DATABASE_URL, env.DATABASE_URL_UNPOOLED || undefined);
+  const pooled = cleanDbUrl(env.DATABASE_URL ?? '');
+  const direct = cleanDbUrl(env.DATABASE_URL_UNPOOLED ?? '');
+  if (pooled) return PostgresKV.fromUrls(pooled, direct || undefined);
   return new FileKV(env.DATA_FILE ?? defaultFile);
 }

@@ -5,7 +5,7 @@ import { newDb } from 'pg-mem';
 import { WORLD_PROTOCOL, type WorldServerMsg } from '@alloy/protocol';
 import { serialize } from '@alloy/save';
 import { newSessionData } from '@alloy/session';
-import { MemoryKV, PostgresKV, type KV, type PgLike } from '../src/accounts/kv';
+import { MemoryKV, PostgresKV, cleanDbUrl, kvFromEnv, strictTls, type KV, type PgLike } from '../src/accounts/kv';
 import { AccountService, MAX_IMPORT_COINS } from '../src/accounts/service';
 import { startWorldServer, type RunningWorldServer } from '../src/worldServer';
 
@@ -226,5 +226,36 @@ describe('HTTP API and signed-in world', () => {
     const saved = JSON.parse((await svc.getSave(id))!.raw).data;
     expect(saved.inventory.equipped.weapon).toBeTruthy();
     expect(saved.quest.stepIndex).toBe(1);
+  });
+});
+
+describe('database connection settings', () => {
+  const url = 'postgresql://user:s3cret-pw@db.example.test/neondb?sslmode=require';
+  it('ignores surrounding spaces and one pair of quotes pasted with the value', () => {
+    expect(cleanDbUrl(`"${url}"`)).toBe(url);
+    expect(cleanDbUrl(` '${url}' \n`)).toBe(url);
+    expect(cleanDbUrl(url)).toBe(url);
+    expect(cleanDbUrl(`"${url}`)).toBe(`"${url}`); // unmatched quote: left alone (and then rejected)
+    expect(strictTls(`"${url}"`)).toContain('sslmode=verify-full');
+  });
+
+  it('never puts the connection string (and its password) in the error', () => {
+    for (const bad of [`"${url}`, 'not a url', 'https://user:s3cret-pw@example.test/']) {
+      let err: unknown = null;
+      try {
+        strictTls(bad, 'DATABASE_URL');
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(Error);
+      const shown = `${String(err)} ${JSON.stringify(err)} ${(err as Error).stack}`;
+      expect(shown).toContain('DATABASE_URL');
+      expect(shown).not.toContain('s3cret-pw');
+    }
+  });
+
+  it('treats a blank or quotes-only setting as no database', () => {
+    expect(kvFromEnv({ DATABASE_URL: '  ' }, ':memory-test-unused').kind).toBe('file');
+    expect(kvFromEnv({ DATABASE_URL: '""' }, ':memory-test-unused').kind).toBe('file');
   });
 });
