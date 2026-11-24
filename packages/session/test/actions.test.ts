@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { grantItem } from '@alloy/crafting';
+import { BLUEPRINTS, type BlueprintDefinition } from '@alloy/item-gen';
 import { FORGE_ANVIL, NPCS, RESOURCE_NODES } from '@alloy/world';
-import { NODE_MAX_CHARGES, NODE_RESPAWN_SECONDS, RANGE_SLACK, Session, applyAction, characterStats, hitAgainst, newSessionData, playerHit, rewardHit, rewardHitTaken, rewardKill } from '../src';
-import { ATTACKS, BASE_MAX_HEALTH, ENEMIES, adventurerXpToNext, attributeXpToNext } from '@alloy/game-rules';
+import { NODE_MAX_CHARGES, NODE_RESPAWN_SECONDS, RANGE_SLACK, Session, applyAction, characterStats, damageAgainst, hitAgainst, newSessionData, playerHit, rewardHit, rewardHitTaken, rewardKill } from '../src';
+import { ATTACKS, BASE_MAX_HEALTH, ENEMIES, adventurerXpToNext, attributeXpToNext, mitigate } from '@alloy/game-rules';
 
 const fresh = () => new Session(newSessionData(1000));
 const ore = RESOURCE_NODES.find((n) => n.material === 'iron_ore')!;
@@ -244,5 +246,44 @@ describe('equipment in the session', () => {
     expect(after.maxHealth).toBe(before.maxHealth + 15);
     expect(s.attributeTotals().strength).toBe(4);
     expect(s.gearAttributes().strength).toBe(3);
+  });
+});
+
+describe('weapon families', () => {
+  const withMace = () => {
+    BLUEPRINTS.test_mace = { ...(BLUEPRINTS.worn_longsword as BlueprintDefinition), id: 'test_mace', name: 'Test Mace', family: 'mace' };
+    const s = fresh();
+    s.talk('orla'); // longsword in hand
+    const r = grantItem(s.inventory, 'grant-test-mace', 'test_mace', 1000);
+    if (!r.ok || !r.item) throw new Error('grant failed');
+    s.data.inventory = r.inventory;
+    return { s, mace: r.item.itemId };
+  };
+  afterEach(() => delete BLUEPRINTS.test_mace);
+
+  it('gives weapon XP to the family in hand, and none unarmed', () => {
+    const { s, mace } = withMace();
+    rewardHit(s, 'scavenger', 30, 'light1');
+    expect(s.data.progression.weaponMastery.longsword.xp).toBeGreaterThan(0);
+    s.equip(mace);
+    expect(s.weaponFamily).toBe('mace');
+    rewardHit(s, 'scavenger', 30, 'light1');
+    expect(s.data.progression.weaponMastery.mace?.xp).toBeGreaterThan(0);
+    s.unequip('weapon');
+    const before = JSON.stringify(s.data.progression.weaponMastery);
+    rewardHit(s, 'scavenger', 30, 'light1');
+    expect(JSON.stringify(s.data.progression.weaponMastery)).toBe(before);
+  });
+
+  it('applies defense, then the enemy resistance to the weapon damage type', () => {
+    const { s, mace } = withMace();
+    const sentinel = ENEMIES.sentinel;
+    const slash = damageAgainst(s, 100, sentinel);
+    expect(slash.type).toBe('slash');
+    s.equip(mace);
+    const blunt = damageAgainst(s, 100, sentinel);
+    expect(blunt.type).toBe('blunt');
+    expect(blunt.damage).toBeGreaterThan(slash.damage);
+    expect(blunt.damage).toBeCloseTo(mitigate(100, sentinel.defense) * sentinel.resist!.blunt!, 5);
   });
 });

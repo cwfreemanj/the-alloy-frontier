@@ -26,6 +26,7 @@ import {
   ATTRIBUTE_XP,
   ALLOCATED_MAX,
   addAttributeXp,
+  isWeaponFamily,
   attributeBonuses,
   attributeTotals,
   earnedStatPoints,
@@ -46,7 +47,7 @@ import {
   currentStep,
   type QuestEvent,
 } from '@alloy/game-rules';
-import { getBlueprint, materialName, type ItemInstance, type MaterialId, type ToolKind } from '@alloy/item-gen';
+import { getBlueprint, materialName, type ItemInstance, type MaterialId, type ToolKind, type WeaponFamily } from '@alloy/item-gen';
 
 export const PLAYER_ID = 'player-01';
 export const PLAYER_NAME = 'You';
@@ -58,7 +59,7 @@ export type SessionEvent =
   | { type: 'inventory' }
   /** Stat points were spent or refunded. */
   | { type: 'stats' }
-  | { type: 'progress'; kind: 'weapon' | 'smith' | 'adventurer' | 'attribute'; levels: number; attr?: AttributeId }
+  | { type: 'progress'; kind: 'weapon' | 'smith' | 'adventurer' | 'attribute'; levels: number; attr?: AttributeId; family?: WeaponFamily }
   | { type: 'quest_step'; title: string; next: string | null }
   | { type: 'quest_complete' }
   | { type: 'toast'; text: string; tone?: 'info' | 'good' | 'warn' }
@@ -121,8 +122,19 @@ export class Session {
   get smithMastery(): number {
     return this.data.progression.professions.blacksmithing.mastery;
   }
+  /** The equipped weapon's family (null: unarmed or not a weapon family). */
+  get weaponFamily(): WeaponFamily | null {
+    const f = this.equipped()?.family;
+    return f && isWeaponFamily(f) ? f : null;
+  }
+  /** Mastery level of a weapon family (1 if never used). */
+  masteryOf(family: WeaponFamily): number {
+    return this.data.progression.weaponMastery[family]?.level ?? 1;
+  }
+  /** Mastery level of the equipped weapon's family (1 unarmed). */
   get weaponLevel(): number {
-    return this.data.progression.weaponMastery.longsword.level;
+    const f = this.weaponFamily;
+    return f ? this.masteryOf(f) : 1;
   }
   get attributes(): AttributeState {
     return (this.data.progression.attributes ??= normalizeAttributes(undefined));
@@ -377,11 +389,13 @@ export class Session {
     this.emit({ type: 'inventory' });
   }
 
+  /** Weapon mastery XP goes to the equipped weapon's family (none unarmed). */
   gainWeaponXp(xp: number): void {
-    if (!(xp > 0)) return;
-    const g = addWeaponXp(this.data.progression, 'longsword', xp);
+    const family = this.weaponFamily;
+    if (!(xp > 0) || !family) return;
+    const g = addWeaponXp(this.data.progression, family, xp);
     this.data.progression = g.state;
-    if (g.levelsGained > 0) this.emit({ type: 'progress', kind: 'weapon', levels: g.levelsGained });
+    if (g.levelsGained > 0) this.emit({ type: 'progress', kind: 'weapon', levels: g.levelsGained, family });
   }
 
   gainAdventurer(xp: number): void {

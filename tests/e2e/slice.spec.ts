@@ -231,6 +231,7 @@ test('character window: tabs, attributes that grow by use, derived stats', async
   await expect(win).toHaveAttribute('data-tab', 'character');
   await expect(page.getByTestId('attr-strength')).toHaveText('1');
   await expect(win.locator('[data-stat="Max health"]')).toHaveText('200');
+  await expect(win.locator('[data-stat="Damage type"]')).toHaveText('Blunt'); // unarmed: fists
   await expect(win.locator('[data-slot="weapon"]')).toContainText('Empty');
   await expect(win.locator('[data-slot="head"]')).toContainText('Empty');
   await expect(win.locator('[data-slot="tool"]')).toContainText('Worn Pickaxe');
@@ -239,6 +240,7 @@ test('character window: tabs, attributes that grow by use, derived stats', async
   await page.getByTestId('tab-skills').click();
   await expect(page.getByTestId('character-window')).toHaveAttribute('data-tab', 'skills');
   await expect(page.getByTestId('skill-smith')).toContainText('Blacksmithing');
+  await expect(page.getByTestId('skill-longsword')).toContainText('Longsword mastery');
   await page.keyboard.press('KeyU');
   await expect.poll(async () => (await state(page)).modal).toBeNull();
 
