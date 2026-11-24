@@ -7,8 +7,14 @@ import {
   buy,
   createInventory,
   discardItem,
+  equipItem,
   equipWeapon,
+  equippedItems,
   equippedWeapon,
+  normalizeEquipped,
+  toolPower,
+  unequip,
+  type EquipSlot,
   executeForge,
   grantItem,
   materialTotals,
@@ -40,7 +46,7 @@ import {
   currentStep,
   type QuestEvent,
 } from '@alloy/game-rules';
-import { getBlueprint, materialName, type ItemInstance, type MaterialId } from '@alloy/item-gen';
+import { getBlueprint, materialName, type ItemInstance, type MaterialId, type ToolKind } from '@alloy/item-gen';
 
 export const PLAYER_ID = 'player-01';
 export const PLAYER_NAME = 'You';
@@ -56,7 +62,8 @@ export type SessionEvent =
   | { type: 'quest_step'; title: string; next: string | null }
   | { type: 'quest_complete' }
   | { type: 'toast'; text: string; tone?: 'info' | 'good' | 'warn' }
-  | { type: 'equip'; item: ItemInstance };
+  /** The main-hand weapon changed (null: empty hand). */
+  | { type: 'equip'; item: ItemInstance | null };
 
 export function newSessionData(now: number): SessionData {
   let inventory = createInventory(PLAYER_ID, 40);
@@ -85,6 +92,8 @@ export class Session {
     this.data = data;
     data.progression.attributes = normalizeAttributes(data.progression.attributes);
     data.progression.allocated = normalizeAllocated(data.progression.allocated);
+    normalizeEquipped(data.inventory);
+    this.ensureStarterTools();
     this.txCounter = data.inventory.journal.length + 1;
   }
 
@@ -122,9 +131,52 @@ export class Session {
   get allocated(): AttributeLevels {
     return (this.data.progression.allocated ??= normalizeAllocated(undefined));
   }
-  /** One total per attribute: trained level + allocated points. */
+  /** Attribute bonuses from equipped gear. */
+  gearAttributes(): AttributeLevels {
+    const out = normalizeAllocated(undefined);
+    for (const { item } of equippedItems(this.data.inventory)) {
+      for (const [k, v] of Object.entries(item.result.bonuses?.attributes ?? {})) {
+        if (k in out && Number.isFinite(v) && v > 0) out[k as AttributeId] += Math.floor(v);
+      }
+    }
+    return out;
+  }
+  /** One total per attribute: trained level + allocated points + gear. */
   attributeTotals(): AttributeLevels {
-    return attributeTotals(this.attributes, this.allocated);
+    const t = attributeTotals(this.attributes, this.allocated);
+    const g = this.gearAttributes();
+    for (const id of Object.keys(t) as AttributeId[]) t[id] += g[id];
+    return t;
+  }
+  /** Every equipped item with its slot. */
+  gear() {
+    return equippedItems(this.data.inventory);
+  }
+  /** Power of the equipped tool for a kind of gathering (0 = none). */
+  toolPower(kind: ToolKind): number {
+    const id = this.data.inventory.equipped.tool;
+    return toolPower(id ? this.data.inventory.items[id] : null, kind);
+  }
+  /**
+   * Gathering needs tools: every character owns at least a basic pickaxe and hatchet
+   * (granted once if missing, e.g. characters made before tools existed).
+   */
+  private ensureStarterTools(): void {
+    const at = this.data.createdAt || Date.now();
+    for (const [kind, bp] of [['mining', 'worn_pickaxe'], ['woodcutting', 'worn_hatchet']] as const) {
+      const inv = this.data.inventory;
+      if (Object.values(inv.items).some((i) => toolPower(i, kind) > 0)) continue;
+      const r = grantItem(inv, `grant-starter-${bp}`, bp, at);
+      if (r.ok) this.data.inventory = r.inventory;
+    }
+    const inv = this.data.inventory;
+    if (!inv.equipped.tool) {
+      const pick = Object.values(inv.items).find((i) => toolPower(i, 'mining') > 0);
+      if (pick) {
+        const e = equipItem(inv, pick.itemId, at, 'tool');
+        if (e.ok) this.data.inventory = e.inventory;
+      }
+    }
   }
   /** Stat points earned (3 per adventurer rank) and not yet spent. */
   get unspentPoints(): number {
@@ -280,8 +332,10 @@ export class Session {
     return r;
   }
 
-  equip(itemId: string): boolean {
-    const r = equipWeapon(this.data.inventory, itemId, Date.now());
+  /** Equip an item into its slot (rings: ring1/ring2 may be chosen). */
+  equip(itemId: string, slot?: EquipSlot): boolean {
+    const before = this.data.inventory.equipped.weapon;
+    const r = equipItem(this.data.inventory, itemId, Date.now(), slot);
     if (!r.ok) {
       this.emit({ type: 'toast', text: r.message, tone: 'warn' });
       return false;
@@ -289,8 +343,21 @@ export class Session {
     this.data.inventory = r.inventory;
     const item = r.inventory.items[itemId];
     this.emit({ type: 'inventory' });
-    this.emit({ type: 'equip', item });
+    if (r.inventory.equipped.weapon !== before) this.emit({ type: 'equip', item: this.equipped() });
     if (item.source === 'quick_forge' || item.source === 'masterwork_forge') this.quest({ type: 'event', event: 'equip_crafted' });
+    return true;
+  }
+
+  /** Empty a slot; the item stays in the inventory. */
+  unequip(slot: EquipSlot): boolean {
+    const r = unequip(this.data.inventory, slot);
+    if (!r.ok) {
+      this.emit({ type: 'toast', text: r.message, tone: 'warn' });
+      return false;
+    }
+    this.data.inventory = r.inventory;
+    this.emit({ type: 'inventory' });
+    if (slot === 'weapon') this.emit({ type: 'equip', item: null });
     return true;
   }
 

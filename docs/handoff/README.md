@@ -9,3 +9,4 @@ No tasks are in progress.
 
 Finished: server-authoritative characters, merged in PR #8. Design record: [../server-authority.md](../server-authority.md).
 Finished: attributes and the character window, merged in PR #10. Design record: [../attributes.md](../attributes.md).
+Finished: equipment slots and gear mechanics, merged in PR #11. Design record: [../equipment.md](../equipment.md).

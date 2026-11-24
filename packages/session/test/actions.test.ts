@@ -204,3 +204,45 @@ describe('stat points in the session', () => {
     expect(hitAgainst(s, atk, roll, tough).crit).toBe(false);
   });
 });
+
+describe('equipment in the session', () => {
+  const wood = RESOURCE_NODES.find((n) => n.material === 'ironwood')!;
+
+  it('gives every character a starter pickaxe (equipped) and hatchet', () => {
+    const s = fresh();
+    const tools = Object.values(s.inventory.items).filter((i) => i.family === 'tool');
+    expect(tools.map((t) => t.blueprintId).sort()).toEqual(['worn_hatchet', 'worn_pickaxe']);
+    expect(s.inventory.items[s.inventory.equipped.tool!].blueprintId).toBe('worn_pickaxe');
+    // Loading the same character again grants nothing more.
+    expect(Object.keys(new Session(s.data).inventory.items).length).toBe(2);
+  });
+
+  it('needs the right tool in the tool slot to gather', () => {
+    const s = fresh();
+    expect(applyAction(s, { k: 'gather', node: wood.id }, at(wood.pos))).toMatchObject({ ok: false, error: 'no_tool' });
+    const hatchet = Object.values(s.inventory.items).find((i) => i.blueprintId === 'worn_hatchet')!;
+    expect(applyAction(s, { k: 'equip', item: hatchet.itemId }, { pos: null }).ok).toBe(true);
+    expect(s.inventory.equipped.tool).toBe(hatchet.itemId);
+    expect(applyAction(s, { k: 'gather', node: wood.id }, at(wood.pos)).ok).toBe(true);
+    expect(applyAction(s, { k: 'gather', node: ore.id }, at(ore.pos))).toMatchObject({ ok: false, error: 'no_tool' });
+    expect(applyAction(s, { k: 'unequip', slot: 'tool' }, { pos: null }).ok).toBe(true);
+    expect(applyAction(s, { k: 'gather', node: wood.id }, at(wood.pos))).toMatchObject({ ok: false, error: 'no_tool' });
+    expect(applyAction(s, { k: 'unequip', slot: 'nope' as never }, { pos: null })).toMatchObject({ ok: false, error: 'unknown_slot' });
+  });
+
+  it('adds gear defense and bonuses to the character', () => {
+    const s = fresh();
+    s.talk('orla');
+    const sword = s.equipped()!;
+    const before = characterStats(s);
+    expect(before.defense).toBe(0);
+    // Stand-in: give the equipped sword armor-like bonuses (the real ones come from the equipment algorithm).
+    sword.result.defense = 20;
+    sword.result.bonuses = { maxHealth: 15, attributes: { strength: 3 } };
+    const after = characterStats(s);
+    expect(after.defense).toBe(20);
+    expect(after.maxHealth).toBe(before.maxHealth + 15);
+    expect(s.attributeTotals().strength).toBe(4);
+    expect(s.gearAttributes().strength).toBe(3);
+  });
+});

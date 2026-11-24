@@ -39,6 +39,28 @@ export interface ConsumedMaterial {
 }
 
 export type WeaponFamily = 'longsword';
+/** Every kind of item. Gathering tools are not weapons (no weapon mastery). */
+export type ItemFamily = WeaponFamily | 'tool';
+
+/** Equipment slots on the character (see docs/equipment-contract.md). 'ring' fits either ring slot. */
+export type EquipSlotKind = 'weapon' | 'offhand' | 'head' | 'shoulders' | 'neck' | 'cape' | 'chest' | 'belt' | 'hands' | 'legs' | 'feet' | 'ring' | 'tool';
+export type ToolKind = 'mining' | 'woodcutting';
+
+/** Where an item goes when equipped. Lives on the blueprint (items are sealed by integrity). */
+export interface EquipInfo {
+  slot: EquipSlotKind;
+  /** Weapons only. 2 = two-handed: also occupies the off-hand. Default 1. */
+  hands?: 1 | 2;
+  /** Tools only: the gathering it allows, and how good it is (1 = basic). */
+  tool?: { kind: ToolKind; power: number };
+}
+
+/** Flat bonuses an item gives while equipped. Attribute keys: strength, dexterity, vitality, endurance. */
+export interface GearBonuses {
+  maxHealth?: number;
+  maxStamina?: number;
+  attributes?: Record<string, number>;
+}
 export type ForgeMode = 'quick' | 'masterwork';
 export type Specialization = 'balanced' | 'keen' | 'heavy' | 'agile';
 export type TemperStrategy = 'none' | 'oil' | 'water' | 'air';
@@ -97,6 +119,10 @@ export interface ItemResult extends WeaponStats {
   affixes: Affix[];
   /** Imbuements the item actually has (active abilities / passives). */
   imbuements: string[];
+  /** Armor: flat defense while equipped (all equipped defense adds up). */
+  defense?: number;
+  /** Flat bonuses while equipped. */
+  bonuses?: GearBonuses;
 }
 
 export interface ItemHistoryEntry {
@@ -112,7 +138,7 @@ export interface ItemInstance {
   generatorVersion: string;
   balanceVersion: string;
   blueprintId: string;
-  family: WeaponFamily;
+  family: ItemFamily;
   displayName: string;
   customName?: string;
   source: ItemSource;

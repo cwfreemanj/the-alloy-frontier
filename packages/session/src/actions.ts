@@ -5,9 +5,9 @@
  * clock and random numbers); the browser runs the same code locally for guests. Clients
  * only ever send the action (an intent), never its result.
  */
-import type { ForgeRequest } from '@alloy/crafting';
+import { EQUIP_SLOTS, type EquipSlot, type ForgeRequest } from '@alloy/crafting';
 import { ATTACKS, ATTRIBUTE_IDS, ATTRIBUTE_XP, ENEMIES, computeOutgoingHit, critContest, staggerContest, type AttackDefinition, type AttributeId, type AttributeLevels, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
-import { materialName, type ItemInstance, type WeaponStats } from '@alloy/item-gen';
+import { Rng, materialName, type ItemInstance, type ToolKind, type WeaponStats } from '@alloy/item-gen';
 import { FORGE_ANVIL, NPCS } from '@alloy/world';
 import { NODE_RESPAWN_SECONDS, ensureNodes, nodeDef, nodeTraits, nodeYield, regrowNodes } from './nodes';
 import type { Session, SessionEvent } from './session';
@@ -22,7 +22,8 @@ export type CharAction =
   | { k: 'gather'; node: string }
   | { k: 'buy'; stock: string; qty: number }
   | { k: 'forge'; req: ClientForgeRequest }
-  | { k: 'equip'; item: string }
+  | { k: 'equip'; item: string; slot?: EquipSlot }
+  | { k: 'unequip'; slot: EquipSlot }
   | { k: 'discard'; item: string }
   | { k: 'talk'; npc: 'orla' }
   | { k: 'event'; ev: 'open_merchant' }
@@ -75,7 +76,12 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
       regrowNodes(s.data);
       const rt = s.data.world.nodes[def.id];
       if (rt.charges <= 0) return no('depleted', 'This deposit is depleted. It will replenish.');
-      const qty = nodeYield(def, rt.gathers);
+      const kind = toolFor(def.material);
+      const power = s.toolPower(kind);
+      if (power <= 0) return no('no_tool', kind === 'mining' ? 'Put a pickaxe in your tool slot to mine this.' : 'Put a hatchet in your tool slot to cut this.');
+      // Better tools: each point of power above 1 adds a 25% chance of one extra unit.
+      const bonus = new Rng(`tool:${def.id}:${rt.gathers}`).next() < 0.25 * (power - 1) ? 1 : 0;
+      const qty = nodeYield(def, rt.gathers) + bonus;
       const t = nodeTraits(def);
       const { value: ok, events } = captureEvents(s, () => {
         if (!s.gather(def.id, def.material, qty, t.quality, t.traits)) return false;
@@ -102,8 +108,14 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
       return r.ok ? { ok: true, events, item: r.item } : no(r.error, r.message, events);
     }
     case 'equip': {
-      const { value: ok, events } = captureEvents(s, () => s.equip(a.item));
+      if (a.slot !== undefined && !(EQUIP_SLOTS as readonly string[]).includes(a.slot)) return no('unknown_slot', 'Unknown slot.');
+      const { value: ok, events } = captureEvents(s, () => s.equip(a.item, a.slot));
       return ok ? { ok: true, events } : no('equip', warnText(events, 'Could not equip that.'), events);
+    }
+    case 'unequip': {
+      if (!(EQUIP_SLOTS as readonly string[]).includes(a.slot)) return no('unknown_slot', 'Unknown slot.');
+      const { value: ok, events } = captureEvents(s, () => s.unequip(a.slot));
+      return ok ? { ok: true, events } : no('unequip', warnText(events, 'Nothing to unequip.'), events);
     }
     case 'discard': {
       const { value: ok, events } = captureEvents(s, () => s.discard(a.item));
@@ -174,9 +186,14 @@ export function playerHit(s: Session, attackId: string, rng: () => number, targe
 /** Bare-handed stats when nothing is equipped. */
 export const UNARMED: WeaponStats = { damage: 8, attackSpeed: 1, stagger: 8, staminaCostMultiplier: 1, critChance: 0 };
 
+/** Which tool a material needs. */
+export const toolFor = (material: string): ToolKind => (material === 'ironwood' ? 'woodcutting' : 'mining');
+
 export interface CharacterStats {
   maxHealth: number;
   maxStamina: number;
+  /** Total armor from equipped gear (incoming hits: mitigate(damage, defense)). */
+  defense: number;
   /** Total damage bonus: weapon mastery + Strength (0.1 = +10%). */
   damageBonus: number;
   /** The equipped weapon's stats with attribute bonuses applied (crit from Dexterity). */
@@ -187,9 +204,19 @@ export interface CharacterStats {
 export function characterStats(s: Session): CharacterStats {
   const b = s.bonuses();
   const base = s.equipped()?.result ?? UNARMED;
+  let defense = 0;
+  let health = 0;
+  let stamina = 0;
+  const pos = (v: number | undefined) => (Number.isFinite(v) && (v as number) > 0 ? (v as number) : 0);
+  for (const { item } of s.gear()) {
+    defense += pos(item.result.defense);
+    health += pos(item.result.bonuses?.maxHealth);
+    stamina += pos(item.result.bonuses?.maxStamina);
+  }
   return {
-    maxHealth: b.maxHealth,
-    maxStamina: b.maxStamina,
+    maxHealth: Math.round(b.maxHealth + health),
+    maxStamina: Math.round(b.maxStamina + stamina),
+    defense: Math.round(defense * 10) / 10,
     damageBonus: weaponMasteryDamageBonus(s.weaponLevel) + b.damageBonus,
     weapon: { ...base, critChance: Math.min(1, base.critChance + b.critChance) },
   };

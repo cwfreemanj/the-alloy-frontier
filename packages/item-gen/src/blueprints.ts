@@ -1,4 +1,4 @@
-import type { ForgeMode, MaterialId, Specialization, WeaponFamily } from './types';
+import type { EquipInfo, ForgeMode, ItemFamily, MaterialId, Specialization } from './types';
 
 export interface MaterialRequirement {
   materialId: MaterialId;
@@ -9,7 +9,9 @@ export interface MaterialRequirement {
 export interface BlueprintDefinition {
   id: string;
   name: string;
-  family: WeaponFamily;
+  family: ItemFamily;
+  /** Where it goes when equipped. Omitted: a one-handed main-hand weapon. See docs/equipment-contract.md. */
+  equip?: EquipInfo;
   tier: string;
   description: string;
   baseDamage: number;
@@ -32,6 +34,49 @@ export interface BlueprintDefinition {
 const ALL_SPECS: Specialization[] = ['balanced', 'keen', 'heavy', 'agile'];
 
 export const BLUEPRINTS: Record<string, BlueprintDefinition> = {
+  // PLACEHOLDER tools so gathering can require them before the equipment algorithm lands.
+  worn_pickaxe: {
+    id: 'worn_pickaxe',
+    name: 'Worn Pickaxe',
+    family: 'tool',
+    equip: { slot: 'tool', tool: { kind: 'mining', power: 1 } },
+    tier: 'Scrap iron',
+    description: 'A chipped pick from the Emberhold stores. Mines ore and ironglass.',
+    baseDamage: 4,
+    baseAttackSpeed: 1,
+    baseStagger: 4,
+    baseStaminaMultiplier: 1,
+    materials: [],
+    buffer: { materialId: 'binding_flux', min: 0, standardBatch: 2 },
+    masteryRequirement: 0,
+    craftable: false,
+    modes: [],
+    allowedSpecializations: ['balanced'],
+    potentialImbuements: [],
+    masteryXp: { quick: 0, masterwork: 0 },
+    visual: { blade: '#6d6a66', edge: '#8d8984', guard: '#4b3b2c', grip: '#3a2a1e', length: 0.7 },
+  },
+  worn_hatchet: {
+    id: 'worn_hatchet',
+    name: 'Worn Hatchet',
+    family: 'tool',
+    equip: { slot: 'tool', tool: { kind: 'woodcutting', power: 1 } },
+    tier: 'Scrap iron',
+    description: 'A notched hatchet from the Emberhold stores. Cuts ironwood.',
+    baseDamage: 4,
+    baseAttackSpeed: 1,
+    baseStagger: 4,
+    baseStaminaMultiplier: 1,
+    materials: [],
+    buffer: { materialId: 'binding_flux', min: 0, standardBatch: 2 },
+    masteryRequirement: 0,
+    craftable: false,
+    modes: [],
+    allowedSpecializations: ['balanced'],
+    potentialImbuements: [],
+    masteryXp: { quick: 0, masterwork: 0 },
+    visual: { blade: '#6d6a66', edge: '#8d8984', guard: '#4b3b2c', grip: '#3a2a1e', length: 0.6 },
+  },
   worn_longsword: {
     id: 'worn_longsword',
     name: 'Worn Longsword',

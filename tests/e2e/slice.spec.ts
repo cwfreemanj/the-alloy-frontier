@@ -231,8 +231,9 @@ test('character window: tabs, attributes that grow by use, derived stats', async
   await expect(win).toHaveAttribute('data-tab', 'character');
   await expect(page.getByTestId('attr-strength')).toHaveText('1');
   await expect(win.locator('[data-stat="Max health"]')).toHaveText('200');
-  await expect(win.locator('[data-slot="main"]')).toContainText('Empty');
-  await expect(win.locator('[data-slot="head"]')).toContainText('Coming soon');
+  await expect(win.locator('[data-slot="weapon"]')).toContainText('Empty');
+  await expect(win.locator('[data-slot="head"]')).toContainText('Empty');
+  await expect(win.locator('[data-slot="tool"]')).toContainText('Worn Pickaxe');
   await page.keyboard.press('KeyI');
   await expect(win).toHaveAttribute('data-tab', 'inventory');
   await page.getByTestId('tab-skills').click();
@@ -252,6 +253,31 @@ test('character window: tabs, attributes that grow by use, derived stats', async
   expect(a.strength.xp).toBeGreaterThan(0);
   expect(a.endurance.xp).toBeGreaterThan(0);
 
+  // Ironwood needs a hatchet: with the pickaxe in the tool slot, gathering swaps the hatchet in.
+  const toolOf = () => page.evaluate(() => {
+    const s = (window as unknown as { __alloy: { session: () => { inventory: { equipped: { tool: string | null }; items: Record<string, { blueprintId: string }> } } } }).__alloy.session();
+    return s.inventory.equipped.tool ? s.inventory.items[s.inventory.equipped.tool].blueprintId : null;
+  });
+  expect(await toolOf()).toBe('worn_pickaxe');
+  await call(page, 'teleport', 10, 34);
+  await call(page, 'face', 0);
+  await page.waitForTimeout(300);
+  await expect(page.getByTestId('prompt')).toContainText('Gather');
+  await page.keyboard.press('KeyE');
+  await expect.poll(async () => (await state(page)).totals.ironwood, { timeout: 8000 }).toBeGreaterThan(0);
+  expect(await toolOf()).toBe('worn_hatchet');
+
+  // The tool slot on the sheet: Unequip and Equip again from the item details.
+  await page.keyboard.press('KeyO');
+  await expect(page.getByTestId('character-window').locator('[data-slot="tool"]')).toContainText('Worn Hatchet');
+  await page.getByTestId('character-window').locator('[data-slot="tool"]').click();
+  await page.getByTestId('inv-unequip').click();
+  await expect.poll(toolOf).toBeNull();
+  await page.getByTestId('inv-equip').click();
+  await expect.poll(toolOf).toBe('worn_hatchet');
+  await page.keyboard.press('KeyI');
+  await expect.poll(async () => (await state(page)).modal).toBeNull();
+
   // A Vitality level raises max health in play and on the character sheet.
   await page.evaluate(() => (window as unknown as { __alloy: { session: () => { gainAttributes: (g: Array<[string, number]>) => void } } }).__alloy.session().gainAttributes([['vitality', 40]]));
   await expect.poll(async () => (await state(page)).maxHealth).toBe(205);
@@ -263,7 +289,9 @@ test('character window: tabs, attributes that grow by use, derived stats', async
   await expect(page.getByTestId('unspent-points')).toHaveText('0');
   await expect(page.getByTestId('add-strength')).toBeDisabled();
   await page.evaluate(() => (window as unknown as { __alloy: { session: () => { gainAdventurer: (xp: number) => void } } }).__alloy.session().gainAdventurer(100));
+  // Reopen the window so it shows the new points (wait for the close: two quick presses can land in one frame).
   await page.keyboard.press('KeyO');
+  await expect.poll(async () => (await state(page)).modal).toBeNull();
   await page.keyboard.press('KeyO');
   await expect(page.getByTestId('unspent-points')).toHaveText('3');
   const str = Number(await page.getByTestId('attr-strength').textContent());
