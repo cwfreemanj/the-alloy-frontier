@@ -34,6 +34,7 @@ import { Effects } from '../fx/Effects';
 import { SaveSystem } from '../state/Save';
 import { Session, nodeState, applyAction, characterStats, ensureNodes, newSessionData, regrowNodes, damageAgainst, hitAgainst, weaponDamageType, rewardHit, rewardHitTaken, rewardKill, toolFor, type CharAction, type SessionData, type SessionEvent } from '../state/Session';
 import { CharacterWindow, type CharacterTab } from '../ui/CharacterWindow';
+import { GameAudio, type MusicTrack } from '../audio/GameAudio';
 import { ForgePanel } from '../ui/ForgePanel';
 import { Hud } from '../ui/Hud';
 import { MerchantPanel, dialogPanel, pausePanel, summaryPanel, titleScreen, type Settings } from '../ui/Panels';
@@ -75,7 +76,7 @@ function loadCharacter(): PlayerCharacterId {
 type Modal = null | 'title' | 'pause' | 'forge' | 'inventory' | 'merchant' | 'dialog' | 'summary';
 
 const SETTINGS_KEY = 'alloy-frontier.settings.v1';
-const DEFAULT_SETTINGS: Settings = { quality: 'medium', sensitivity: 1, invertY: false, showPerf: false, reducedShake: false };
+const DEFAULT_SETTINGS: Settings = { quality: 'medium', sensitivity: 1, invertY: false, showPerf: false, reducedShake: false, musicVolume: 0.55, sfxVolume: 0.8 };
 
 function loadSettings(): Settings {
   try {
@@ -120,6 +121,10 @@ export class Game {
   private lockUnavailable = false;
   private lastSave = 'Not saved yet this session.';
   settings: Settings = loadSettings();
+  /** Music and sound effects (silent until the first click or key press). */
+  readonly audio = new GameAudio();
+  /** Seconds left before combat music gives way to the area's music. */
+  private combatHold = 0;
   private readonly ui: HTMLElement;
   /** Debug/cheat hooks: only with ?debug AND on a local machine, never on a hosted build. */
   readonly debug = new URLSearchParams(location.search).has('debug') && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
@@ -202,6 +207,10 @@ export class Game {
     uiRoot.append(this.worldStatusEl);
 
     window.addEventListener('resize', () => this.resize());
+    // Browsers allow sound only after a user gesture: start the audio on the first one.
+    const unlockAudio = () => this.audio.unlock();
+    window.addEventListener('pointerdown', unlockAudio, { passive: true });
+    window.addEventListener('keydown', unlockAudio);
     this.resize();
     canvas.addEventListener('mousedown', () => {
       if (this.modal === null && !this.input.pointerLocked && !this.lockUnavailable) {
@@ -430,6 +439,7 @@ export class Game {
   /** The server's verdict on one of our hits. */
   private showHitResult(e: Enemy, r: HitVerdict): void {
     if (r.ignored) return;
+    this.audio.sfx(r.guarded ? 'guarded' : r.crit ? 'crit' : 'hit');
     const sp = this.hud.project(this.camera, e.position, 2 * e.def.scale, window.innerWidth, window.innerHeight);
     if (sp.visible) {
       this.hud.damageNumber(sp.x + (Math.random() - 0.5) * 30, sp.y, `${Math.round(r.damage)}${r.crit ? '!' : ''}`, r.crit ? 'crit' : '');
@@ -444,6 +454,7 @@ export class Game {
 
   // ---------------- Setup ----------------
   applySettings(): void {
+    this.audio.setVolumes(this.settings.musicVolume, this.settings.sfxVolume);
     const q = this.settings.quality;
     const dpr = window.devicePixelRatio || 1;
     this.renderer.setPixelRatio(q === 'low' ? Math.min(dpr, 1) * 0.75 : q === 'medium' ? Math.min(dpr, 1.25) : Math.min(dpr, 2));
@@ -492,6 +503,10 @@ export class Game {
           this.player.setWeapon(e.item);
           break;
         case 'progress':
+          if (e.levels > 0) {
+            this.audio.sfx('levelUp');
+            this.effects.ring(this.player.position, '#ffd27a', 2.4, 0.8);
+          }
           if (e.kind === 'weapon') this.hud.toast(`${WEAPON_FAMILIES[e.family ?? 'longsword'].name} mastery ${this.session.masteryOf(e.family ?? 'longsword')} (+${e.levels})`, 'good');
           if (e.kind === 'smith') this.hud.toast(`Blacksmithing mastery ${this.session.smithMastery}`, 'good');
           if (e.kind === 'adventurer') this.hud.toast(`Adventurer rank ${this.session.data.progression.adventurer.rank} · +${STAT_POINTS_PER_RANK * e.levels} stat points (O)`, 'good');
@@ -554,6 +569,8 @@ export class Game {
   // ---------------- Modals ----------------
   private setModal(m: Modal, el: HTMLElement | null): void {
     this.modalEl?.remove();
+    if (m !== null && m !== 'title' && m !== this.modal) this.audio.sfx('uiOpen');
+    else if (m === null && this.modal !== null && this.modal !== 'title') this.audio.sfx('uiClose');
     this.modal = m;
     this.modalEl = el;
     if (m !== 'forge') this.forgePanel = null;
@@ -577,6 +594,19 @@ export class Game {
   }
 
   private showTitle(): void {
+    // The title redraws when the account check finishes: keep a name typed meanwhile
+    // (it may not have fired an event yet), and keep the caret in the box.
+    const typed = this.modal === 'title' ? (this.modalEl?.querySelector('[data-testid="player-name"]') as HTMLInputElement | null) : null;
+    const hadFocus = !!typed && document.activeElement === typed;
+    if (typed && typed.value.trim() && typed.value !== this.playerName) this.setPlayerName(typed.value);
+    queueMicrotask(() => {
+      if (!hadFocus) return;
+      const box = this.modalEl?.querySelector('[data-testid="player-name"]') as HTMLInputElement | null;
+      if (box) {
+        box.focus();
+        box.setSelectionRange(box.value.length, box.value.length);
+      }
+    });
     const has = this.saves.hasSave();
     let loadError: string | undefined;
     if (has) {
@@ -713,7 +743,11 @@ export class Game {
       this.session,
       () => this.closeModal(),
       (id) => void this.act({ k: 'equip', item: id }),
-      (req) => this.act({ k: 'forge', req }),
+      (req) =>
+        this.act({ k: 'forge', req }).then((r) => {
+          if (r.ok) this.audio.sfx('anvil');
+          return r;
+        }),
     );
     this.setModal('forge', p.el);
     this.forgePanel = p;
@@ -930,6 +964,7 @@ export class Game {
       this.zone = z;
       this.hud.zoneBanner(z);
     }
+    this.audio.music(this.pickMusic(rawDt));
 
     this.cam.update(rawDt, this.player.position, this.lockTarget ? this.lockTarget.position : null);
     this.hud.update(rawDt, c, this.session, this.weapon(), this.zone, c.alive && c.health < c.maxHealth * 0.25);
@@ -955,6 +990,7 @@ export class Game {
       this.player.beginLunge(e.attack.lunge);
     } else if (e.type === 'active_start') {
       const a = e.attack;
+      this.audio.sfx(a.heavy ? 'swingHeavy' : 'swing');
       const w = this.weapon();
       const col = w?.result.imbuements.length ? '#7ff0ff' : '#ffe6c8';
       if (a.id === 'storm_arc') {
@@ -966,6 +1002,7 @@ export class Game {
       }
     } else if (e.type === 'dodge_start') {
       this.player.beginDodge(dir);
+      this.audio.sfx('dodge');
     }
   }
 
@@ -1061,6 +1098,7 @@ export class Game {
       const hitPos = e.position.clone();
       hitPos.y += 1.2 * e.def.scale;
       this.effects.sparks(hitPos, res.guarded ? '#7fdcff' : out.crit ? '#ffb03a' : '#ffd8a8', res.guarded ? 8 : 14);
+      this.audio.sfx(res.guarded ? 'guarded' : out.crit ? 'crit' : 'hit');
       this.hitstop = a.heavy || res.staggered ? 0.085 : 0.05;
       this.cam.addShake(this.settings.reducedShake ? 0.02 : a.heavy ? 0.18 : 0.08);
       const sp = this.hud.project(this.camera, e.position, 2 * e.def.scale, window.innerWidth, window.innerHeight);
@@ -1084,6 +1122,8 @@ export class Game {
 
   private onEnemyKilled(e: Enemy): void {
     const d = e.def;
+    this.audio.sfx('kill');
+    window.setTimeout(() => this.audio.sfx('coin', 0.8), 250);
     // Signed in, the server rolls the rewards and sends them with the character.
     if (this.mode !== 'account') {
       const r = rewardKill(this.session, e.spawn.type, e.id, Math.random);
@@ -1134,6 +1174,7 @@ export class Game {
       if (sp.visible) this.hud.damageNumber(sp.x, sp.y, 'DODGED', 'info');
       return;
     }
+    this.audio.sfx(out.blocked ? 'block' : 'hurt');
     this.sinceDamage = 0;
     this.player.gathering = 0;
     this.gatherTarget = null;
@@ -1255,10 +1296,56 @@ export class Game {
       .then((ready) => (ready ? this.act({ k: 'gather', node: n.def.id }) : null))
       .then((r) => {
       if (!r?.ok) return;
-      const p = n.object.position.clone();
-      p.y += 0.8;
-      this.effects.sparks(p, n.def.material === 'ironglass' ? '#7fdcff' : '#ffb06a', 10, 2.5);
+      this.gatherFx(n);
     });
+  }
+
+  /**
+   * Music follows the situation: the boss track while the Foundry Warden is engaged, combat
+   * music while enemies are fighting you (and a few seconds after), otherwise the area's music.
+   */
+  private pickMusic(dt: number): MusicTrack {
+    let boss = false;
+    let fighting = false;
+    for (const e of this.enemies) {
+      if (!e.brain.alive || e.def.kind === 'dummy') continue;
+      const st = e.brain.state;
+      const engaged = st !== 'idle' && st !== 'patrol' && st !== 'return' && st !== 'dead';
+      if (!engaged || dist2(e.pos2, this.player.pos2) > (e.def.kind === 'elite' ? 40 : 22)) continue;
+      if (e.def.kind === 'elite') boss = true;
+      else fighting = true;
+    }
+    if (boss) return 'boss';
+    this.combatHold = fighting ? 6 : Math.max(0, this.combatHold - dt);
+    if (this.combatHold > 0) return 'combat';
+    return this.zone.id === 'village' ? 'town' : 'wilds';
+  }
+
+  /** Sound and particles of a successful gather; a felled tree crashes down a moment later. */
+  private gatherFx(n: ResourceNode): void {
+    const p = new THREE.Vector3(n.def.pos.x, terrainHeight(n.def.pos.x, n.def.pos.z) + 0.9, n.def.pos.z);
+    if (n.def.material === 'ironwood') {
+      this.audio.sfx('chop');
+      this.effects.sparks(p, '#c8935a', 12, 3); // wood chips
+      if (nodeState(this.session.data, n.def.id).charges <= 0) {
+        this.audio.sfx('treeFall');
+        window.setTimeout(() => {
+          // Leaves and dust where the crown lands.
+          const land = p.clone().add(new THREE.Vector3(0, 0.4, 0));
+          this.effects.sparks(land, '#6f8f3a', 26, 5);
+          this.effects.sparks(land, '#b49a78', 16, 3);
+          this.effects.ring(land, '#b49a78', 3.2, 0.7);
+          this.cam.addShake(this.settings.reducedShake ? 0.02 : 0.12);
+        }, 1000);
+      }
+    } else if (n.def.material === 'ironglass') {
+      this.audio.sfx('crystal');
+      this.effects.sparks(p, '#7fdcff', 14, 2.5);
+    } else {
+      this.audio.sfx('mine');
+      this.effects.sparks(p, '#ffb06a', 8, 3); // sparks off the pick
+      this.effects.sparks(p, '#8a8076', 10, 2); // rock chips
+    }
   }
 
   /**
@@ -1421,6 +1508,7 @@ export class Game {
           items: this.session.inventory.itemOrder.length,
           mastery: { smith: this.session.smithMastery, longsword: this.session.weaponLevel },
           zone: this.zone.id,
+          audio: this.audio.debug(),
           lock: this.lockTarget?.id ?? null,
           world: { status: this.online.status, id: this.online.myId, name: this.mode === 'account' ? (this.accounts?.username ?? '') : this.playerName, mode: this.mode, others: [...this.online.remotes.values()].map((r) => ({ id: r.id, name: r.name, x: +r.position.x.toFixed(1), z: +r.position.z.toFixed(1), hp: r.state?.hp ?? null })) },
           enemies: this.enemies.map((e) => ({ id: e.id, type: e.spawn.type, state: e.brain.state, hp: +e.brain.health.toFixed(1), x: +e.position.x.toFixed(1), z: +e.position.z.toFixed(1) })),
