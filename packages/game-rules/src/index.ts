@@ -8,3 +8,4 @@ export * from './attributes';
 export * from './damage';
 export * from './movement';
 export * from './skills';
+export * from './adaptive';

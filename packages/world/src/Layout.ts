@@ -12,13 +12,15 @@ export interface Zone {
   center: Vec2;
   radius: number;
   subtitle: string;
+  /** The area's own enemy level (the adaptive world raises it while strong players linger). */
+  level: number;
 }
 
 export const ZONES: Zone[] = [
-  { id: 'village', name: 'Emberhold Village', center: { x: 0, z: 0 }, radius: 34, subtitle: 'Forge, merchant and the Compact\'s last frontier outpost' },
-  { id: 'trail', name: 'Ironwood Trail', center: { x: 14, z: 82 }, radius: 46, subtitle: 'Scavengers prowl the iron-veined woods' },
-  { id: 'quarry', name: 'Ironglass Quarry', center: { x: 40, z: 168 }, radius: 32, subtitle: 'Conductive crystal and the constructs that guard it' },
-  { id: 'foundry', name: 'Dormant Foundry', center: { x: 2, z: 248 }, radius: 30, subtitle: 'An automated forge of the Meridian Network, not quite asleep' },
+  { id: 'village', name: 'Emberhold Village', center: { x: 0, z: 0 }, radius: 34, subtitle: 'Forge, merchant and the Compact\'s last frontier outpost', level: 1 },
+  { id: 'trail', name: 'Ironwood Trail', center: { x: 14, z: 82 }, radius: 46, subtitle: 'Scavengers prowl the iron-veined woods', level: 1 },
+  { id: 'quarry', name: 'Ironglass Quarry', center: { x: 40, z: 168 }, radius: 32, subtitle: 'Conductive crystal and the constructs that guard it', level: 2 },
+  { id: 'foundry', name: 'Dormant Foundry', center: { x: 2, z: 248 }, radius: 30, subtitle: 'An automated forge of the Meridian Network, not quite asleep', level: 4 },
 ];
 
 /** The trail polyline linking all four areas. */

@@ -96,7 +96,7 @@ export function startWorldServer(opts: WorldServerOptions = {}): Promise<Running
     const path = (req.url ?? '/').split('?')[0];
     if (path === '/world-info' || path === '/healthz') {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store', 'access-control-allow-origin': '*' });
-      res.end(JSON.stringify({ ok: true, game: 'alloy-frontier', players: room.activeCount, accounts: accounts ? accounts.kv.kind : 'off' }));
+      res.end(JSON.stringify({ ok: true, game: 'alloy-frontier', players: room.activeCount, accounts: accounts ? accounts.kv.kind : 'off', ...(path === '/world-info' ? { areas: room.observer.snapshot() } : {}) }));
       return;
     }
     if (path.startsWith('/api/')) {

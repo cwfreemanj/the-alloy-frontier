@@ -144,6 +144,8 @@ export class Enemy {
 
   /** Receive the server's latest state for this enemy. */
   applyNet(s: EnemyNetState): void {
+    // The server's level for this enemy's area (adaptive world): same scaled stats here.
+    if (s.lv !== undefined && s.lv !== this.sim.level) this.sim.setLevel(s.lv);
     const b = this.brain;
     const wasDead = !b.alive;
     if (s.s !== b.state || s.a !== (b.attack?.id ?? null)) {

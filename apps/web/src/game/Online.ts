@@ -182,6 +182,9 @@ export class Online {
       case 'enemies':
         for (const s of m.list) this.enemy(s.id)?.applyNet(s);
         break;
+      case 'notice':
+        this.g.toast(m.text, 'info');
+        break;
       case 'hitResult': {
         const e = this.enemy(m.enemyId);
         if (e) this.g.showHitResult(e, m);

@@ -226,7 +226,7 @@ export interface EnemyHitResult {
 }
 
 export class EnemyBrain {
-  readonly def: EnemyArchetype;
+  def: EnemyArchetype;
   state: EnemyState;
   health: number;
   poiseDamage = 0;
@@ -463,6 +463,15 @@ export class EnemyBrain {
       this.enter('chase');
     }
     return res;
+  }
+
+  /** Switch to another version of the archetype (a new level), keeping the health fraction. */
+  setDef(def: EnemyArchetype): void {
+    if (def === this.def) return;
+    const frac = this.def.maxHealth > 0 ? this.health / this.def.maxHealth : 1;
+    this.def = def;
+    if (this.attack) this.attack = def.attacks.find((a) => a.id === this.attack!.id) ?? null;
+    this.health = this.alive ? Math.max(1, Math.round(def.maxHealth * frac * 10) / 10) : 0;
   }
 
   /** Reset to full health at home (used after player death / respawn). */

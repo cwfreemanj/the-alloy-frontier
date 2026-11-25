@@ -3,7 +3,7 @@
  * terrain following. The server runs these for the shared world; the browser runs one
  * for offline play and for the local training post.
  */
-import { ENEMIES, EnemyBrain, angleDelta, dist2, forwardPoint, turnToward, yawTo, type Vec2 } from '@alloy/game-rules';
+import { ENEMIES, EnemyBrain, scaledArchetype, angleDelta, dist2, forwardPoint, turnToward, yawTo, type Vec2 } from '@alloy/game-rules';
 import { Rng } from '@alloy/item-gen';
 import type { ColliderWorld } from './Colliders';
 import type { EnemySpawn } from './Layout';
@@ -45,6 +45,14 @@ export class EnemySim {
 
   get def() {
     return this.brain.def;
+  }
+  /** Current level (the archetype's own, or what the world server set for its area). */
+  get level(): number {
+    return this.brain.def.level;
+  }
+  /** Scale this enemy to a level (health keeps its fraction; see scaledArchetype). */
+  setLevel(level: number): void {
+    this.brain.setDef(scaledArchetype(ENEMIES[this.spawn.type], level));
   }
   get pos2(): Vec2 {
     return { x: this.x, z: this.z };
