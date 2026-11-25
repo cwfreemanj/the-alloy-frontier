@@ -36,8 +36,17 @@ export function emberholdItems(): WorldItem[] {
 /** Minable nodes at the heart of each generated ore / crystal seam (in addition to RESOURCE_NODES). */
 export const SEAM_NODES: NodeDef[] = EMBERHOLD_SEAMS.map((n) => ({ id: n.id, material: n.material, pos: { x: n.x, z: n.z }, scale: n.scale, yaw: n.yaw }));
 
-/** Every node the player can gather from: the hand-placed quest nodes plus the generated seams. */
-export const ALL_RESOURCE_NODES: NodeDef[] = [...RESOURCE_NODES, ...SEAM_NODES];
+/**
+ * Every ironwood tree of the generated scenery is a node too (players expect any ironwood tree to
+ * be choppable). Ids follow the bake order; `instanced` marks nodes drawn with the scenery.
+ * The scale is relative to the node model's own 1.15.
+ */
+export const GROVE_NODES: NodeDef[] = emberholdItems()
+  .filter((it) => it.model === 'ironwood_tree')
+  .map((it, i) => ({ id: `wood-g${i}`, material: 'ironwood', pos: { x: it.x, z: it.z }, scale: it.scale / 1.15, yaw: it.yaw, instanced: true }));
+
+/** Every node the player can gather from: the hand-placed quest nodes, the generated seams and the grove. */
+export const ALL_RESOURCE_NODES: NodeDef[] = [...RESOURCE_NODES, ...SEAM_NODES, ...GROVE_NODES];
 
 /** Collision shapes in a model's own metres: circles [x, z, r, height] and rectangles [x, z, halfW, halfD, height]. */
 type Shape = ['c', number, number, number, number] | ['r', number, number, number, number, number];
@@ -138,6 +147,7 @@ export function buildWorldColliders(): ColliderWorld {
   const world = new ColliderWorld();
   for (const it of emberholdItems()) addItem(world, it);
   // Ironwood nodes are standing trees: their trunks block like any other tree.
-  for (const n of ALL_RESOURCE_NODES) if (n.material === 'ironwood') addItem(world, { model: 'ironwood_tree', x: n.pos.x, z: n.pos.z, y: 0, yaw: 0, scale: 1.15 });
+  // Hand-placed quest trees (the grove's trees are already in the scenery above).
+  for (const n of RESOURCE_NODES) if (n.material === 'ironwood') addItem(world, { model: 'ironwood_tree', x: n.pos.x, z: n.pos.z, y: 0, yaw: 0, scale: 1.15 });
   return world;
 }

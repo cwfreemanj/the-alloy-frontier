@@ -32,7 +32,7 @@ import { PLAYER_RADIUS, Player } from '../entities/Player';
 import { Npc, ResourceNode } from '../entities/WorldObjects';
 import { Effects } from '../fx/Effects';
 import { SaveSystem } from '../state/Save';
-import { Session, applyAction, characterStats, ensureNodes, newSessionData, regrowNodes, damageAgainst, hitAgainst, weaponDamageType, rewardHit, rewardHitTaken, rewardKill, toolFor, type CharAction, type SessionData, type SessionEvent } from '../state/Session';
+import { Session, nodeState, applyAction, characterStats, ensureNodes, newSessionData, regrowNodes, damageAgainst, hitAgainst, weaponDamageType, rewardHit, rewardHitTaken, rewardKill, toolFor, type CharAction, type SessionData, type SessionEvent } from '../state/Session';
 import { CharacterWindow, type CharacterTab } from '../ui/CharacterWindow';
 import { ForgePanel } from '../ui/ForgePanel';
 import { Hud } from '../ui/Hud';
@@ -169,7 +169,8 @@ export class Game {
     this.npcs.push(new Npc(NPCS.bram.id, NPCS.bram.name, NPCS.bram.pos, NPCS.bram.yaw, { kind: 'organic', skin: '#d0a888', body: '#3a5a4a', armor: '#5a4a3a', legs: '#3a3026', boots: '#241c16', accent: '#45e0ff', scale: 0.98, bulk: 1.15 }));
     for (const n of this.npcs) this.scene.add(n.object);
     for (const d of ALL_RESOURCE_NODES) {
-      const n = new ResourceNode(d);
+      // Grove trees are drawn with the scenery: the node animates its instance there.
+      const n = new ResourceNode(d, d.instanced ? this.world.instanceAt('ironwood_tree', d.pos.x, d.pos.z) : null);
       this.nodes.push(n);
       this.scene.add(n.object);
     }
@@ -916,7 +917,7 @@ export class Game {
 
     // Nodes (regrowth is a rule; signed in, the server's copy is what counts)
     regrowNodes(this.session.data);
-    for (const n of this.nodes) n.setState(this.session.data.world.nodes[n.def.id], this.time);
+    for (const n of this.nodes) n.setState(nodeState(this.session.data, n.def.id), this.time);
 
     this.updateGathering(dt);
     this.updateInteraction();
@@ -1202,7 +1203,7 @@ export class Game {
     for (const n of this.nodes) {
       const d = dist2(n.pos2, p);
       if (d < 2.6) {
-        const rt = this.session.data.world.nodes[n.def.id];
+        const rt = nodeState(this.session.data, n.def.id);
         const label = rt.charges > 0 ? `Gather · ${n.traits.label}` : `Depleted · regrows in ${Math.max(0, Math.ceil(rt.respawnAt - this.session.data.playTime))}s`;
         consider('node', n.def.id, label, d, n);
       }
@@ -1225,7 +1226,7 @@ export class Game {
     } else if (it.kind === 'anvil') {
       this.openForge();
     } else if (it.kind === 'node' && it.node) {
-      const rt = this.session.data.world.nodes[it.id];
+      const rt = nodeState(this.session.data, it.id);
       if (rt.charges <= 0) {
         this.hud.toast('This deposit is depleted. It will replenish.', 'info');
         return;
@@ -1248,7 +1249,7 @@ export class Game {
     const n = this.gatherTarget;
     this.gatherTarget = null;
     this.hud.setGather(null);
-    if (this.session.data.world.nodes[n.def.id].charges <= 0) return;
+    if (nodeState(this.session.data, n.def.id).charges <= 0) return;
     // The quantity, quality and toast come from the rules (on the server when signed in).
     void this.readyTool(n.def.material)
       .then((ready) => (ready ? this.act({ k: 'gather', node: n.def.id }) : null))
@@ -1300,7 +1301,7 @@ export class Game {
         let bd = Infinity;
         for (const n of this.nodes) {
           if (!need.includes(n.def.material)) continue;
-          if (this.session.data.world.nodes[n.def.id].charges <= 0) continue;
+          if (nodeState(this.session.data, n.def.id).charges <= 0) continue;
           const d = dist2(n.pos2, this.player.pos2);
           if (d < bd) {
             bd = d;
@@ -1318,7 +1319,8 @@ export class Game {
     const markers: Array<{ x: number; z: number; color: string; r?: number }> = [];
     for (const e of this.enemies) if (e.brain.alive && e.def.kind !== 'dummy' && dist2(e.pos2, this.player.pos2) < 80) markers.push({ x: e.position.x, z: e.position.z, color: e.def.kind === 'elite' ? '#ff5a3a' : '#d24a3a', r: e.def.kind === 'elite' ? 4 : 2.5 });
     for (const n of this.npcs) markers.push({ x: n.pos2.x, z: n.pos2.z, color: '#e6e1d8', r: 3 });
-    for (const n of this.nodes) if (this.session.data.world.nodes[n.def.id].charges > 0) markers.push({ x: n.pos2.x, z: n.pos2.z, color: n.def.material === 'ironglass' ? '#4fe3ff' : n.def.material === 'iron_ore' ? '#b0702e' : '#8a5a2a', r: 1.6 });
+    // Only nearby nodes (the world has hundreds of trees): what the minimap actually shows.
+    for (const n of this.nodes) if (dist2(n.pos2, this.player.pos2) < 60 * 60 && nodeState(this.session.data, n.def.id).charges > 0) markers.push({ x: n.pos2.x, z: n.pos2.z, color: n.def.material === 'ironglass' ? '#4fe3ff' : n.def.material === 'iron_ore' ? '#b0702e' : '#8a5a2a', r: 1.6 });
     markers.push({ x: FORGE_ANVIL.x, z: FORGE_ANVIL.z, color: '#ff8a3d', r: 2 });
     for (const r of this.online.remotes.values()) if (r.state) markers.push({ x: r.position.x, z: r.position.z, color: '#5ad1ff', r: 3 });
     this.hud.drawMinimap({ x: this.player.position.x, z: this.player.position.z, yaw: this.player.yaw }, this.cam.yaw, markers, this.objectivePos());

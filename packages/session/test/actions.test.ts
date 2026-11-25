@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { grantItem } from '@alloy/crafting';
 import { BLUEPRINTS, type BlueprintDefinition } from '@alloy/item-gen';
-import { FORGE_ANVIL, NPCS, RESOURCE_NODES } from '@alloy/world';
-import { NODE_MAX_CHARGES, NODE_RESPAWN_SECONDS, RANGE_SLACK, Session, applyAction, characterStats, damageAgainst, hitAgainst, newSessionData, playerHit, rewardHit, rewardHitTaken, rewardKill } from '../src';
+import { FORGE_ANVIL, GROVE_NODES, NPCS, RESOURCE_NODES } from '@alloy/world';
+import { NODE_MAX_CHARGES, NODE_RESPAWN_SECONDS, RANGE_SLACK, Session, applyAction, ensureNodes, nodeState, characterStats, damageAgainst, hitAgainst, newSessionData, playerHit, rewardHit, rewardHitTaken, rewardKill } from '../src';
 import { ATTACKS, BASE_MAX_HEALTH, ENEMIES, adventurerXpToNext, attributeXpToNext, mitigate, GATHER_PROFICIENCY_XP, PROFICIENCY_MAX, proficiencyXpToNext } from '@alloy/game-rules';
 
 const fresh = () => new Session(newSessionData(1000));
@@ -309,5 +309,30 @@ describe('gathering proficiencies', () => {
     expect(ups).toEqual([{ type: 'progress', kind: 'proficiency', proficiency: 'mining', levels: 1 }]);
     for (let i = 0; i < 2000; i++) s.gainProficiency('mining', 1000);
     expect(s.data.progression.professions.mining).toEqual({ level: PROFICIENCY_MAX, xp: 0 });
+  });
+});
+
+describe('grove trees and node storage', () => {
+  it('makes every ironwood tree of the scenery gatherable', () => {
+    expect(GROVE_NODES.length).toBeGreaterThan(200);
+    const tree = GROVE_NODES[123];
+    const s = fresh();
+    const hatchet = Object.values(s.inventory.items).find((i) => i.blueprintId === 'worn_hatchet')!;
+    s.equip(hatchet.itemId);
+    expect(applyAction(s, { k: 'gather', node: tree.id }, at(tree.pos)).ok).toBe(true);
+    expect(s.totals().ironwood).toBeGreaterThan(0);
+  });
+
+  it('stores state only for nodes that were gathered, and tidies full ones on load', () => {
+    const s = fresh();
+    expect(Object.keys(s.data.world.nodes)).toEqual([]);
+    expect(nodeState(s.data, ore.id).charges).toBe(NODE_MAX_CHARGES);
+    applyAction(s, { k: 'gather', node: ore.id }, at(ore.pos));
+    expect(Object.keys(s.data.world.nodes)).toEqual([ore.id]);
+    // An old save stored every node, full: tidied away (the gathered one stays).
+    s.data.world.nodes['ore-old'] = { charges: 1, respawnAt: 0, gathers: 1 };
+    s.data.world.nodes[GROVE_NODES[0].id] = { charges: NODE_MAX_CHARGES, respawnAt: 0, gathers: 0 };
+    ensureNodes(s.data);
+    expect(Object.keys(s.data.world.nodes)).toEqual([ore.id]);
   });
 });
