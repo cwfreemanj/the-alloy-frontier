@@ -89,6 +89,10 @@ export interface Settings {
   invertY: boolean;
   showPerf: boolean;
   reducedShake: boolean;
+  /** 0..1 */
+  musicVolume: number;
+  /** 0..1 */
+  sfxVolume: number;
 }
 
 export function controlsGrid(): HTMLElement {
@@ -128,8 +132,13 @@ export function pausePanel(opts: {
   const inv = h('input', { type: 'checkbox', checked: s.invertY, 'aria-label': 'Invert Y' }) as HTMLInputElement;
   const perf = h('input', { type: 'checkbox', checked: s.showPerf, 'aria-label': 'Show performance' }) as HTMLInputElement;
   const shake = h('input', { type: 'checkbox', checked: s.reducedShake, 'aria-label': 'Reduce camera shake' }) as HTMLInputElement;
-  const apply = () => opts.onSettings({ quality: quality.value as Settings['quality'], sensitivity: Number(sens.value), invertY: inv.checked, showPerf: perf.checked, reducedShake: shake.checked });
+  const music = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: s.musicVolume, 'aria-label': 'Music volume', 'data-testid': 'music-volume' }) as HTMLInputElement;
+  const sfx = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: s.sfxVolume, 'aria-label': 'Sound effects volume', 'data-testid': 'sfx-volume' }) as HTMLInputElement;
+  const apply = () =>
+    opts.onSettings({ quality: quality.value as Settings['quality'], sensitivity: Number(sens.value), invertY: inv.checked, showPerf: perf.checked, reducedShake: shake.checked, musicVolume: Number(music.value), sfxVolume: Number(sfx.value) });
   for (const el of [quality, sens, inv, perf, shake]) el.addEventListener('change', apply);
+  // Volume applies while dragging.
+  for (const el of [music, sfx]) el.addEventListener('input', apply);
   let confirmNew = false;
   const newBtn = h('button', { class: 'btn' }, 'New game…');
   newBtn.addEventListener('click', () => {
@@ -153,7 +162,7 @@ export function pausePanel(opts: {
         h('div', { class: 'row' }, h('button', { class: 'btn primary', 'data-testid': 'resume', onclick: opts.onResume }, 'Resume'), h('button', { class: 'btn', 'data-testid': 'save', onclick: opts.onSave }, 'Save'), h('button', { class: 'btn', onclick: opts.onLoad }, 'Load last save'), h('span', { class: 'spacer' }), newBtn),
         h('div', { class: 'small muted' }, opts.saveInfo),
         h('h3', null, 'Settings'),
-        h('div', { class: 'controls-grid' }, h('span', null, 'Graphics'), quality, h('span', null, 'Mouse sensitivity'), sens, h('span', null, 'Invert camera Y'), inv, h('span', null, 'Reduce camera shake'), shake, h('span', null, 'Performance overlay'), perf),
+        h('div', { class: 'controls-grid' }, h('span', null, 'Graphics'), quality, h('span', null, 'Mouse sensitivity'), sens, h('span', null, 'Invert camera Y'), inv, h('span', null, 'Reduce camera shake'), shake, h('span', null, 'Performance overlay'), perf, h('span', null, 'Music volume'), music, h('span', null, 'Sound effects volume'), sfx),
         h('div', { class: 'small dim' }, 'Graphics changes apply immediately (anti-aliasing applies after reload).'),
         h('h3', null, 'Controls'),
         controlsGrid(),

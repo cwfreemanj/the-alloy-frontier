@@ -57,6 +57,8 @@ test('boots the production build and renders the 3D scene without errors', async
   const errors = await newGame(page);
   await expect(page.locator('canvas#game-canvas')).toBeVisible();
   await expect(page.getByTestId('objective')).toContainText("A Smith's Commission");
+  // Audio starts with the first click (New game): the village plays the town theme.
+  await expect.poll(async () => (await page.evaluate(() => (window as unknown as { __alloy: { state: () => { audio: { unlocked: boolean; track: string | null } } } }).__alloy.state().audio))).toMatchObject({ unlocked: true, track: 'town' });
   const pixels = await page.evaluate(() => {
     const c = document.getElementById('game-canvas') as HTMLCanvasElement;
     return { w: c.width, h: c.height };
@@ -256,11 +258,14 @@ test('character window: tabs, attributes that grow by use, derived stats', async
   await call(page, 'face', 0);
   await page.waitForTimeout(300);
   await expect(page.getByTestId('prompt')).toContainText('Gather');
-  // On a slow frame a key press can be missed: press again until the gather happens.
+  // The gather action itself (scavengers on the trail can interrupt a held gather; the
+  // full-loop test covers gathering with the E key).
+  // Trail scavengers can knock the player out of reach: step back in and retry.
   await expect(async () => {
-    await page.keyboard.press('KeyE');
-    await expect.poll(async () => (await state(page)).totals.iron_ore, { timeout: 3000 }).toBeGreaterThan(0);
+    await call(page, 'teleport', -6, 38.2);
+    expect(await call(page, 'act', { k: 'gather', node: 'ore-t1' })).toMatchObject({ ok: true });
   }).toPass({ timeout: 15_000 });
+  await expect.poll(async () => (await state(page)).totals.iron_ore).toBeGreaterThan(0);
   const a = (await state(page)).attributes;
   expect(a.strength.xp).toBeGreaterThan(0);
   expect(a.endurance.xp).toBeGreaterThan(0);
@@ -271,12 +276,15 @@ test('character window: tabs, attributes that grow by use, derived stats', async
     return s.inventory.equipped.tool ? s.inventory.items[s.inventory.equipped.tool].blueprintId : null;
   });
   expect(await toolOf()).toBe('worn_pickaxe');
-  await call(page, 'teleport', 10, 34);
-  await call(page, 'face', 0);
-  await page.waitForTimeout(300);
-  await expect(page.getByTestId('prompt')).toContainText('Gather');
-  await page.keyboard.press('KeyE');
-  await expect.poll(async () => (await state(page)).totals.ironwood, { timeout: 8000 }).toBeGreaterThan(0);
+  // Retry if a scavenger interrupts the gather or knocks the player out of reach.
+  await expect(async () => {
+    await call(page, 'teleport', 10, 34);
+    await call(page, 'face', 0);
+    await page.waitForTimeout(300);
+    await expect(page.getByTestId('prompt')).toContainText('Gather');
+    await page.keyboard.press('KeyE');
+    await expect.poll(async () => (await state(page)).totals.ironwood, { timeout: 4000 }).toBeGreaterThan(0);
+  }).toPass({ timeout: 25_000 });
   expect(await toolOf()).toBe('worn_hatchet');
 
   // The tool slot on the sheet: Unequip and Equip again from the item details.
