@@ -15,6 +15,8 @@ export interface NodeState {
 
 export interface SessionData {
   version: 1;
+  /** The character's name (shown to other players). Older saves have none. */
+  name?: string;
   createdAt: number;
   playTime: number;
   /** potionReadyAt: play time (s) when the next potion may be used (optional in older saves). */
@@ -79,6 +81,7 @@ export function deserialize(raw: string): LoadResult {
     return { ok: false, reason: 'Progression invalid' };
   }
   if (!Number.isFinite(d.player?.x) || !Number.isFinite(d.player?.z)) return { ok: false, reason: 'Player position invalid' };
+  if (d.name !== undefined && (typeof d.name !== 'string' || d.name.length > 32)) return { ok: false, reason: 'Character name invalid' };
   return { ok: true, data: d, source: 'primary' };
 }
 

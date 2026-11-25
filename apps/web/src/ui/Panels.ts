@@ -5,6 +5,7 @@ import { itemDisplayName, type ItemInstance } from '@alloy/item-gen';
 import { QUEST_EDGE_YOU_MAKE, smithXpToNext, weaponXpToNext } from '@alloy/game-rules';
 import type { Session } from '../state/Session';
 import type { CharacterSlot, CharacterSummary } from '../net/Accounts';
+import { CHARACTER_NAME_MAX, CHARACTER_NAME_MIN, checkCharacterName } from '@alloy/session';
 import { clear, h } from './dom';
 import { drawSword, itemHeader, provenanceText, statTable, traitsBlock } from './ItemView';
 
@@ -217,8 +218,10 @@ export interface TitleOptions {
   onSignOut: () => void;
   /** Character slots (signed in): play, start one in an empty slot, import the guest one, delete. */
   onPlaySlot: (slot: CharacterSlot) => void;
-  onNewSlot: (slot: CharacterSlot) => void;
-  onImportSlot: (slot: CharacterSlot) => void;
+  onNewSlot: (slot: CharacterSlot, name: string) => void;
+  onImportSlot: (slot: CharacterSlot, name: string) => void;
+  /** Name a character made before names existed. */
+  onNameSlot: (slot: CharacterSlot, name: string) => void;
   onDeleteSlot: (slot: CharacterSlot) => void;
   /** Character model (chosen per browser; others see it online). */
   characters?: Array<{ id: string; name: string; blurb: string }>;
@@ -235,18 +238,52 @@ const playTimeText = (s = 0) => {
  * One character slot on the title screen. Deleting is deliberately slow: the card turns red,
  * lists exactly what will be lost, and the delete button only works once DELETE is typed.
  */
+/** A character-name box that checks the name as it's typed; `onValid` gets the tidied name or null. */
+function nameField(slot: CharacterSlot, placeholder: string, onValid: (name: string | null) => void, initial = ''): HTMLElement {
+  const input = h('input', { type: 'text', class: 'name-input', placeholder, maxlength: CHARACTER_NAME_MAX, autocomplete: 'off', spellcheck: 'false', value: initial, 'aria-label': 'Character name', 'data-testid': `slot-${slot}-name` }) as HTMLInputElement;
+  const hint = h('div', { class: 'small dim name-hint', 'data-testid': `slot-${slot}-name-hint` }, `${CHARACTER_NAME_MIN}–${CHARACTER_NAME_MAX} letters; other players see it.`);
+  const check = () => {
+    const c = checkCharacterName(input.value);
+    hint.textContent = input.value.trim() === '' ? `${CHARACTER_NAME_MIN}–${CHARACTER_NAME_MAX} letters; other players see it.` : c.ok ? `Other players will see “${c.name}”.` : c.message;
+    hint.classList.toggle('bad', input.value.trim() !== '' && !c.ok);
+    onValid(c.ok ? c.name : null);
+  };
+  input.addEventListener('input', check);
+  queueMicrotask(check);
+  return h('div', { class: 'name-field' }, input, hint);
+}
+
 function slotCard(s: CharacterSummary, a: Extract<AccountView, { state: 'signed_in' }>, opts: TitleOptions): HTMLElement {
   const label = `Character ${s.slot}`;
   const card = h('div', { class: `slot-card ${s.exists ? '' : 'empty'}`, 'data-testid': `slot-${s.slot}` });
   if (!s.exists) {
+    let name: string | null = null;
+    const create = h('button', { class: 'btn primary', 'data-testid': `slot-${s.slot}-new`, disabled: true, onclick: () => name && opts.onNewSlot(s.slot, name) }, 'Create character') as HTMLButtonElement;
+    const imp = a.canImport ? (h('button', { class: 'btn', 'data-testid': `slot-${s.slot}-import`, disabled: true, onclick: () => name && opts.onImportSlot(s.slot, name) }, 'Bring this browser’s character here') as HTMLButtonElement) : null;
     card.append(
       h('div', { class: 'slot-head' }, h('b', null, label), h('span', { class: 'small muted' }, 'Empty slot')),
-      h(
-        'div',
-        { class: 'btns' },
-        h('button', { class: 'btn primary', 'data-testid': `slot-${s.slot}-new`, disabled: !!a.busy, onclick: () => opts.onNewSlot(s.slot) }, 'Create new character'),
-        a.canImport ? h('button', { class: 'btn', 'data-testid': `slot-${s.slot}-import`, disabled: !!a.busy, onclick: () => opts.onImportSlot(s.slot) }, 'Bring this browser’s character here') : null,
-      ),
+      nameField(s.slot, 'Name your new character', (n) => {
+        name = n;
+        create.disabled = !n || !!a.busy;
+        if (imp) imp.disabled = !n || !!a.busy;
+      }),
+      h('div', { class: 'btns' }, create, imp),
+    );
+    return card;
+  }
+  if (!s.name) {
+    // Made before names existed: it needs a name before it can play.
+    let name: string | null = null;
+    const save = h('button', { class: 'btn primary', 'data-testid': `slot-${s.slot}-save-name`, disabled: true, onclick: () => name && opts.onNameSlot(s.slot, name) }, 'Save name') as HTMLButtonElement;
+    card.classList.add('unnamed');
+    card.append(
+      h('div', { class: 'slot-head' }, h('b', null, label), h('span', { class: 'small muted' }, `Rank ${s.rank ?? 1} · ${playTimeText(s.playTime)} played`)),
+      h('div', { class: 'small' }, 'This character doesn’t have a name yet. Name it to play; other players will see it.'),
+      nameField(s.slot, 'Name this character', (n) => {
+        name = n;
+        save.disabled = !n || !!a.busy;
+      }),
+      h('div', { class: 'btns' }, save),
     );
     return card;
   }
@@ -264,15 +301,15 @@ function slotCard(s: CharacterSummary, a: Extract<AccountView, { state: 'signed_
   const main = h(
     'div',
     null,
-    h('div', { class: 'slot-head' }, h('b', null, label), h('span', { class: 'spacer' }), deleteBtn),
+    h('div', { class: 'slot-head' }, h('b', { class: 'slot-name', 'data-testid': `slot-${s.slot}-title` }, s.name), h('span', { class: 'small muted' }, label), h('span', { class: 'spacer' }), deleteBtn),
     summary,
     h('div', { class: 'btns' }, h('button', { class: 'btn primary', 'data-testid': `slot-${s.slot}-play`, disabled: !!a.busy, onclick: () => opts.onPlaySlot(s.slot) }, 'Play')),
   );
   card.append(main);
   deleteBtn.addEventListener('click', () => {
     // Confirmation: red card, what will be lost, typed DELETE, a separate red button.
-    const typed = h('input', { type: 'text', class: 'name-input danger-input', placeholder: 'Type DELETE', autocomplete: 'off', spellcheck: 'false', 'aria-label': `Type DELETE to delete ${label}`, 'data-testid': `slot-${s.slot}-confirm-text` }) as HTMLInputElement;
-    const confirm = h('button', { class: 'btn danger', disabled: true, 'data-testid': `slot-${s.slot}-confirm-delete` }, `Delete ${label} forever`) as HTMLButtonElement;
+    const typed = h('input', { type: 'text', class: 'name-input danger-input', placeholder: 'Type DELETE', autocomplete: 'off', spellcheck: 'false', 'aria-label': `Type DELETE to delete ${s.name}`, 'data-testid': `slot-${s.slot}-confirm-text` }) as HTMLInputElement;
+    const confirm = h('button', { class: 'btn danger', disabled: true, 'data-testid': `slot-${s.slot}-confirm-delete` }, `Delete ${s.name} forever`) as HTMLButtonElement;
     typed.addEventListener('input', () => (confirm.disabled = typed.value.trim() !== 'DELETE'));
     confirm.addEventListener('click', () => {
       if (typed.value.trim() !== 'DELETE') return;
@@ -283,8 +320,8 @@ function slotCard(s: CharacterSummary, a: Extract<AccountView, { state: 'signed_
     const cancel = h('button', { class: 'btn', 'data-testid': `slot-${s.slot}-cancel-delete` }, 'Cancel, keep it');
     const danger = h(
       'div',
-      { class: 'slot-danger', role: 'alertdialog', 'aria-label': `Delete ${label}?` },
-      h('div', { class: 'danger-title' }, `⚠ Delete ${label}?`),
+      { class: 'slot-danger', role: 'alertdialog', 'aria-label': `Delete ${s.name}?` },
+      h('div', { class: 'danger-title' }, `⚠ Delete ${s.name} (${label})?`),
       h('div', { class: 'small' }, 'You will lose this character for good:'),
       h('div', { class: 'slot-facts lost' }, ...facts.map(([k, v]) => h('span', null, h('span', { class: 'k' }, k), ' ', h('b', null, v))), h('span', null, h('b', null, quest))),
       h('div', { class: 'small' }, 'All of its items, materials, equipment and progress go with it. The game can’t bring it back.'),

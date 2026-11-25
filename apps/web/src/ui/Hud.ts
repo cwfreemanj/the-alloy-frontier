@@ -21,6 +21,9 @@ export interface WorldMarker {
   kind: 'enemy' | 'elite' | 'npc' | 'objective';
 }
 
+/** Names are letters, spaces, ' and - only, but escape anyway (guest names are freer). */
+const escapeHtml = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+
 export class Hud {
   readonly root: HTMLElement;
   private hpFill: HTMLElement;
@@ -196,7 +199,8 @@ export class Hud {
     // Mastery of the family in hand (longsword when unarmed, as before).
     const fam = session.weaponFamily ?? 'longsword';
     const wm = p.weaponMastery[fam] ?? { level: 1, xp: 0 };
-    this.mastery.innerHTML = `<span>${WEAPON_FAMILIES[fam].name} <b>${wm.level}</b> <span style="opacity:.7">(${Math.floor(wm.xp)}/${weaponXpToNext(wm.level)})</span></span><span>Blacksmith <b>${p.professions.blacksmithing.mastery}</b></span><span>Rank <b>${p.adventurer.rank}</b></span><span><b>${session.inventory.coins}</b> c</span>`;
+    const who = session.data.name ? `<span class="hud-name">${escapeHtml(session.data.name)}</span>` : '';
+    this.mastery.innerHTML = `${who}<span>${WEAPON_FAMILIES[fam].name} <b>${wm.level}</b> <span style="opacity:.7">(${Math.floor(wm.xp)}/${weaponXpToNext(wm.level)})</span></span><span>Blacksmith <b>${p.professions.blacksmithing.mastery}</b></span><span>Rank <b>${p.adventurer.rank}</b></span><span><b>${session.inventory.coins}</b> c</span>`;
     this.vignette.style.boxShadow = lowHpFlash ? 'inset 0 0 160px rgba(160,20,10,0.55)' : 'inset 0 0 160px rgba(160,20,10,0)';
 
     // Objective tracker

@@ -128,16 +128,21 @@ export class AccountClient {
     return r.slots;
   }
 
-  /** Start a fresh character on the server, in an empty slot. */
-  async newCharacter(slot: CharacterSlot): Promise<void> {
-    const r = await this.call<{ revision: number }>('POST', '/api/character/new', { slot });
+  /** Start a fresh, named character on the server, in an empty slot. */
+  async newCharacter(slot: CharacterSlot, name: string): Promise<void> {
+    const r = await this.call<{ revision: number }>('POST', '/api/character/new', { slot, name });
     this.revision = r.revision;
   }
 
-  /** Bring this browser's guest character into an empty slot. */
-  async importCharacter(raw: string, slot: CharacterSlot): Promise<void> {
-    const r = await this.call<{ revision: number }>('POST', '/api/character/import', { save: raw, slot });
+  /** Bring this browser's guest character into an empty slot (with a name, else the guest's own). */
+  async importCharacter(raw: string, slot: CharacterSlot, name?: string): Promise<void> {
+    const r = await this.call<{ revision: number }>('POST', '/api/character/import', { save: raw, slot, ...(name ? { name } : {}) });
     this.revision = r.revision;
+  }
+
+  /** Name a character made before names existed. */
+  async nameCharacter(slot: CharacterSlot, name: string): Promise<void> {
+    await this.call<{ revision: number; name: string }>('POST', '/api/character/name', { slot, name });
   }
 
   /** Delete the character in a slot (the server keeps it in its trash, out of reach of the game). */
@@ -152,6 +157,7 @@ export type CharacterSlot = 1 | 2;
 export interface CharacterSummary {
   slot: CharacterSlot;
   exists: boolean;
+  name?: string;
   rank?: number;
   smithMastery?: number;
   weaponLevel?: number;

@@ -174,7 +174,8 @@ export function startWorldServer(opts: WorldServerOptions = {}): Promise<Running
               if (char) characters?.release(char);
               return;
             }
-            id = room.join(acct.username, send, acct.id, close, char);
+            // Other players see the character's name (the account name for characters made before names).
+            id = room.join(char?.session.data.name ?? acct.username, send, acct.id, close, char);
           })
           .catch((e: unknown) => {
             console.error(`Could not join a signed-in player: ${(e as Error).message}`);

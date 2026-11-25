@@ -552,3 +552,8 @@ select, input[type=number] { background: var(--panel-2); color: var(--text); bor
 .btn.danger { background: linear-gradient(180deg, #c0392b, #8e1f14); border: 1px solid #ff7a6a; color: #fff; font-weight: 700; }
 .btn.danger:disabled { filter: grayscale(0.85); opacity: 0.55; cursor: not-allowed; }
 .small.good { color: var(--good); }
+.slot-card .slot-name { font-size: 16px; color: #ffd9a0; }
+.slot-card.unnamed { border-color: rgba(224, 164, 74, 0.6); }
+.name-field { display: grid; gap: 3px; }
+.name-hint.bad { color: var(--bad); }
+.hud-name { color: #ffd9a0; font-weight: 700; margin-right: 4px; }

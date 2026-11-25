@@ -284,7 +284,7 @@ export class Game {
   /** Join the shared world as the current account or guest. */
   private connectWorld(): void {
     if (!this.worldUrl) return;
-    if (this.mode === 'account' && this.accounts?.username) this.online.connect(this.worldUrl, this.accounts.username, this.accounts.token, this.slot);
+    if (this.mode === 'account' && this.accounts?.username) this.online.connect(this.worldUrl, this.characterName, this.accounts.token, this.slot);
     else this.online.connect(this.worldUrl, this.playerName);
   }
 
@@ -322,6 +322,25 @@ export class Game {
     } catch (e) {
       this.setAccountView({ ...view, busy: false, error: (e as ApiError).message });
     }
+  }
+
+  /** Name a character made before names existed (title screen). */
+  private async nameSlot(slot: CharacterSlot, name: string): Promise<void> {
+    if (!this.accounts || this.accountView.state !== 'signed_in') return;
+    const view = this.accountView;
+    this.setAccountView({ ...view, busy: true, error: undefined, notice: undefined });
+    try {
+      await this.accounts.nameCharacter(slot, name);
+    } catch (e) {
+      this.setAccountView({ ...view, busy: false, error: (e as ApiError).message });
+      return;
+    }
+    await this.afterSignIn(`Character ${slot} is now called ${name}.`);
+  }
+
+  /** The name of the character being played (other players see it). */
+  get characterName(): string {
+    return this.session.data.name ?? (this.mode === 'account' ? (this.accounts?.username ?? 'Character') : this.playerName || 'Character');
   }
 
   /** Delete the character in a slot (after the title screen's typed confirmation). */
@@ -422,7 +441,9 @@ export class Game {
     }
     if (n === this.playerName) return;
     this.playerName = n;
-    // Re-introduce ourselves under the new name (guests only; accounts use their username).
+    // A guest's character carries the guest name.
+    if (this.mode === 'guest' && this.started) this.session.data.name = n;
+    // Re-introduce ourselves under the new name (guests only; account characters have their own).
     if (this.mode === 'guest' && this.started && this.online.client) this.online.connect(this.online.client.url, n);
   }
 
@@ -454,7 +475,7 @@ export class Game {
     }
     this.worldStatusEl.className = `world-status ${cls}`;
     this.worldStatusEl.textContent = text;
-    this.worldStatusEl.title = o.online ? `Playing as ${this.playerName}` : '';
+    this.worldStatusEl.title = o.online ? `Playing as ${this.started ? this.characterName : this.playerName}` : '';
   }
 
   private localAvatar(): AvatarState {
@@ -721,23 +742,24 @@ export class Game {
         onRegister: (u, p) => void this.accountAction('register', u, p),
         onSignOut: () => void this.signOut(),
         onPlaySlot: (slot) => void this.playSlot(slot),
-        onNewSlot: (slot) => void this.accountCharacter('new', slot),
-        onImportSlot: (slot) => void this.accountCharacter('import', slot),
+        onNewSlot: (slot, name) => void this.accountCharacter('new', slot, name),
+        onImportSlot: (slot, name) => void this.accountCharacter('import', slot, name),
+        onNameSlot: (slot, name) => void this.nameSlot(slot, name),
         onDeleteSlot: (slot) => void this.deleteSlot(slot),
       }),
     );
   }
 
   /** Start a new account character in an empty slot, or bring this browser's guest character into one. */
-  private async accountCharacter(kind: 'new' | 'import', slot: CharacterSlot): Promise<void> {
+  private async accountCharacter(kind: 'new' | 'import', slot: CharacterSlot, name: string): Promise<void> {
     if (!this.accounts || this.accountView.state !== 'signed_in') return;
     const view = this.accountView;
     const local = kind === 'import' ? this.saves.load() : null;
     if (local && !local.ok) return;
     this.setAccountView({ ...view, busy: true, error: undefined });
     try {
-      if (kind === 'new') await this.accounts.newCharacter(slot);
-      else await this.accounts.importCharacter(encodeSave(local!.ok ? local!.data : newSessionData(Date.now()), Date.now()), slot);
+      if (kind === 'new') await this.accounts.newCharacter(slot, name);
+      else await this.accounts.importCharacter(encodeSave(local!.ok ? local!.data : newSessionData(Date.now()), Date.now()), slot, name);
     } catch (e) {
       this.setAccountView({ ...view, busy: false, error: (e as ApiError).message });
       return;
@@ -752,7 +774,9 @@ export class Game {
   /** New guest game (saved in this browser). */
   newGame(): void {
     this.saves.clear();
-    this.startPlaying(newSessionData(Date.now()), 'guest', 'new');
+    const data = newSessionData(Date.now());
+    data.name = this.playerName;
+    this.startPlaying(data, 'guest', 'new');
     this.save('new');
   }
 
@@ -774,6 +798,7 @@ export class Game {
       this.hud.toast(r.reason, 'warn');
       return;
     }
+    r.data.name ??= this.playerName;
     this.startPlaying(r.data, 'guest', 'continue');
     if (r.source === 'backup') this.hud.toast('Primary save was invalid; restored the backup save.', 'warn');
   }
@@ -805,7 +830,7 @@ export class Game {
   }
 
   openInventory(tab: CharacterTab = 'character'): void {
-    const name = this.mode === 'account' ? (this.accounts?.username ?? 'Character') : this.playerName || 'Character';
+    const name = this.characterName;
     const p = new CharacterWindow(
       this.session,
       tab,
@@ -1671,7 +1696,7 @@ export class Game {
           zone: this.zone.id,
           audio: this.audio.debug(),
           lock: this.lockTarget?.id ?? null,
-          world: { status: this.online.status, id: this.online.myId, name: this.mode === 'account' ? (this.accounts?.username ?? '') : this.playerName, mode: this.mode, others: [...this.online.remotes.values()].map((r) => ({ id: r.id, name: r.name, x: +r.position.x.toFixed(1), z: +r.position.z.toFixed(1), hp: r.state?.hp ?? null })) },
+          world: { status: this.online.status, id: this.online.myId, name: this.started ? this.characterName : this.playerName, account: this.accounts?.username ?? null, mode: this.mode, others: [...this.online.remotes.values()].map((r) => ({ id: r.id, name: r.name, x: +r.position.x.toFixed(1), z: +r.position.z.toFixed(1), hp: r.state?.hp ?? null })) },
           enemies: this.enemies.map((e) => ({ id: e.id, type: e.spawn.type, state: e.brain.state, hp: +e.brain.health.toFixed(1), x: +e.position.x.toFixed(1), z: +e.position.z.toFixed(1) })),
         };
       },
