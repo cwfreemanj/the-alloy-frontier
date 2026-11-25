@@ -455,6 +455,14 @@ export class WorldRoom {
     }
   }
 
+  /**
+   * Bring every enemy to its area's current level (after the observer's state is restored at
+   * start-up, before anyone has joined).
+   */
+  applyAreaLevels(): void {
+    for (const e of this.enemies) if (e.def.kind !== 'dummy') e.setLevel(this.observer.levelOf(this.areaOf(e)));
+  }
+
   /** Relay avatars and changed enemies (called at the network rate). */
   publish(): void {
     if (this.members.size === 0) return;

@@ -13,6 +13,7 @@ import { WorldRoom } from './worldRoom';
 import { handleApi } from './accounts/http';
 import type { AccountService } from './accounts/service';
 import { CharacterHost, accountCharacterStore, type CharacterStore } from './characters';
+import { WORLD_SAVE_EVERY_MS, WorldStateStore } from './worldState';
 
 export interface WorldServerOptions {
   port?: number;
@@ -38,7 +39,9 @@ export interface RunningWorldServer {
   room: WorldRoom;
   /** Live characters of signed-in players (null without accounts). */
   characters: CharacterHost | null;
-  /** Stop, after writing every changed character. */
+  /** Saved world state (observer tallies, area levels); null without accounts storage. */
+  worldState: WorldStateStore | null;
+  /** Stop, after writing every changed character and the world state. */
   close: () => Promise<void>;
 }
 
@@ -86,11 +89,14 @@ function serveStatic(root: string, req: IncomingMessage, res: ServerResponse): v
   createReadStream(file).pipe(res);
 }
 
-export function startWorldServer(opts: WorldServerOptions = {}): Promise<RunningWorldServer> {
+export async function startWorldServer(opts: WorldServerOptions = {}): Promise<RunningWorldServer> {
   const accounts = opts.accounts ?? null;
   const store = opts.characters ?? (accounts ? accountCharacterStore(accounts) : null);
   const characters = store ? new CharacterHost(store) : null;
   const room = new WorldRoom(undefined, characters, Math.random, !!opts.allowTeleport);
+  // The world remembers how hard players pushed each area across restarts (AF-013).
+  const worldState = accounts ? new WorldStateStore(accounts.kv, room) : null;
+  if (await worldState?.load()) console.log('World state restored (area levels and tallies).');
   const root = opts.staticDir ? resolve(opts.staticDir) : null;
   const allowed = new Set(opts.allowedOrigins ?? []);
   const http = createServer((req, res) => {
@@ -205,6 +211,7 @@ export function startWorldServer(opts: WorldServerOptions = {}): Promise<Running
   const sim = setInterval(() => room.step(simDt), simDt * 1000);
   const net = setInterval(() => room.publish(), 1000 / (opts.netHz ?? 15));
   const saves = setInterval(() => characters?.flushDue(), 1000);
+  const worldSaves = setInterval(() => void worldState?.save(), WORLD_SAVE_EVERY_MS);
   return new Promise((resolveStart) => {
     http.listen(opts.port ?? 2568, opts.host ?? '127.0.0.1', () => {
       const addr = http.address();
@@ -212,14 +219,16 @@ export function startWorldServer(opts: WorldServerOptions = {}): Promise<Running
         port: typeof addr === 'object' && addr ? addr.port : (opts.port ?? 2568),
         room,
         characters,
+        worldState,
         close: () =>
           new Promise<void>((r) => {
             clearInterval(sim);
             clearInterval(net);
             clearInterval(heartbeat);
             clearInterval(saves);
+            clearInterval(worldSaves);
             for (const c of wss.clients) c.terminate();
-            wss.close(() => http.close(() => void (characters?.flushAll() ?? Promise.resolve()).then(() => r())));
+            wss.close(() => http.close(() => void Promise.all([characters?.flushAll(), worldState?.save()]).then(() => r())));
           }),
       });
     });
