@@ -5,6 +5,7 @@
  * is untouched: positions come from @alloy/world's Layout, colliders from the same baked scene.
  */
 import type { InstanceHandle } from '../entities/WorldObjects';
+import { ForgeBuilding } from './ForgeBuilding';
 import * as THREE from 'three';
 import {
   EMBERHOLD_TIME,
@@ -28,10 +29,11 @@ export type Quality = 'low' | 'medium' | 'high';
 
 /** Particle anchors per model, in the model's own metres (before yaw/scale). */
 const EMITTERS: Record<string, { preset: ParticlePreset; at: [number, number, number]; count: number; radius?: number }[]> = {
+  // The forge building (ForgeBuilding.ts): chimney top and hearth.
   forge_hall: [
-    { preset: 'smoke', at: [-2.4, 9.2, -2.2], count: 26 },
-    { preset: 'embers', at: [-2.4, 9.0, -2.2], count: 30 },
-    { preset: 'embers', at: [-1.4, 0.6, 2.1], count: 18, radius: 0.35 },
+    { preset: 'smoke', at: [-2.4, 9.6, -2.5], count: 26 },
+    { preset: 'embers', at: [-2.4, 9.5, -2.5], count: 30 },
+    { preset: 'embers', at: [-2.4, 1.7, -1.3], count: 18, radius: 0.5 },
   ],
   forge_anvil: [{ preset: 'sparks', at: [0, 0.95, 0], count: 26 }],
   frontier_cottage: [{ preset: 'smoke', at: [2.2, 8.8, -1.4], count: 14 }],
@@ -51,7 +53,7 @@ const EMITTERS: Record<string, { preset: ParticlePreset; at: [number, number, nu
 
 /** The few point lights the area keeps, at its hotspots. */
 const HOT_LIGHTS: Record<string, { at: [number, number, number]; color: string; intensity: number; distance: number; flicker?: boolean; pulse?: boolean; max: number }> = {
-  forge_hall: { at: [-1.4, 1.2, 3.2], color: '#ff7a2e', intensity: 26, distance: 18, flicker: true, max: 1 },
+  forge_hall: { at: [-1.8, 2.0, 1.0], color: '#ff7a2e', intensity: 30, distance: 20, flicker: true, max: 1 },
   foundry_core: { at: [0, 3.4, 0], color: '#ff5a1a', intensity: 60, distance: 34, pulse: true, max: 1 },
   aether_beacon: { at: [0, 12.7, 0], color: '#5fd6f5', intensity: 40, distance: 40, max: 2 },
 };
@@ -107,6 +109,7 @@ export class EmberholdWorld {
   private lights: HotLight[] = [];
   private grass: THREE.InstancedMesh | null = null;
   private handles = new Map<string, InstanceHandle>();
+  private forge: ForgeBuilding | null = null;
 
   /** The instance of a scenery model at a position (grove trees), for nodes that animate it. */
   instanceAt(model: string, x: number, z: number): InstanceHandle | null {
@@ -185,6 +188,14 @@ export class EmberholdWorld {
   private buildInstances(): void {
     const byKey = new Map<string, WorldItem[]>();
     for (const it of emberholdItems()) {
+      if (it.model === 'forge_hall') {
+        // Drawn as the detailed forge building instead of the workshop shed.
+        this.forge = new ForgeBuilding();
+        itemMatrix(it, this.forge.group.matrix);
+        this.forge.group.matrixAutoUpdate = false;
+        this.group.add(this.forge.group);
+        continue;
+      }
       const k = BACKDROP.has(it.model) ? `${it.model}|bd` : `${it.model}|${Math.floor(it.x / CHUNK)},${Math.floor(it.z / CHUNK)}`;
       let list = byKey.get(k);
       if (!list) byKey.set(k, (list = []));
@@ -372,6 +383,7 @@ export class EmberholdWorld {
     this.sky.material.uniforms.uTime.value = time;
     this.sky.position.copy(this.camera.position);
     for (const f of this.fields) f.update(time);
+    this.forge?.update(time);
     for (const l of this.lights) {
       if (l.flicker) l.light.intensity = l.base * (0.85 + Math.sin(time * 13) * 0.06 + Math.sin(time * 7.3) * 0.08);
       if (l.pulse) l.light.intensity = l.base * (0.8 + Math.sin(time * 1.6) * 0.2);
