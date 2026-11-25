@@ -175,6 +175,8 @@ test('full loop: gather, forge (quick + masterwork UI), equip, elite, report, sa
   await page.keyboard.press('KeyE');
   // Orla explains the current step in plain words.
   await expect(page.getByTestId('forge-guide')).toContainText('Quick Forge makes a solid blade');
+  // Everything on the forge screen is visible at once: no column overflows (no scrollbars).
+  expect(await page.evaluate(() => [...document.querySelectorAll('.fx .forge-col')].map((c) => c.scrollHeight - c.clientHeight))).toEqual([0, 0, 0]);
   await page.getByTestId('quick-forge-confirm').click();
   await expect(page.getByTestId('forge-result')).toContainText('Quick Forge');
   // Forge: Masterwork (heat, hammer via hint, temper)

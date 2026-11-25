@@ -52,6 +52,9 @@ type Stage = 'setup' | 'heat' | 'hammer' | 'temper' | 'done';
 export type ForgeFx = 'strike' | 'overwork' | 'step';
 
 const TIPS_KEY = 'alloy-frontier.forge-tips';
+/** The screen is laid out at this size and scaled to fit the window, so nothing ever scrolls. */
+const DESIGN_W = 1640;
+const DESIGN_H = 900;
 const SPEC_ICON: Record<Specialization, string> = { balanced: 'scales', keen: 'slash', heavy: 'guard', agile: 'feather' };
 const HEAT_COLOR: Record<string, string> = { dull: '#b0442a', cherry: '#ff6a2a', bright: '#ffd36a' };
 const TEMPER_ICON: Record<string, string> = { oil: 'quench', water: 'quench', air: 'feather' };
@@ -88,6 +91,8 @@ export class ForgePanel {
     private fx: (f: ForgeFx) => void = () => {},
   ) {
     this.el = h('div', { class: 'overlay', role: 'dialog', 'aria-label': 'Forge' });
+    // Re-fit when the window changes size (stops with the overlay when it is removed).
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.fit()).observe(this.el);
     this.txId = session.nextTxId('forge');
     try {
       this.tips = localStorage.getItem(TIPS_KEY) !== 'off';
@@ -182,8 +187,19 @@ export class ForgePanel {
       h('div', { class: 'forge-grid' }, this.renderLeft(), this.renderCenter(), this.renderRight()),
     );
     this.el.append(panel);
+    this.fit();
     const canvas = this.el.querySelector<HTMLCanvasElement>('canvas.sword');
     if (canvas) requestAnimationFrame(() => drawSword(canvas, this.result ?? (this.preview().ok ? (this.preview() as { ok: true; plan: { item: ItemInstance } }).plan.item : null), this.blueprintId));
+  }
+
+  /** Scale the screen to the window: everything visible at once, never a scrollbar. */
+  private fit(): void {
+    const panel = this.el.querySelector<HTMLElement>('.fx');
+    if (!panel) return;
+    const w = this.el.clientWidth || window.innerWidth;
+    const hgt = this.el.clientHeight || window.innerHeight;
+    const k = Math.min((w - 24) / DESIGN_W, (hgt - 24) / DESIGN_H, 1.35);
+    panel.style.transform = `translate(-50%, -50%) scale(${Math.max(0.4, k)})`;
   }
 
   // ---------------- Left: blueprints, materials, mastery ----------------
