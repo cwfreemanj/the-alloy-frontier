@@ -7,11 +7,11 @@
  * (computed from the server-side weapon). Client-owned: the player's own movement
  * (sanity-checked), and a guest's character (kept in their browser).
  */
-import { ATTACKS, checkMove, finisherMultiplier, dist2, forwardPoint, inArc, inCircle, isNear, newMoveGuard, resetMoveGuard, type AttackId, type MoveGuard, type Vec2 } from '@alloy/game-rules';
+import { ATTACKS, checkMove, finisherMultiplier, heightOk, dist2, forwardPoint, inArc, inCircle, isNear, newMoveGuard, resetMoveGuard, type AttackId, type MoveGuard, type Vec2 } from '@alloy/game-rules';
 import { WORLD_LIMITS, WORLD_PROTOCOL, parseWorldClientMsg, type AvatarState, type CharAction, type EnemyNetState, type WorldPlayerInfo, type WorldServerMsg } from '@alloy/protocol';
 import { GATHER_SECONDS, RANGE_SLACK, applyAction, damageAgainst, playerHit, rewardHit, rewardHitTaken, rewardKill } from '@alloy/session';
 import type { CharacterHost, LiveCharacter } from './characters';
-import { ENEMY_SPAWNS, EnemySim, RESPAWN_POINT, buildWorldColliders, type ColliderWorld } from '@alloy/world';
+import { ENEMY_SPAWNS, EnemySim, RESPAWN_POINT, buildWorldColliders, terrainHeight, type ColliderWorld } from '@alloy/world';
 
 const PLAYER_RADIUS = 0.4;
 const CREDIT_WINDOW_MS = 30_000;
@@ -61,6 +61,8 @@ export interface WorldStats {
   rejectedActs: number;
   /** Reported positions refused by the speed check. */
   speedRejected: number;
+  /** Reported positions refused for an impossible height (flying, sinking). */
+  heightRejected: number;
   /**
    * Damage signed-in players dealt, by damage type and by weapon family (unarmed: 'unarmed').
    * Groundwork for an adapting world (docs/design-backlog.md); not persisted yet.
@@ -82,7 +84,7 @@ export class WorldRoom {
   private contributors = new Map<string, Map<string, number>>();
   private lastSent = new Map<string, string>();
   private nextId = 1;
-  stats: WorldStats = { malformed: 0, rateLimited: 0, rejectedHits: 0, acceptedHits: 0, enemyHitsOnPlayers: 0, kills: 0, acts: 0, rejectedActs: 0, speedRejected: 0, damageByType: {}, damageByFamily: {} };
+  stats: WorldStats = { malformed: 0, rateLimited: 0, rejectedHits: 0, acceptedHits: 0, enemyHitsOnPlayers: 0, kills: 0, acts: 0, rejectedActs: 0, speedRejected: 0, heightRejected: 0, damageByType: {}, damageByFamily: {} };
 
   constructor(
     private now: () => number = () => Date.now(),
@@ -173,6 +175,11 @@ export class WorldRoom {
       resetMoveGuard(g, s.x, s.z, t);
       return s;
     }
+    // Flying or sinking: the height must be one a player can reach from the terrain.
+    if (!heightOk(s.y, terrainHeight(s.x, s.z))) {
+      this.stats.heightRejected++;
+      return this.refuseMove(me, s, t);
+    }
     return checkMove(g, s.x, s.z, t) ? s : this.refuseMove(me, s, t);
   }
 
@@ -184,7 +191,7 @@ export class WorldRoom {
       me.lastCorrectAt = t;
       me.send({ t: 'correct', x: g.x, z: g.z });
     }
-    return { ...s, x: g.x, z: g.z, spd: 0 };
+    return { ...s, x: g.x, y: terrainHeight(g.x, g.z), z: g.z, spd: 0 };
   }
 
   /** The character follows the avatar: position for the save, and deaths for the stats. */

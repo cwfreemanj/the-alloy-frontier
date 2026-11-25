@@ -19,6 +19,13 @@ export const MOVE_LIMITS = {
   burst: 12,
   /** Distance (m) from a known point (saved position, respawn point) that counts as "there". */
   nearRadius: 5,
+  /**
+   * Height above the terrain (m). Players walk on the terrain and a jump peaks about 1 m up
+   * (6.2 m/s against 20 m/s²); the rest is slack for slopes and lag.
+   */
+  maxAboveGround: 1.6,
+  /** Depth below the terrain (m) still accepted (the browser eases onto slopes). */
+  maxBelowGround: 1.0,
 } as const;
 
 /** The fastest a legitimate player moves on average (for documentation and tests). */
@@ -59,5 +66,8 @@ export function resetMoveGuard(g: MoveGuard, x: number, z: number, at: number): 
   g.budget = MOVE_LIMITS.burst;
   g.at = at;
 }
+
+/** Is a reported height possible at a spot whose terrain height is `ground`? */
+export const heightOk = (y: number, ground: number): boolean => y <= ground + MOVE_LIMITS.maxAboveGround && y >= ground - MOVE_LIMITS.maxBelowGround;
 
 export const isNear = (a: { x: number; z: number }, b: { x: number; z: number }, r: number = MOVE_LIMITS.nearRadius) => Math.hypot(a.x - b.x, a.z - b.z) <= r;
