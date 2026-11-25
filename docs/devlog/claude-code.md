@@ -9,6 +9,24 @@ Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and g
 - **Not done / deferred:** No forge layout or CSS changes: the layout was fine (the centre column has ~300 px to spare at 1920x1080). Game.ts untouched. The known 'talk to Orla' flake is unrelated and still there.
 - **Verified:** npm run typecheck, npm test (235/235), npm run build pass. New test fails 2/2 without the fix (lock still held) and passes with it. --repeat-each 5 on the new test + full loop: 9 passed, 1 failed with the known Orla talk flake (line 262, after the forge steps); the forge click passed all 5 times. Full npm run test:e2e: 19/19 passed.
 
+## 2026-11-25 18:20 — Saved world state (AF-013)
+- **PR:** #31 `saved-world-state`
+- **Asked for:** Start AF-013: keep the world observer's tallies and area levels across server restarts.
+- **Done:**
+  - The observer's tallies and area enemy levels are saved in one storage row (world:observer), Postgres on the live server
+  - Loaded at start-up, before anyone joins; enemies start at their area's restored level
+  - On loading, tallies fade by the time the server was down, so a long sleep can bring a level back down
+  - Written at most once a minute and only when players were on or something happened; an empty world writes nothing, so Neon can sleep. Also written when the server stops
+  - Bad saved data or a database error never stops the world: it starts fresh or retries next minute
+  - Browser tests start from an empty data file each run, so no saved world state carries over
+- **Not done / deferred:**
+  - The raid and protection fee (AF-011, AF-012) that will read this state
+  - No admin tool to reset an area's level; deleting the world:observer row does it
+- **Verified:**
+  - typecheck, build pass; npm test 242 passed (7 new: save/restore, fading, bad data, restart of a real server, no writes when idle, database failure)
+  - npm run test:e2e: 17 passed, 1 failed (full loop: the forge screen's middle column covered the Quick Forge button); the same test passed alone on a rerun
+- **Notes:** The full-loop failure is a forge-screen layout flake, separate from the known 'talk to Orla' one. Not caused by this change (server only).
+
 ## 2026-11-25 14:46 — Dev logs for every contributor
 - **PR:** #30 `dev-log`
 - **Asked for:** A detailed, timestamped dev log for each contributor, human and AI, showing when things were and weren't implemented.

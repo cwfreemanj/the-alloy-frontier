@@ -62,4 +62,71 @@ describe('world observer', () => {
     expect(snap.trail).toMatchObject({ level: trail.level + 1, players: 0 }); // 1350 pressure left: one level up
     expect(Object.keys(snap)).toEqual(ZONES.map((z) => z.id));
   });
+
+  it('saves and restores its tallies and levels, faded by the time the server was down', () => {
+    const c = clock();
+    const o = new WorldObserver(c.now);
+    run(o, c, 15 * 60, [{ pos: trail.center, rank: 8 }]);
+    expect(o.dirty).toBe(true);
+    const saved = JSON.parse(JSON.stringify(o.save())); // as it comes back from storage
+    const raised = o.levelOf('trail');
+    expect(raised).toBe(trail.level + ADAPT.maxBonus);
+
+    // Restarted at once: everything as it was.
+    const same = new WorldObserver(c.now);
+    expect(same.restore(saved)).toBe(true);
+    expect(same.levelOf('trail')).toBe(raised);
+    expect(same.areas.trail.pressure).toBeCloseTo(o.areas.trail.pressure, 6);
+    expect(same.areas.trail.playerSeconds).toBeCloseTo(o.areas.trail.playerSeconds, 6);
+    expect(same.dirty).toBe(false);
+
+    // Down for one half-life: tallies halved.
+    c.advance(ADAPT.halfLifeSec);
+    const later = new WorldObserver(c.now);
+    later.restore(saved);
+    expect(later.areas.trail.pressure).toBeCloseTo(o.areas.trail.pressure / 2, 3);
+    expect(later.areas.trail.kills).toBeCloseTo(o.areas.trail.kills / 2, 6);
+
+    // Down for a day: the trail has settled back to its own level.
+    c.advance(24 * 3600);
+    const nextDay = new WorldObserver(c.now);
+    nextDay.restore(saved);
+    expect(nextDay.levelOf('trail')).toBe(trail.level);
+    // And it keeps fading from there, not from the save time.
+    c.advance(2);
+    nextDay.observe([]);
+    expect(nextDay.areas.trail.pressure).toBeLessThan(1);
+  });
+
+  it('ignores saved data it cannot trust', () => {
+    const c = clock();
+    for (const bad of [null, 42, 'x', {}, { v: 2, savedAt: 1, areas: {} }, { v: 1, savedAt: NaN, areas: {} }, { v: 1, savedAt: 1 }]) {
+      expect(new WorldObserver(c.now).restore(bad)).toBe(false);
+    }
+    const o = new WorldObserver(c.now);
+    const ok = o.restore({
+      v: 1,
+      savedAt: c.now() + 3_600_000, // a clock from the future doesn't raise anything
+      areas: {
+        trail: { pressure: -5, kills: 'lots', deaths: Infinity, gathers: 3, bonus: 99 },
+        nowhere: { pressure: 1e12, bonus: 3 },
+      },
+    });
+    expect(ok).toBe(true);
+    expect(o.areas.trail).toMatchObject({ pressure: 0, kills: 0, deaths: 0, gathers: 3 });
+    // No pressure behind it: a saved bonus of 99 can't stand.
+    expect(o.levelOf('trail')).toBe(trail.level);
+    expect(Object.keys(o.areas)).toEqual(ZONES.map((z) => z.id));
+  });
+
+  it('marks itself changed only when players or events are in play', () => {
+    const c = clock();
+    const o = new WorldObserver(c.now);
+    o.observe([]);
+    c.advance(600);
+    o.observe([]);
+    expect(o.dirty).toBe(false); // an empty world only fades, which restore() works out itself
+    o.activity(trail.center, 'gather');
+    expect(o.dirty).toBe(true);
+  });
 });

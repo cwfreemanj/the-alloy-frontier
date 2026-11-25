@@ -44,7 +44,8 @@ export default defineConfig({
     },
     {
       // Shared-world server (serves the same production build) for the multiplayer test.
-      command: 'npx tsx apps/server/src/worldMain.ts',
+      // Starts from an empty data file each run: no accounts or saved world state (AF-013) carried over.
+      command: `node -e "require('fs').rmSync('.tmp/e2e-accounts.json', { force: true })" && npx tsx apps/server/src/worldMain.ts`,
       url: 'http://localhost:2569/world-info',
       // Accounts for tests live in a throwaway file, never the dev data.
       // Empty DATABASE_URL wins over .env.local, so tests never touch the real database.

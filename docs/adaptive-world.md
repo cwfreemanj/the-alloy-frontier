@@ -59,5 +59,14 @@ The observer's tallies are meant to drive world events:
   - It pays a protection fee every in-game day, in coins or in forged equipment, until someone
     defeats the Captain.
   - The forged gear goes to the raiders, making their next attacks stronger.
-- **Saving the tallies:** these will probably need to be stored, since the free server restarts
-  when it sleeps. The current tallies are in memory only, and they fade anyway.
+- **Saving the tallies (built, AF-013):** the free server restarts when it sleeps or redeploys, so the
+  tallies and area levels are kept in the accounts storage (Postgres on the live server), in one
+  row, `world:observer` (`apps/server/src/worldState.ts`).
+  - **Loaded at start-up**, before anyone joins. Enemies start at their area's restored level.
+  - **Faded by the downtime:** on loading, the tallies fade by the time the server was down, as if
+    it had stayed up with nobody playing. A long sleep can bring an area's level back down.
+  - **Written at most once a minute**, and only when players were in the world or something happened.
+    An empty world isn't written at all, so the database can sleep too (free plan). Also written when
+    the server stops.
+  - **Bad saved data, or the database being down,** never stops the world: it starts fresh, logs the
+    problem, and tries the write again next minute.
