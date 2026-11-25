@@ -145,8 +145,6 @@ button.btn.small { padding: 4px 9px; font-size: 12px; }
 .stat-table td { padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
 .stat-table td:nth-child(2), .stat-table td:nth-child(3) { text-align: right; font-family: var(--mono); }
 .stat-table td:nth-child(3) { width: 74px; font-size: 12px; }
-.delta-up::before { content: '▲ '; }
-.delta-down::before { content: '▼ '; }
 
 .list { display: grid; gap: 4px; }
 .card { background: var(--panel-2); border: 1px solid var(--steel); border-radius: 3px; padding: 8px 10px; cursor: pointer; text-align: left; font: inherit; color: inherit; width: 100%; }
@@ -526,3 +524,13 @@ select, input[type=number] { background: var(--panel-2); color: var(--text); bor
 .fx-hands tr.you td { background: rgba(79, 227, 255, 0.08); border-top: 1px solid rgba(79, 227, 255, 0.5); border-bottom: 1px solid rgba(79, 227, 255, 0.5); }
 .fx-result { border-color: var(--rarity, var(--ember-deep)); box-shadow: 0 0 22px color-mix(in srgb, var(--rarity, #ff8a3d) 30%, transparent); }
 @media (max-width: 1050px) { .fx-tagline { display: none; } }
+/* Forge screen fits the window: laid out at a fixed design size, scaled to fit (no scrolling). */
+.fx.forge { position: absolute; left: 50%; top: 50%; width: 1640px; height: 900px; max-width: none; max-height: none; transform-origin: center center; transform: translate(-50%, -50%); }
+.fx .forge-grid { grid-template-columns: 340px minmax(0, 1fr) 400px; }
+.fx .forge-col, .fx .forge-col + .forge-col { overflow: hidden; border-top: none; }
+.fx .forge-col + .forge-col { border-left: 1px solid var(--fx-line); }
+.fx .fx-showcase { height: 132px; }
+.fx .choices { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.fx .stat-table td { padding: 4px 4px; }
+.fx h3.fx-h { margin: 12px 0 6px; }
+.fx .bp-card .sub { margin-top: 1px; }
