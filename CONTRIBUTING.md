@@ -42,6 +42,9 @@ The code is split by area so two people rarely edit the same file:
 
 ## Tracking work
 
+- **Dev logs:** each of us, and each AI agent, keeps a timestamped log of what happened in `docs/devlog/`.
+  Add an entry with `npm run devlog -- "What happened"`. See [docs/devlog/README.md](docs/devlog/README.md).
+
 - **Issues:** one per task or bug, assigned to whoever takes it.
 - **Projects:** a board with To Do / In Progress / Done.
 

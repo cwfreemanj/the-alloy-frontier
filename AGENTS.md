@@ -39,6 +39,8 @@ packages/        plain TypeScript, no rendering, shared by client and server
   world/         layout, terrain, colliders, enemy movement (EnemySim)
 tests/e2e/       Playwright browser tests
 docs/handoff/    in-progress task notes for agent handoffs (see below)
+docs/devlog/     one dev log per contributor, human or AI (see below)
+tools/           asset pipeline; devlog.mjs (npm run devlog)
 ```
 
 `apps/server/src/room.ts`, `server.ts`, `main.ts` and `client.ts` are an older proof-of-concept
@@ -54,6 +56,8 @@ npm run build               typecheck + production build of the web client into 
 npm run test:e2e            Playwright browser tests (starts its own preview on :4178 and world server on :2569)
 npm run world               build the client, then run the world server on :2568 (open http://localhost:2568)
 npm run dev                 Vite dev server for the client only (offline play)
+npm run devlog -- "Title" --as <agent> [--pr N --asked .. --done .. --not-done .. --verified .. --notes ..]
+                            add a dated entry to the top of docs/devlog/<agent>.md
 ```
 
 Before saying a change works, run `npm run typecheck`, `npm test` and `npm run build`. If you changed
@@ -87,6 +91,19 @@ informational: GitHub's GPU-less runners are too slow for them.
    - Commit only converted files the game loads, never raw source packs (see `CONTRIBUTING.md`).
 7. Keep the protocol backward-tolerant where cheap: old clients can be connected while the server
    redeploys. Bump `WORLD_PROTOCOL` in `packages/protocol/src/world.ts` when a change is incompatible.
+
+## Dev log
+
+Every contributor keeps a detailed, timestamped log in `docs/devlog/<name>.md`; format and rules are in
+`docs/devlog/README.md`. AI agents log their work too: Claude in `claude-code.md` (never `claude.md`: on Windows it is the same
+file as `CLAUDE.md`), Codex in `codex.md`, and so on.
+
+- **Add an entry** at every checkpoint, when you open or update a pull request, and before you stop.
+  Use `npm run devlog -- "Title" --as <agent> ...` so the time is right (US Eastern).
+- **Cover:** what was asked for, what you did, what you did **not** do or deferred (and why), and what you
+  verified. Only facts: test results you saw (hard rule 1).
+- **Commit the log entry with the work it describes**, in the same pull request.
+- The log never holds secrets, connection strings or email addresses.
 
 ## Handoffs between agents
 
