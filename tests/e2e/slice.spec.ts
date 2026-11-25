@@ -133,6 +133,27 @@ test('combat: combo damages the training post exactly once per swing', async ({ 
   expect(st.stamina).toBeLessThan(100);
 });
 
+test('a pointer lock granted after a menu opened is released, so the menu stays clickable', async ({ page }) => {
+  // The browser grants pointer lock asynchronously. Make that slow (as on a busy machine) so the
+  // next menu opens before the lock from closing the last one arrives.
+  await page.addInitScript(() => {
+    const req = HTMLCanvasElement.prototype.requestPointerLock;
+    HTMLCanvasElement.prototype.requestPointerLock = function (this: HTMLCanvasElement, ...a: unknown[]) {
+      setTimeout(() => void (req as (...x: unknown[]) => unknown).apply(this, a), 600);
+      return Promise.resolve() as never;
+    };
+  });
+  await newGame(page);
+  await page.keyboard.press('KeyI');
+  await expect.poll(async () => (await state(page)).modal).toBe('inventory');
+  await page.keyboard.press('KeyI'); // close: asks for the mouse (granted 600 ms later)
+  await expect.poll(async () => (await state(page)).modal).toBeNull();
+  await page.keyboard.press('KeyI'); // reopen before the grant arrives
+  await expect.poll(async () => (await state(page)).modal).toBe('inventory');
+  await page.waitForTimeout(1200);
+  expect(await page.evaluate(() => document.pointerLockElement)).toBeNull();
+});
+
 test('full loop: gather, forge (quick + masterwork UI), equip, elite, report, save/load', async ({ page }) => {
   test.setTimeout(300_000);
   const t0 = Date.now();
@@ -177,6 +198,16 @@ test('full loop: gather, forge (quick + masterwork UI), equip, elite, report, sa
   await expect(page.getByTestId('forge-guide')).toContainText('Quick Forge makes a solid blade');
   // Everything on the forge screen is visible at once: no column overflows (no scrollbars).
   expect(await page.evaluate(() => [...document.querySelectorAll('.fx .forge-col')].map((c) => c.scrollHeight - c.clientHeight))).toEqual([0, 0, 0]);
+  // Nothing covers the Forge button and the game hasn't captured the mouse (a late pointer lock
+  // would send every click to the game canvas instead).
+  await expect.poll(() => page.evaluate(() => document.pointerLockElement)).toBeNull();
+  expect(
+    await page.evaluate(() => {
+      const b = document.querySelector('[data-testid="quick-forge-confirm"]')!;
+      const r = b.getBoundingClientRect();
+      return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) === b;
+    }),
+  ).toBe(true);
   await page.getByTestId('quick-forge-confirm').click();
   await expect(page.getByTestId('forge-result')).toContainText('Quick Forge');
   // Forge: Masterwork (heat, hammer via hint, temper)

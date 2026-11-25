@@ -3,6 +3,12 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-25 18:46 — Forge button 'covered': a late pointer lock, not the layout
+- **Asked for:** Find and fix why the full-loop browser test sometimes times out clicking Quick Forge, with Playwright reporting that .forge-center intercepts pointer events.
+- **Done:** Found the cause in the original failing log: the preliminary hit test passed every retry; the real mousedown was the one intercepted. Closing a menu (Esc on Bram's shop) asks for pointer lock, which the browser grants asynchronously. The forge opened ~200 ms later; setModal's exitPointerLock did nothing because the lock wasn't granted yet. When it arrived, the canvas held the mouse over the forge, so every click went to the canvas with frozen coordinates that land on the centre column. Fix in apps/web/src/core/Input.ts: remember whether a lock is still wanted (requestPointerLock sets it, exitPointerLock clears it) and release a lock that is granted after it was cancelled. Players could hit the same bug by closing one menu and quickly opening another. Tests: new e2e test that delays the browser's lock grant by 600 ms, closes and reopens the inventory, and checks the lock is released; the full loop now also checks there is no pointer lock and that elementFromPoint at the Forge button's centre is the button.
+- **Not done / deferred:** No forge layout or CSS changes: the layout was fine (the centre column has ~300 px to spare at 1920x1080). Game.ts untouched. The known 'talk to Orla' flake is unrelated and still there.
+- **Verified:** npm run typecheck, npm test (235/235), npm run build pass. New test fails 2/2 without the fix (lock still held) and passes with it. --repeat-each 5 on the new test + full loop: 9 passed, 1 failed with the known Orla talk flake (line 262, after the forge steps); the forge click passed all 5 times. Full npm run test:e2e: 19/19 passed.
+
 ## 2026-11-25 14:46 — Dev logs for every contributor
 - **PR:** #30 `dev-log`
 - **Asked for:** A detailed, timestamped dev log for each contributor, human and AI, showing when things were and weren't implemented.
