@@ -142,7 +142,7 @@ type CharAction =
     - **Refused moves:** the server keeps the last accepted position, which is what others see and what range checks use, and sends the browser a `correct` message (at most two a second).
     - **Exceptions:** respawning at the respawn point after a death. A signed-in player's first position after connecting must be within 5 m of the saved position.
     - **Tests:** the local browser-test server sets `ALLOW_TELEPORT=1` for the debug teleport; a hosted server never does (`RENDER` overrides it).
-    - **Not checked yet:** height (flying), because the server would need the terrain heights.
+    - **Height:** every reported position must be at most 1.6 m above and 1 m below the terrain (`heightOk`, the same `terrainHeight` the browser uses). Players walk on the terrain and a jump peaks about 1 m up. A refused position is corrected like a speed violation and shown to others on the ground (`WorldStats.heightRejected`).
 - **On deploy:** players with the old page open get "A new version of the game is out. Reload the page."
   Old browser saves are unaffected. Account characters already in the database keep working (same save format).
 

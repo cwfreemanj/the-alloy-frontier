@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { ENEMIES, mitigate } from '@alloy/game-rules';
 import { WORLD_PROTOCOL, type AvatarState, type WorldServerMsg } from '@alloy/protocol';
 import { Session, newSessionData, playerHit } from '@alloy/session';
-import { ENEMY_SPAWNS, FORGE_ANVIL, NPCS, RESOURCE_NODES, RESPAWN_POINT } from '@alloy/world';
+import { ENEMY_SPAWNS, FORGE_ANVIL, NPCS, RESOURCE_NODES, RESPAWN_POINT, terrainHeight } from '@alloy/world';
 import { CharacterHost, MemoryCharacterStore, SAVE_DELAY_MS } from '../src/characters';
 import { WorldRoom } from '../src/worldRoom';
 
@@ -345,5 +345,32 @@ describe('movement speed check', () => {
     p.at(saved.x + 60, saved.z + 60);
     expect(ctx.room.stats.speedRejected).toBe(1);
     expect(corrections(p.inbox)[0]).toMatchObject({ x: saved.x, z: saved.z });
+  });
+});
+
+describe('movement height check', () => {
+  function checked() {
+    let t = 1_000_000;
+    const clock = { now: () => t, advance: (ms: number) => (t += ms) };
+    const host = new CharacterHost(new MemoryCharacterStore(), clock.now);
+    const room = new WorldRoom(clock.now, host, () => 0.99);
+    return { clock, host, room };
+  }
+
+  it('accepts walking and jumping heights, refuses flying and sinking', async () => {
+    const ctx = checked();
+    const p = await signedIn(ctx as never, 'acct-fly');
+    const at = { ...p.char.session.data.player };
+    const ground = terrainHeight(at.x, at.z);
+    p.at(at.x, at.z, { y: ground });
+    ctx.clock.advance(100);
+    p.at(at.x, at.z, { y: ground + 0.95 }); // top of a jump
+    expect(ctx.room.stats.heightRejected).toBe(0);
+    ctx.clock.advance(100);
+    p.at(at.x, at.z, { y: ground + 12 }); // flying
+    ctx.clock.advance(100);
+    p.at(at.x, at.z, { y: ground - 8 }); // under the world
+    expect(ctx.room.stats.heightRejected).toBe(2);
+    expect(p.inbox.some((m) => m.t === 'correct')).toBe(true);
   });
 });
