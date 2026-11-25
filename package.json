@@ -20,7 +20,8 @@
     "netproof": "npm run proof -w @alloy/server",
     "world": "npm run build -w @alloy/web && tsx apps/server/src/worldMain.ts",
     "world:lan": "npm run build -w @alloy/web && tsx apps/server/src/worldMain.ts --lan",
-    "world:start": "tsx apps/server/src/worldMain.ts"
+    "world:start": "tsx apps/server/src/worldMain.ts",
+    "devlog": "node tools/devlog.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",
