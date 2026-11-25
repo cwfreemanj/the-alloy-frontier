@@ -366,6 +366,23 @@ test('skills: learned at a mastery milestone, used from the skill bar, rearrange
   expect(errors).toEqual([]);
 });
 
+test('versioned build and performance report (M4 evidence)', async ({ page }) => {
+  const errors = await newGame(page);
+  // The title screen showed the build; the pause menu shows it too, with the performance report.
+  await page.waitForTimeout(1500); // a little frame history for the report
+  await page.evaluate(() => (window as unknown as { __alloy: { game: { openPause: () => void } } }).__alloy.game.openPause());
+  await expect(page.getByTestId('build-label')).toContainText(/Build v\d+\.\d+\.\d+ \(/);
+  await page.getByTestId('copy-perf-report').click();
+  const report = page.getByTestId('perf-report');
+  await expect(report).toBeVisible();
+  const text = await report.inputValue();
+  expect(text).toContain('Alloy Frontier performance report');
+  expect(text).toMatch(/Build: v\d+\.\d+\.\d+/);
+  expect(text).toMatch(/Frame rate \(last \d+ frames\): average \d+ FPS/);
+  expect(text).toContain('graphics preset:');
+  expect(errors).toEqual([]);
+});
+
 test('herbs and potions: pick Emberleaf, brew a salve, heal with key 5', async ({ page }) => {
   const errors = await newGame(page);
   const herb = { id: 'herb-0', x: 4.32, z: -9 }; // HERB_NODES[0]

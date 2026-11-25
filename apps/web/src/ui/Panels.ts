@@ -1,4 +1,5 @@
 /** Merchant, dialogue, pause/settings, title and summary panels. */
+import { buildLabel } from '../buildInfo';
 import { MERCHANT_STOCK, materialTotal, merchantPreview } from '@alloy/crafting';
 import { itemDisplayName, type ItemInstance } from '@alloy/item-gen';
 import { QUEST_EDGE_YOU_MAKE, smithXpToNext, weaponXpToNext } from '@alloy/game-rules';
@@ -125,8 +126,25 @@ export function pausePanel(opts: {
   onNewGame: () => void;
   onSettings: (s: Settings) => void;
   saveInfo: string;
+  /** Text of a performance report for this machine (copied to the clipboard). */
+  onPerfReport?: () => string;
+  build?: string;
 }): HTMLElement {
   const s = { ...opts.settings };
+  // Performance report: copy to the clipboard; if the browser refuses, show it to copy by hand.
+  const reportOut = h('textarea', { class: 'perf-report', readonly: true, rows: 11, 'aria-label': 'Performance report', 'data-testid': 'perf-report', style: 'display:none' }) as HTMLTextAreaElement;
+  const reportNote = h('span', { class: 'small muted' }, 'Play for a minute first: the report covers the last ~10 seconds.');
+  const reportBtn = h('button', { class: 'btn', 'data-testid': 'copy-perf-report' }, 'Copy performance report');
+  reportBtn.addEventListener('click', () => {
+    if (!opts.onPerfReport) return;
+    const text = opts.onPerfReport();
+    reportOut.value = text;
+    reportOut.style.display = '';
+    void navigator.clipboard
+      ?.writeText(text)
+      .then(() => (reportNote.textContent = 'Copied. Paste it into the playtest notes.'))
+      .catch(() => (reportNote.textContent = 'Select the text below and copy it.'));
+  });
   const quality = h('select', { 'aria-label': 'Graphics quality' }, ...(['low', 'medium', 'high'] as const).map((q) => h('option', { value: q, selected: q === s.quality }, q))) as HTMLSelectElement;
   const sens = h('input', { type: 'range', min: 0.3, max: 2.5, step: 0.1, value: s.sensitivity, 'aria-label': 'Mouse sensitivity' }) as HTMLInputElement;
   const inv = h('input', { type: 'checkbox', checked: s.invertY, 'aria-label': 'Invert Y' }) as HTMLInputElement;
@@ -164,8 +182,12 @@ export function pausePanel(opts: {
         h('h3', null, 'Settings'),
         h('div', { class: 'controls-grid' }, h('span', null, 'Graphics'), quality, h('span', null, 'Mouse sensitivity'), sens, h('span', null, 'Invert camera Y'), inv, h('span', null, 'Reduce camera shake'), shake, h('span', null, 'Performance overlay'), perf, h('span', null, 'Music volume'), music, h('span', null, 'Sound effects volume'), sfx),
         h('div', { class: 'small dim' }, 'Graphics changes apply immediately (anti-aliasing applies after reload).'),
+        opts.onPerfReport ? h('h3', null, 'Performance report') : null,
+        opts.onPerfReport ? h('div', { class: 'row' }, reportBtn, reportNote) : null,
+        opts.onPerfReport ? reportOut : null,
         h('h3', null, 'Controls'),
         controlsGrid(),
+        opts.build ? h('div', { class: 'small dim', 'data-testid': 'build-label' }, `Build ${opts.build}`) : null,
       ),
     ),
   );
@@ -322,7 +344,7 @@ export function titleScreen(opts: TitleOptions): HTMLElement {
       chars.length ? h('div', { class: 'char-row' }, h('span', { class: 'small muted' }, 'Choose your character'), h('div', { class: 'char-cards', role: 'radiogroup', 'aria-label': 'Character' }, ...cards)) : null,
       accountBlock,
       guestBlock,
-      h('div', { class: 'foot' }, 'Prototype build · GDD v0.4 · Click the view to capture the mouse, Esc to release'),
+      h('div', { class: 'foot' }, `Prototype ${buildLabel()} · GDD v0.5 · Click the view to capture the mouse, Esc to release`),
     ),
   );
 }

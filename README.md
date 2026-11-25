@@ -6,6 +6,13 @@ A browser-first 3D action MMORPG prototype: one shared world where everyone who 
 game is online together, with crafting at the heart of it (gather, forge your own weapon,
 fight with it). Built with TypeScript, Three.js and Vite; a small Node server runs the world.
 
+## Status
+
+The First Forge vertical slice has passed GDD gates A–D (combat, crafting, network, integrated
+quest) and is at **M4, quality acceptance**: see [docs/M4.md](docs/M4.md) for what's left, and
+[docs/GDD-v0.5.md](docs/GDD-v0.5.md) for what's built and the next tickets. Playtesters:
+[docs/PLAYTEST.md](docs/PLAYTEST.md).
+
 ## Play / run locally
 
 You need [Node.js](https://nodejs.org) 22 or newer.
