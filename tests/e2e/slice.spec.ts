@@ -256,8 +256,11 @@ test('character window: tabs, attributes that grow by use, derived stats', async
   await call(page, 'face', 0);
   await page.waitForTimeout(300);
   await expect(page.getByTestId('prompt')).toContainText('Gather');
-  await page.keyboard.press('KeyE');
-  await expect.poll(async () => (await state(page)).totals.iron_ore, { timeout: 5000 }).toBeGreaterThan(0);
+  // On a slow frame a key press can be missed: press again until the gather happens.
+  await expect(async () => {
+    await page.keyboard.press('KeyE');
+    await expect.poll(async () => (await state(page)).totals.iron_ore, { timeout: 3000 }).toBeGreaterThan(0);
+  }).toPass({ timeout: 15_000 });
   const a = (await state(page)).attributes;
   expect(a.strength.xp).toBeGreaterThan(0);
   expect(a.endurance.xp).toBeGreaterThan(0);

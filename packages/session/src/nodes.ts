@@ -30,9 +30,27 @@ export function nodeYield(def: NodeDef, gatherIndex: number): number {
   return new Rng(`yield:${def.id}:${gatherIndex}`).int(1, 2);
 }
 
-/** Make sure every node in the world has runtime state in this character. */
+const FULL: Readonly<NodeState> = Object.freeze({ charges: NODE_MAX_CHARGES, respawnAt: 0, gathers: 0 });
+
+/** A node's state in this character; untouched nodes are full and have no stored entry. */
+export function nodeState(data: SessionData, id: string): Readonly<NodeState> {
+  return data.world.nodes[id] ?? FULL;
+}
+
+/** The stored state of a node, created when it is first gathered. */
+export function nodeStateForGather(data: SessionData, id: string): NodeState {
+  return (data.world.nodes[id] ??= { charges: NODE_MAX_CHARGES, respawnAt: 0, gathers: 0 });
+}
+
+/**
+ * Tidy a character's node states: drop entries for nodes that no longer exist and full ones
+ * (they are the default). Keeps saves and server updates small now that the world has
+ * hundreds of nodes. (Older saves stored every node.)
+ */
 export function ensureNodes(data: SessionData): void {
-  for (const n of ALL_RESOURCE_NODES) data.world.nodes[n.id] ??= { charges: NODE_MAX_CHARGES, respawnAt: 0, gathers: 0 };
+  for (const [id, rt] of Object.entries(data.world.nodes)) {
+    if (!BY_ID.has(id) || (rt.charges >= NODE_MAX_CHARGES && rt.respawnAt === 0)) delete data.world.nodes[id];
+  }
 }
 
 /** Refill depleted nodes whose regrow time (in play-time seconds) has passed. */

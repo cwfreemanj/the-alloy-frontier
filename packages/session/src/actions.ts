@@ -9,7 +9,7 @@ import { EQUIP_SLOTS, type EquipSlot, type ForgeRequest } from '@alloy/crafting'
 import { ATTACKS, ATTRIBUTE_IDS, GATHER_PROFICIENCY_XP, PROFICIENCY_YIELD_BONUS, proficiencyFor, proficiencyLevel, damageTypeOf, mitigate, resistanceMultiplier, ATTRIBUTE_XP, ENEMIES, computeOutgoingHit, critContest, staggerContest, type AttackDefinition, type AttributeId, type AttributeLevels, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
 import { Rng, getBlueprint, materialName, type DamageType, type ItemInstance, type ToolKind, type WeaponStats } from '@alloy/item-gen';
 import { FORGE_ANVIL, NPCS } from '@alloy/world';
-import { NODE_RESPAWN_SECONDS, ensureNodes, nodeDef, nodeTraits, nodeYield, regrowNodes } from './nodes';
+import { NODE_RESPAWN_SECONDS, nodeDef, nodeStateForGather, nodeTraits, nodeYield, regrowNodes } from './nodes';
 import type { Session, SessionEvent } from './session';
 
 /** Interaction ranges in metres (what the browser offers the prompt at). */
@@ -72,9 +72,8 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
       const def = nodeDef(a.node);
       if (!def) return no('unknown_node', 'There is nothing to gather there.');
       if (!near(ctx, def.pos, RANGE.node)) return no('out_of_range', 'Move closer to gather.');
-      ensureNodes(s.data);
       regrowNodes(s.data);
-      const rt = s.data.world.nodes[def.id];
+      const rt = nodeStateForGather(s.data, def.id);
       if (rt.charges <= 0) return no('depleted', 'This deposit is depleted. It will replenish.');
       const kind = toolFor(def.material);
       const power = s.toolPower(kind);

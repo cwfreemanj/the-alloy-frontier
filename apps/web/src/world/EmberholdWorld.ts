@@ -4,6 +4,7 @@
  * wind grass and post-processing (bloom + colour grade). Gameplay (NPCs, enemies, nodes, quests)
  * is untouched: positions come from @alloy/world's Layout, colliders from the same baked scene.
  */
+import type { InstanceHandle } from '../entities/WorldObjects';
 import * as THREE from 'three';
 import {
   EMBERHOLD_TIME,
@@ -79,6 +80,9 @@ function pathAt(s: number): { x: number; z: number; tx: number; tz: number } {
 const PATH_LENGTH = PATH.slice(1).reduce((s, p, i) => s + Math.hypot(p.x - PATH[i].x, p.z - PATH[i].z), 0);
 
 const UP = new THREE.Vector3(0, 1, 0);
+/** Scenery models that gatherable nodes animate (falling trees). */
+const ANIMATED = new Set(['ironwood_tree']);
+
 function itemMatrix(it: WorldItem, out: THREE.Matrix4): THREE.Matrix4 {
   const q = new THREE.Quaternion().setFromAxisAngle(UP, THREE.MathUtils.degToRad(it.yaw));
   return out.compose(new THREE.Vector3(it.x, terrainHeight(it.x, it.z) + it.y, it.z), q, new THREE.Vector3().setScalar(it.scale));
@@ -102,6 +106,12 @@ export class EmberholdWorld {
   private fields: ParticleField[] = [];
   private lights: HotLight[] = [];
   private grass: THREE.InstancedMesh | null = null;
+  private handles = new Map<string, InstanceHandle>();
+
+  /** The instance of a scenery model at a position (grove trees), for nodes that animate it. */
+  instanceAt(model: string, x: number, z: number): InstanceHandle | null {
+    return this.handles.get(`${model}|${x},${z}`) ?? null;
+  }
   private grassTime = { value: 0 };
   private post: Post | null = null;
   private quality: Quality;
@@ -187,7 +197,16 @@ export class EmberholdWorld {
       if (!model) continue;
       for (const p of model.parts) {
         const im = new THREE.InstancedMesh(p.geometry, p.material, items.length);
-        items.forEach((it, i) => im.setMatrixAt(i, itemMatrix(it, m4)));
+        items.forEach((it, i) => {
+          im.setMatrixAt(i, itemMatrix(it, m4));
+          // Remember where gatherable scenery lives, so a node can animate its own instance.
+          if (ANIMATED.has(id)) {
+            const key = `${id}|${it.x},${it.z}`;
+            const h = this.handles.get(key) ?? { parts: [] };
+            h.parts.push({ mesh: im, index: i });
+            this.handles.set(key, h);
+          }
+        });
         im.instanceMatrix.needsUpdate = true;
         im.castShadow = !NO_SHADOW.has(id);
         im.receiveShadow = true;

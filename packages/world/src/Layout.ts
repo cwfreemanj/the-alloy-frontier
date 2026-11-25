@@ -55,6 +55,8 @@ export interface NodeDef {
   /** Visual size (1 = standard node) and facing in degrees; generated seams vary these. */
   scale?: number;
   yaw?: number;
+  /** Drawn as part of the instanced scenery (grove trees), not as its own object. */
+  instanced?: boolean;
 }
 
 export const RESOURCE_NODES: NodeDef[] = [
