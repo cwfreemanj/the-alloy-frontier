@@ -30,7 +30,9 @@ export type Sfx =
   | 'uiClose'
   | 'click'
   | 'herb'
-  | 'drink';
+  | 'drink'
+  | 'chest'
+  | 'rummage';
 
 const TRACKS: Record<MusicTrack, string> = {
   town: `${import.meta.env.BASE_URL}audio/music/town-mossheart-village.mp3`,
@@ -288,6 +290,15 @@ const SOUNDS: Record<Sfx, (s: Synth) => void> = {
   uiOpen: (s) => s.tone('sine', 520, 780, 0, 0.12, 0.005, 0.12),
   uiClose: (s) => s.tone('sine', 700, 440, 0, 0.1, 0.005, 0.1),
   click: (s) => s.tone('triangle', 900, 880, 0, 0.08, 0.001, 0.05),
+  chest: (s) => {
+    // Creaking hinge, then a small clink.
+    s.tone('sawtooth', 180, 120, 0, 0.05, 0.02, 0.35);
+    s.noise('lowpass', 700, 300, 1, 0, 0.18, 0.02, 0.3);
+    s.tone('sine', 1320, 1320, 0.32, 0.08, 0.005, 0.35);
+  },
+  rummage: (s) => {
+    for (let i = 0; i < 3; i++) s.noise('bandpass', 900 + i * 300, 600, 1.1, i * 0.11, 0.16, 0.01, 0.1);
+  },
   herb: (s) => {
     s.noise('bandpass', 2400, 1600, 1.2, 0, 0.22, 0.02, 0.18);
     s.noise('bandpass', 3200, 2200, 1.5, 0.08, 0.16, 0.02, 0.14);

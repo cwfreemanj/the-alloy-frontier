@@ -4,7 +4,8 @@
  * exactly the same colliders as the browser.
  */
 import { ColliderWorld } from './Colliders';
-import { PATH, RESOURCE_NODES, type NodeDef } from './Layout';
+import { FORGE_ANVIL, PATH, RESOURCE_NODES, type NodeDef } from './Layout';
+import { FORGE_HALL, FORGE_SHAPES } from './forge';
 import { terrainHeight } from './Terrain';
 import { EMBERHOLD_MODELS, EMBERHOLD_SEAMS, EMBERHOLD_STATIC, type EmberholdModel } from './emberholdData';
 
@@ -29,6 +30,10 @@ export function emberholdItems(): WorldItem[] {
       const s = EMBERHOLD_STATIC;
       items.push({ model: EMBERHOLD_MODELS[s[i]], x: s[i + 1], z: s[i + 2], y: s[i + 3], yaw: s[i + 4], scale: s[i + 5] });
     }
+    // The forge is walk-in now: Orla's anvil stands inside, in front of the hearth (the baked
+    // scene still has it outside, where the old shed's front was).
+    const anvil = items.find((it) => it.model === 'forge_anvil');
+    if (anvil) Object.assign(anvil, { x: FORGE_ANVIL.x, z: FORGE_ANVIL.z, yaw: FORGE_HALL.yaw });
   }
   return items;
 }
@@ -47,10 +52,12 @@ export const GROVE_NODES: NodeDef[] = emberholdItems()
 
 
 /** Collision shapes in a model's own metres: circles [x, z, r, height] and rectangles [x, z, halfW, halfD, height]. */
-type Shape = ['c', number, number, number, number] | ['r', number, number, number, number, number];
+type Opts = { bottom?: number; walk?: boolean };
+type Shape = ['c', number, number, number, number, Opts?] | ['r', number, number, number, number, number, Opts?];
 const TRUNK: Shape[] = [['c', 0, 0, 0.35, 8]];
 const SHAPES: Partial<Record<EmberholdModel, Shape[]>> = {
-  forge_hall: [['r', 0, -0.05, 4.0, 3.45, 6.4]],
+  // Walk-in: walls, hearth, loft and stairs (see forge.ts).
+  forge_hall: FORGE_SHAPES,
   forge_anvil: [['r', 0, -0.65, 0.95, 0.95, 1.0]],
   barrels_crates: [['r', -0.05, -0.25, 1.15, 0.85, 1.1]],
   steam_pipes: [['r', 0.3, 0, 2.3, 0.3, 2.6]],
@@ -124,8 +131,10 @@ function addItem(world: ColliderWorld, it: WorldItem): void {
   for (const sh of shapes) {
     const x = it.x + (cos * sh[1] + sin * sh[2]) * s;
     const z = it.z + (-sin * sh[1] + cos * sh[2]) * s;
+    const o = (sh[0] === 'c' ? sh[5] : sh[6]) ?? {};
+    const span = { ...(o.bottom !== undefined ? { bottom: base + o.bottom * s } : {}), ...(o.walk ? { walk: true } : {}) };
     if (sh[0] === 'c') {
-      world.add({ type: 'circle', x, z, r: sh[3] * s, top: base + sh[4] * s });
+      world.add({ type: 'circle', x, z, r: sh[3] * s, top: base + sh[4] * s, ...span });
       continue;
     }
     const hw = sh[3] * s;
@@ -135,8 +144,8 @@ function addItem(world: ColliderWorld, it: WorldItem): void {
       const swap = Math.abs(sin) > 0.5;
       const ex = swap ? hd : hw;
       const ez = swap ? hw : hd;
-      world.add({ type: 'box', minX: x - ex, maxX: x + ex, minZ: z - ez, maxZ: z + ez, top });
-    } else world.add({ type: 'obb', x, z, hw, hd, cos, sin, top });
+      world.add({ type: 'box', minX: x - ex, maxX: x + ex, minZ: z - ez, maxZ: z + ez, top, ...span });
+    } else world.add({ type: 'obb', x, z, hw, hd, cos, sin, top, ...span });
   }
 }
 

@@ -8,7 +8,8 @@
 import { EQUIP_SLOTS, type EquipSlot, type ForgeRequest } from '@alloy/crafting';
 import { ATTACKS, ATTRIBUTE_IDS, SKILLS, isSkill, GATHER_PROFICIENCY_XP, PROFICIENCY_YIELD_BONUS, proficiencyFor, proficiencyLevel, damageTypeOf, mitigate, resistanceMultiplier, ATTRIBUTE_XP, ENEMIES, computeOutgoingHit, critContest, staggerContest, type AttackDefinition, type AttributeId, type AttributeLevels, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
 import { Rng, getBlueprint, materialName, type DamageType, type ItemInstance, type ToolKind, type WeaponStats } from '@alloy/item-gen';
-import { FORGE_ANVIL, NPCS } from '@alloy/world';
+import { FORGE_ANVIL, NPCS, SEARCH_HEIGHT, SEARCH_RANGE, containerDef, terrainHeight } from '@alloy/world';
+import { searchContainer } from './containers';
 import { NODE_RESPAWN_SECONDS, nodeDef, nodeStateForGather, nodeTraits, nodeYield, regrowNodes } from './nodes';
 import type { Session, SessionEvent } from './session';
 
@@ -31,11 +32,14 @@ export type CharAction =
   | { k: 'respec' }
   | { k: 'skillbar'; slot: number; skill: string | null }
   | { k: 'brew'; recipe: string; qty: number }
-  | { k: 'consume'; item: string };
+  | { k: 'consume'; item: string }
+  | { k: 'search'; id: string };
 
 export interface ActionContext {
   /** Where the player is, as the authority knows it. Null = unknown (range-checked actions fail). */
   pos: Vec2 | null;
+  /** Height of the player's feet, when known (searching a container up in a loft). */
+  y?: number;
   /** Extra range allowed for latency (the server uses RANGE_SLACK; local play uses 0). */
   slack?: number;
 }
@@ -147,6 +151,14 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
     }
     case 'brew': {
       const { value: r, events } = captureEvents(s, () => s.brew(a.recipe, a.qty));
+      return r.ok ? { ok: true, events } : no(r.error, r.message, events);
+    }
+    case 'search': {
+      const def = containerDef(a.id);
+      if (!def) return no('unknown_container', 'Nothing to search here.');
+      if (!near(ctx, def.pos, SEARCH_RANGE)) return no('out_of_range', 'Move closer to search.');
+      if (ctx.y !== undefined && Math.abs(ctx.y - (terrainHeight(def.pos.x, def.pos.z) + def.floor)) > SEARCH_HEIGHT) return no('out_of_range', 'Move closer to search.');
+      const { value: r, events } = captureEvents(s, () => searchContainer(s, a.id));
       return r.ok ? { ok: true, events } : no(r.error, r.message, events);
     }
     case 'consume': {

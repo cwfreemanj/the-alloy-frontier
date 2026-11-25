@@ -138,6 +138,8 @@ function charAction(v: unknown): CharAction | null {
       return { k: 'respec' };
     case 'brew':
       return str(v.recipe, 32) && int(v.qty, 1, 20) ? { k: 'brew', recipe: v.recipe, qty: v.qty } : null;
+    case 'search':
+      return str(v.id, 40) ? { k: 'search', id: v.id } : null;
     case 'consume':
       return str(v.item, 32) ? { k: 'consume', item: v.item } : null;
     case 'skillbar':

@@ -26,6 +26,8 @@ export interface SessionData {
     wardenDefeated: boolean;
     nodes: Record<string, NodeState>;
     introSeen: boolean;
+    /** Searched containers: play time when each refills, and times searched (optional in older saves). */
+    containers?: Record<string, { readyAt: number; n: number }>;
   };
   stats: { kills: Record<string, number>; crafted: number; deaths: number; startedAt: number; completedAt: number | null };
   /** Snapshot taken when the quest ends (for the summary screen). */

@@ -45,7 +45,8 @@ export const NPCS = {
 } as const;
 export type NpcId = keyof typeof NPCS;
 
-export const FORGE_ANVIL: Vec2 = { x: -12.5, z: 10.5 };
+/** Orla's anvil, inside the forge in front of the hearth (FORGE_PLAN.anvil; the baked scene places the model here). */
+export const FORGE_ANVIL: Vec2 = { x: -15.03, z: 14.81 };
 export const TRAINING_POST: Vec2 = { x: 5, z: -10 };
 
 export interface NodeDef {

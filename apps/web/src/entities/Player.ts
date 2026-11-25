@@ -227,7 +227,13 @@ export class Player {
     this.position.z = resolved.z;
 
     // Vertical
-    const ground = terrainHeight(this.position.x, this.position.z);
+    // The floor underfoot: the terrain, or a step / loft (walkable colliders) within a step's reach.
+    const ground = this.colliders.groundAt(this.position.x, this.position.z, this.position.y, terrainHeight(this.position.x, this.position.z));
+    // Walked off an edge (the loft, the stairs' side): fall instead of snapping down.
+    if (this.grounded && ground < this.position.y - 0.6) {
+      this.grounded = false;
+      this.velocity.y = 0;
+    }
     if (!this.grounded) {
       this.velocity.y -= 20 * dt;
       this.position.y += this.velocity.y * dt;

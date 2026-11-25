@@ -2,6 +2,7 @@
  * The First Forge: integrates rendering, input, rules modules, UI and persistence.
  * Gameplay decisions are delegated to @alloy/* packages; this file wires them together.
  */
+import { INSPECTABLES } from '../world/Inspectables';
 import * as THREE from 'three';
 import {
   ATTRIBUTES,
@@ -35,14 +36,14 @@ import { PLAYER_RADIUS, Player } from '../entities/Player';
 import { Npc, ResourceNode } from '../entities/WorldObjects';
 import { Effects } from '../fx/Effects';
 import { SaveSystem } from '../state/Save';
-import { Session, nodeState, applyAction, characterStats, ensureNodes, newSessionData, regrowNodes, damageAgainst, hitAgainst, weaponDamageType, rewardHit, rewardHitTaken, rewardKill, toolFor, type CharAction, type SessionData, type SessionEvent } from '../state/Session';
+import { Session, containerCooldown, nodeState, applyAction, characterStats, ensureNodes, newSessionData, regrowNodes, damageAgainst, hitAgainst, weaponDamageType, rewardHit, rewardHitTaken, rewardKill, toolFor, type CharAction, type SessionData, type SessionEvent } from '../state/Session';
 import { CharacterWindow, type CharacterTab } from '../ui/CharacterWindow';
 import { GameAudio, type MusicTrack } from '../audio/GameAudio';
 import { ForgePanel } from '../ui/ForgePanel';
 import { Hud } from '../ui/Hud';
 import { MerchantPanel, dialogPanel, pausePanel, summaryPanel, titleScreen, type Settings } from '../ui/Panels';
 import { h } from '../ui/dom';
-import { ALL_RESOURCE_NODES, ENEMY_SPAWNS, FORGE_ANVIL, NPCS, RESPAWN_POINT, ZONES, zoneAt, type Zone } from '@alloy/world';
+import { ALL_RESOURCE_NODES, CONTAINERS, ENEMY_SPAWNS, FORGE_ANVIL, SEARCH_HEIGHT, SEARCH_RANGE, NPCS, RESPAWN_POINT, ZONES, zoneAt, type Zone } from '@alloy/world';
 import { terrainHeight } from '@alloy/world';
 import { EmberholdWorld } from '../world/EmberholdWorld';
 import { orlaDialogue } from './Dialogue';
@@ -76,6 +77,12 @@ function loadCharacter(): PlayerCharacterId {
   return DEFAULT_PLAYER_CHARACTER;
 }
 
+/** Level colour against the player's rank: grey (much lower) to red (much higher). */
+function levelColor(diff: number): string {
+  return diff >= 3 ? '#ff5a4a' : diff >= 1 ? '#ffa040' : diff === 0 ? '#ffe27a' : diff >= -2 ? '#8fd88a' : '#a8a8a8';
+}
+
+type Interact = 'npc' | 'anvil' | 'node' | 'inspect' | 'search';
 type Modal = null | 'title' | 'pause' | 'forge' | 'inventory' | 'merchant' | 'dialog' | 'summary';
 
 const SETTINGS_KEY = 'alloy-frontier.settings.v1';
@@ -335,7 +342,7 @@ export class Game {
       if (!r.ok && r.message) this.hud.toast(r.message, 'warn');
       return r;
     }
-    const r = applyAction(this.session, a, { pos: this.player.pos2 });
+    const r = applyAction(this.session, a, { pos: this.player.pos2, y: this.player.position.y });
     // Refusals from the rules themselves were already shown as toasts by the session.
     if (!r.ok && !r.events.some((e) => e.type === 'toast' && e.tone === 'warn')) this.hud.toast(r.message, 'warn');
     return r.ok ? { ok: true, item: r.item } : { ok: false, error: r.error, message: r.message };
@@ -523,6 +530,16 @@ export class Game {
         case 'skillbar':
           this.panel?.render();
           break;
+        case 'searched': {
+          const c = CONTAINERS.find((x) => x.id === e.id);
+          this.audio.sfx(c?.kind === 'barrel' ? 'rummage' : 'chest');
+          if (e.found) {
+            this.audio.sfx('coin', 0.7);
+            if (c) this.effects.sparks(new THREE.Vector3(c.pos.x, terrainHeight(c.pos.x, c.pos.z) + c.floor + 0.6, c.pos.z), '#ffd27a', 14, 1.4);
+          }
+          this.panel?.render();
+          break;
+        }
         case 'consumed': {
           // Health and stamina are the browser's; the rules decided the amounts.
           const c = this.player.combat;
@@ -792,6 +809,13 @@ export class Game {
     this.forgePanel = p;
   }
 
+  /** Examine something in the world (lore card). */
+  private openInspect(id: string): void {
+    const it = INSPECTABLES.find((x) => x.id === id);
+    if (!it) return;
+    this.setModal('dialog', dialogPanel(it.title, it.subtitle, it.lines, [{ label: 'Step back', primary: true, action: () => this.closeModal() }]));
+  }
+
   openMerchant(): void {
     const p = new MerchantPanel(this.session, () => this.closeModal(), (stock, qty) => this.act({ k: 'buy', stock, qty }));
     this.setModal('merchant', p.el);
@@ -867,6 +891,7 @@ export class Game {
       this.online.update(rawDt);
     }
     this.world.update(this.time, this.player.position);
+    this.world.containers.update(rawDt, this.time, (id) => containerCooldown(this.session, id) > 0);
     this.effects.update(rawDt);
     this.world.render(this.time);
     this.updateLabels();
@@ -1290,10 +1315,10 @@ export class Game {
   }
 
   // ---------------- Interaction ----------------
-  private nearestInteractable(): { kind: 'npc' | 'anvil' | 'node'; id: string; label: string; node?: ResourceNode } | null {
+  private nearestInteractable(): { kind: Interact; id: string; label: string; node?: ResourceNode } | null {
     const p = this.player.pos2;
-    let best: { kind: 'npc' | 'anvil' | 'node'; id: string; label: string; node?: ResourceNode; d: number } | null = null;
-    const consider = (kind: 'npc' | 'anvil' | 'node', id: string, label: string, d: number, node?: ResourceNode) => {
+    let best: { kind: Interact; id: string; label: string; node?: ResourceNode; d: number } | null = null;
+    const consider = (kind: Interact, id: string, label: string, d: number, node?: ResourceNode) => {
       if (!best || d < best.d) best = { kind, id, label, d, node };
     };
     for (const n of this.npcs) {
@@ -1302,6 +1327,17 @@ export class Game {
     }
     const da = dist2(FORGE_ANVIL, p);
     if (da < 2.8) consider('anvil', 'anvil', 'Use the forge', da);
+    for (const c of CONTAINERS) {
+      const d = dist2(c.pos, p);
+      if (d >= SEARCH_RANGE - 0.2 || Math.abs(this.player.position.y - (terrainHeight(c.pos.x, c.pos.z) + c.floor)) > SEARCH_HEIGHT) continue;
+      const wait = containerCooldown(this.session, c.id);
+      const what = c.kind === 'barrel' ? 'the barrels' : c.kind === 'chest' ? 'the chest' : 'the hidden cache';
+      consider('search', c.id, wait > 0 ? `Searched · refills in ${Math.ceil(wait / 60)} min` : `Search ${what}`, d);
+    }
+    for (const it of INSPECTABLES) {
+      const d = dist2(it.pos, p);
+      if (d < 1.4 && Math.abs(this.player.position.y - it.floor) < 1) consider('inspect', it.id, it.label, d - 0.5);
+    }
     for (const n of this.nodes) {
       const d = dist2(n.pos2, p);
       if (d < 2.6) {
@@ -1327,6 +1363,11 @@ export class Game {
       else this.openMerchant();
     } else if (it.kind === 'anvil') {
       this.openForge();
+    } else if (it.kind === 'search') {
+      if (containerCooldown(this.session, it.id) > 0) this.hud.toast('Already searched. It refills over time.', 'info');
+      else void this.act({ k: 'search', id: it.id });
+    } else if (it.kind === 'inspect') {
+      this.openInspect(it.id);
     } else if (it.kind === 'node' && it.node) {
       const rt = nodeState(this.session.data, it.id);
       if (rt.charges <= 0) {
@@ -1492,15 +1533,26 @@ export class Game {
       const id = `e:${e.id}`;
       const d = dist2(e.pos2, this.player.pos2);
       const engaged = e.brain.alive && (d < 16 || this.lockTarget === e) && (e.brain.state !== 'idle' && e.brain.state !== 'patrol' || d < 9 || this.lockTarget === e || e.brain.health < e.def.maxHealth);
-      if (!show || !engaged) {
+      // The name and level show from further away than the health bar, so you can size a fight up.
+      const named = e.brain.alive && (d < 28 || this.lockTarget === e);
+      if (!show || !named) {
         this.hud.hideLabel(id);
         continue;
       }
       const el = this.hud.label(id, () => {
         const fill = h('div', { class: 'fill', style: 'background:linear-gradient(90deg,#8e2a1e,#d24a3a)' });
         const st = h('div', { class: 'state' });
-        return h('div', { class: `enemy-bar ${e.def.kind === 'elite' ? 'elite' : ''}` }, h('div', { class: 'nm' }, e.def.name), h('div', { class: 'bar' }, fill), st);
+        const lv = h('span', { class: 'lv', 'data-testid': `enemy-level-${e.id}` }, e.def.kind === 'dummy' ? '' : `Lv ${e.def.level}`);
+        return h(
+          'div',
+          { class: `enemy-bar ${e.def.kind === 'elite' ? 'elite' : ''}` },
+          h('div', { class: 'nm' }, lv, e.def.kind === 'elite' ? h('span', { class: 'tag' }, 'ELITE') : null, h('span', null, e.def.name)),
+          h('div', { class: 'bar' }, fill),
+          st,
+        );
       });
+      (el.querySelector('.bar') as HTMLElement).style.visibility = engaged ? '' : 'hidden';
+      (el.querySelector('.lv') as HTMLElement).style.color = levelColor(e.def.level - this.session.data.progression.adventurer.rank);
       const sp = this.hud.project(this.camera, e.position, 2.15 * e.def.scale + 0.2, w, hgt);
       el.style.display = sp.visible ? '' : 'none';
       el.style.left = `${sp.x}px`;
