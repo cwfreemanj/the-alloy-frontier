@@ -175,8 +175,10 @@ export class WorldRoom {
       resetMoveGuard(g, s.x, s.z, t);
       return s;
     }
-    // Flying or sinking: the height must be one a player can reach from the terrain.
-    if (!heightOk(s.y, terrainHeight(s.x, s.z))) {
+    // Flying or sinking: the height must be one a player can reach from the terrain, or from a
+    // floor close by (the forge loft and its stairs; 4 m covers dropping off the edge).
+    const ground = terrainHeight(s.x, s.z);
+    if (!heightOk(s.y, ground, worldColliders().highestFloorNear(s.x, s.z, 4, ground))) {
       this.stats.heightRejected++;
       return this.refuseMove(me, s, t);
     }
@@ -216,7 +218,7 @@ export class WorldRoom {
     const t = this.now();
     if (a.k === 'gather' && t - c.lastGatherAt < MIN_GATHER_INTERVAL_MS) return refuse('too_fast', 'Still gathering.');
     const pos = me.state ? { x: me.state.x, z: me.state.z } : null;
-    const r = applyAction(c.session, a, { pos, slack: RANGE_SLACK });
+    const r = applyAction(c.session, a, { pos, y: me.state?.y, slack: RANGE_SLACK });
     if (!r.ok) return refuse(r.error, r.message);
     this.stats.acts++;
     if (a.k === 'gather') c.lastGatherAt = t;

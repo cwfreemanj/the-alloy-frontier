@@ -18,6 +18,7 @@ Every asset the game ships, where it came from, and its license. Add a row whene
 | `audio/music/combat-goblin-banner-run.mp3` ("Goblin Banner Run") | Combat music (enemies engaged) | Same as above | Same as above | Audio pass |
 | `audio/music/boss-forge-warden.mp3` ("Forge Warden") | Boss music (Foundry Warden) | Same as above | Same as above | Audio pass |
 | Emberhold forge building | The smithy at the anvil (replaces the Model Workshop `forge_hall` shed) | Built in code with canvas-drawn textures (`apps/web/src/world/ForgeBuilding.ts`) | Project code | Forge pass |
+| Forge interior, Emberwake, chests and caches | Walk-in forge (hearth, loft, stairs, sword rack), Orla's masterwork sword "Emberwake", the loft chest and trail caches | Built in code (`apps/web/src/world/ForgeBuilding.ts`, `apps/web/src/world/ContainerProps.ts`) | Project code | Walk-in forge pass |
 | All sound effects | Swings, hits, blocks, gathering, tree falls, forge, chimes, UI | Synthesized in code with Web Audio (`apps/web/src/audio/GameAudio.ts`) | Project code | Audio pass |
 
 Still procedural (code): the Quarry Sentinel, training post, weapons, terrain, buildings, trees, effects.

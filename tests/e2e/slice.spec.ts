@@ -170,7 +170,7 @@ test('full loop: gather, forge (quick + masterwork UI), equip, elite, report, sa
   await expect(page.getByText("Bram's Frontier Goods")).toBeVisible();
   await page.keyboard.press('Escape');
   // Forge: Quick
-  await call(page, 'teleport', -11.5, 9);
+  await call(page, 'teleport', -14.94, 13.4); // inside the forge, in front of the anvil
   await page.waitForTimeout(200);
   await page.keyboard.press('KeyE');
   await page.getByTestId('quick-forge-confirm').click();
@@ -389,6 +389,34 @@ test('herbs and potions: pick Emberleaf, brew a salve, heal with key 5', async (
   await page.keyboard.press('Digit5');
   await expect.poll(async () => (await state(page)).health).toBeGreaterThan(before);
   await expect(page.getByTestId('potion-slot-5')).toContainText('×0');
+  expect(errors).toEqual([]);
+});
+
+test('walk-in forge: examine Emberwake, search barrels, read an enemy level', async ({ page }) => {
+  const errors = await newGame(page);
+  // Inside the forge, in front of Orla's masterwork on the left wall.
+  await expect(async () => {
+    await call(page, 'teleport', -13.24, 15.63);
+    await page.waitForTimeout(300);
+    await expect(page.getByTestId('prompt')).toContainText('Emberwake', { timeout: 2000 });
+    await page.keyboard.press('KeyE');
+    await expect(page.getByRole('dialog', { name: 'Emberwake' })).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 15_000 });
+  await expect(page.getByRole('dialog', { name: 'Emberwake' })).toContainText('Master Smith Orla');
+  await page.locator('[data-option="0"]').click();
+  await expect.poll(async () => (await state(page)).modal).toBeNull();
+  // The barrels by the forge: search once, then they are empty until they refill.
+  await expect(async () => {
+    await call(page, 'teleport', -18.34, 9.88);
+    await page.waitForTimeout(300);
+    await expect(page.getByTestId('prompt')).toContainText('Search the barrels', { timeout: 2000 });
+    await page.keyboard.press('KeyE');
+    await expect(page.getByTestId('prompt')).toContainText('Searched', { timeout: 2000 });
+  }).toPass({ timeout: 15_000 });
+  // Scavengers on the trail show their level from a distance.
+  await call(page, 'teleport', 4, 30);
+  await call(page, 'face', 0);
+  await expect(page.getByTestId('enemy-level-scav-1')).toHaveText('Lv 1', { timeout: 10_000 });
   expect(errors).toEqual([]);
 });
 

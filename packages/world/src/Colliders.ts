@@ -1,11 +1,34 @@
 /** Simple 2D colliders with heights for movement and camera collision. */
 import type { Vec2 } from '@alloy/game-rules';
 
+/**
+ * Every collider spans heights `bottom` (default: the ground) to `top`. A `walk` collider is also
+ * a floor: stair steps, a loft. Anyone whose feet are near its top can stand on it.
+ */
+interface Span {
+  top: number;
+  bottom?: number;
+  walk?: boolean;
+}
 export type Collider =
-  | { type: 'circle'; x: number; z: number; r: number; top: number }
-  | { type: 'box'; minX: number; maxX: number; minZ: number; maxZ: number; top: number }
+  | ({ type: 'circle'; x: number; z: number; r: number } & Span)
+  | ({ type: 'box'; minX: number; maxX: number; minZ: number; maxZ: number } & Span)
   /** Oriented box: centre, half extents along its local x / z axes, and the axes' rotation (cos, sin of yaw). */
-  | { type: 'obb'; x: number; z: number; hw: number; hd: number; cos: number; sin: number; top: number };
+  | ({ type: 'obb'; x: number; z: number; hw: number; hd: number; cos: number; sin: number } & Span);
+
+/** How high a step the player walks up without jumping. */
+export const STEP_UP = 0.45;
+/** Player height, for overhead colliders (a loft above): only these block if the head reaches them. */
+export const BODY_HEIGHT = 1.75;
+
+/** Is (x, z) inside the collider's footprint (grown by pad)? */
+function contains(c: Collider, x: number, z: number, pad: number): boolean {
+  if (c.type === 'circle') return Math.hypot(x - c.x, z - c.z) < c.r + pad;
+  if (c.type === 'box') return x > c.minX - pad && x < c.maxX + pad && z > c.minZ - pad && z < c.maxZ + pad;
+  const ox = x - c.x;
+  const oz = z - c.z;
+  return Math.abs(c.cos * ox - c.sin * oz) < c.hw + pad && Math.abs(c.sin * ox + c.cos * oz) < c.hd + pad;
+}
 
 /** World-space axis-aligned bounds of a collider. */
 function bounds(c: Collider): [number, number, number, number] {
@@ -71,7 +94,8 @@ export class ColliderWorld {
     let { x, z } = p;
     for (let iter = 0; iter < 3; iter++) {
       for (const c of this.near(x, z, r + 2)) {
-        if (c.top < feetY + 0.35) continue; // can step onto / jump over low obstacles
+        if (c.top < feetY + (c.walk ? STEP_UP : 0.35)) continue; // can step onto / jump over low obstacles
+        if (c.bottom !== undefined && c.bottom > feetY + BODY_HEIGHT) continue; // overhead: walk underneath
         if (c.type === 'circle') {
           const dx = x - c.x;
           const dz = z - c.z;
@@ -106,17 +130,31 @@ export class ColliderWorld {
   /** Is the point inside a collider volume (for camera occlusion tests)? */
   blocksPoint(x: number, y: number, z: number, pad = 0.2): boolean {
     for (const c of this.near(x, z, 1)) {
-      if (y > c.top) continue;
-      if (c.type === 'circle') {
-        if (Math.hypot(x - c.x, z - c.z) < c.r + pad) return true;
-      } else if (c.type === 'box') {
-        if (x > c.minX - pad && x < c.maxX + pad && z > c.minZ - pad && z < c.maxZ + pad) return true;
-      } else {
-        const ox = x - c.x;
-        const oz = z - c.z;
-        if (Math.abs(c.cos * ox - c.sin * oz) < c.hw + pad && Math.abs(c.sin * ox + c.cos * oz) < c.hd + pad) return true;
-      }
+      if (y > c.top || (c.bottom !== undefined && y < c.bottom)) continue;
+      if (contains(c, x, z, pad)) return true;
     }
     return false;
+  }
+
+  /**
+   * The floor under someone at (x, z) whose feet are at feetY: the highest walkable top they can
+   * step onto (at most STEP_UP above their feet), or `base` (the terrain) when that is higher.
+   * `feet` is how far from the centre the feet still find a floor (so a step is climbed as soon
+   * as the front foot is on it).
+   */
+  groundAt(x: number, z: number, feetY: number, base: number, feet = 0.25): number {
+    let g = base;
+    for (const c of this.near(x, z, 1)) {
+      if (!c.walk || c.top <= g || c.top > feetY + STEP_UP) continue;
+      if (contains(c, x, z, feet)) g = c.top;
+    }
+    return g;
+  }
+
+  /** The highest walkable top within `radius` of (x, z), or `base` (for the server's height check). */
+  highestFloorNear(x: number, z: number, radius: number, base: number): number {
+    let g = base;
+    for (const c of this.near(x, z, radius)) if (c.walk && c.top > g && contains(c, x, z, radius)) g = c.top;
+    return g;
   }
 }

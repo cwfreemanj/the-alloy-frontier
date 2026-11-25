@@ -4,6 +4,7 @@
  * wind grass and post-processing (bloom + colour grade). Gameplay (NPCs, enemies, nodes, quests)
  * is untouched: positions come from @alloy/world's Layout, colliders from the same baked scene.
  */
+import { ContainerProps } from './ContainerProps';
 import type { InstanceHandle } from '../entities/WorldObjects';
 import { ForgeBuilding } from './ForgeBuilding';
 import * as THREE from 'three';
@@ -16,6 +17,8 @@ import {
   emberholdItems,
   fbm,
   playableSdf,
+  CONTAINERS,
+  insideForge,
   terrainHeight,
   type ColliderWorld,
   type WorldItem,
@@ -31,9 +34,9 @@ export type Quality = 'low' | 'medium' | 'high';
 const EMITTERS: Record<string, { preset: ParticlePreset; at: [number, number, number]; count: number; radius?: number }[]> = {
   // The forge building (ForgeBuilding.ts): chimney top and hearth.
   forge_hall: [
-    { preset: 'smoke', at: [-2.4, 9.6, -2.5], count: 26 },
-    { preset: 'embers', at: [-2.4, 9.5, -2.5], count: 30 },
-    { preset: 'embers', at: [-2.4, 1.7, -1.3], count: 18, radius: 0.5 },
+    { preset: 'smoke', at: [-1.6, 9.6, -3.55], count: 26 },
+    { preset: 'embers', at: [-1.6, 9.5, -3.55], count: 30 },
+    { preset: 'embers', at: [-1.6, 1.35, -2.45], count: 18, radius: 0.5 },
   ],
   forge_anvil: [{ preset: 'sparks', at: [0, 0.95, 0], count: 26 }],
   frontier_cottage: [{ preset: 'smoke', at: [2.2, 8.8, -1.4], count: 14 }],
@@ -53,7 +56,7 @@ const EMITTERS: Record<string, { preset: ParticlePreset; at: [number, number, nu
 
 /** The few point lights the area keeps, at its hotspots. */
 const HOT_LIGHTS: Record<string, { at: [number, number, number]; color: string; intensity: number; distance: number; flicker?: boolean; pulse?: boolean; max: number }> = {
-  forge_hall: { at: [-1.8, 2.0, 1.0], color: '#ff7a2e', intensity: 30, distance: 20, flicker: true, max: 1 },
+  forge_hall: { at: [-1.4, 2.0, -1.2], color: '#ff7a2e', intensity: 30, distance: 20, flicker: true, max: 1 },
   foundry_core: { at: [0, 3.4, 0], color: '#ff5a1a', intensity: 60, distance: 34, pulse: true, max: 1 },
   aether_beacon: { at: [0, 12.7, 0], color: '#5fd6f5', intensity: 40, distance: 40, max: 2 },
 };
@@ -110,6 +113,8 @@ export class EmberholdWorld {
   private grass: THREE.InstancedMesh | null = null;
   private handles = new Map<string, InstanceHandle>();
   private forge: ForgeBuilding | null = null;
+  /** Chests and trail caches (searchable). */
+  readonly containers = new ContainerProps();
 
   /** The instance of a scenery model at a position (grove trees), for nodes that animate it. */
   instanceAt(model: string, x: number, z: number): InstanceHandle | null {
@@ -194,6 +199,7 @@ export class EmberholdWorld {
         itemMatrix(it, this.forge.group.matrix);
         this.forge.group.matrixAutoUpdate = false;
         this.group.add(this.forge.group);
+        this.group.add(this.containers.group);
         continue;
       }
       const k = BACKDROP.has(it.model) ? `${it.model}|bd` : `${it.model}|${Math.floor(it.x / CHUNK)},${Math.floor(it.z / CHUNK)}`;
@@ -306,6 +312,8 @@ export class EmberholdWorld {
       const r = CLEAR[it.model] !== undefined ? CLEAR[it.model] * it.scale : (gameModel(it.model)?.radius ?? 1) * it.scale * 0.85 + 1;
       add(it.x, it.z, Math.min(r, 8));
     }
+    // A small clearing around each trail cache: half hidden among rocks, not buried in grass.
+    for (const c of CONTAINERS) if (c.kind === 'cache') add(c.pos.x, c.pos.z, 1.6);
     const [V, , Q, F] = ZONES;
     const R = rng(1337 * 31 + 7);
     const rand = (a: number, b: number) => a + (b - a) * R();
@@ -384,6 +392,7 @@ export class EmberholdWorld {
     this.sky.position.copy(this.camera.position);
     for (const f of this.fields) f.update(time);
     this.forge?.update(time);
+    this.forge?.setInside(insideForge(focus.x, focus.z));
     for (const l of this.lights) {
       if (l.flicker) l.light.intensity = l.base * (0.85 + Math.sin(time * 13) * 0.06 + Math.sin(time * 7.3) * 0.08);
       if (l.pulse) l.light.intensity = l.base * (0.8 + Math.sin(time * 1.6) * 0.2);

@@ -81,6 +81,8 @@ export type SessionEvent =
   | { type: 'quest_step'; title: string; next: string | null }
   | { type: 'quest_complete' }
   | { type: 'toast'; text: string; tone?: 'info' | 'good' | 'warn' }
+  /** A container was searched (the browser opens its lid / plays a sound). */
+  | { type: 'searched'; id: string; found: boolean }
   /** The main-hand weapon changed (null: empty hand). */
   | { type: 'equip'; item: ItemInstance | null };
 

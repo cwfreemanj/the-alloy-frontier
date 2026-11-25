@@ -68,6 +68,10 @@ export function resetMoveGuard(g: MoveGuard, x: number, z: number, at: number): 
 }
 
 /** Is a reported height possible at a spot whose terrain height is `ground`? */
-export const heightOk = (y: number, ground: number): boolean => y <= ground + MOVE_LIMITS.maxAboveGround && y >= ground - MOVE_LIMITS.maxBelowGround;
+/**
+ * Is height y reachable? `ground` is the terrain; `floor` the highest floor someone there could
+ * have stepped or dropped from (a loft, stairs nearby), defaulting to the terrain.
+ */
+export const heightOk = (y: number, ground: number, floor = ground): boolean => y <= Math.max(ground, floor) + MOVE_LIMITS.maxAboveGround && y >= ground - MOVE_LIMITS.maxBelowGround;
 
 export const isNear = (a: { x: number; z: number }, b: { x: number; z: number }, r: number = MOVE_LIMITS.nearRadius) => Math.hypot(a.x - b.x, a.z - b.z) <= r;

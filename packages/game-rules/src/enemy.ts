@@ -45,6 +45,11 @@ export interface EnemyArchetype {
   id: string;
   name: string;
   kind: 'melee' | 'construct' | 'elite' | 'dummy';
+  /**
+   * Level shown above the enemy's head, on the same scale as the player's adventurer rank.
+   * Fixed per kind for now; the adaptive world can raise it per area later.
+   */
+  level: number;
   maxHealth: number;
   defense: number;
   poise: number;
@@ -77,6 +82,7 @@ export const ENEMIES: Record<string, EnemyArchetype> = {
     id: 'scavenger',
     name: 'Ironwood Scavenger',
     kind: 'melee',
+    level: 1,
     maxHealth: 90,
     defense: 10,
     poise: 40,
@@ -104,6 +110,7 @@ export const ENEMIES: Record<string, EnemyArchetype> = {
     id: 'sentinel',
     name: 'Quarry Sentinel',
     kind: 'construct',
+    level: 2,
     maxHealth: 210,
     defense: 35,
     poise: 70,
@@ -132,6 +139,7 @@ export const ENEMIES: Record<string, EnemyArchetype> = {
     id: 'warden',
     name: 'Foundry Warden',
     kind: 'elite',
+    level: 4,
     maxHealth: 760,
     defense: 40,
     poise: 150,
@@ -162,6 +170,7 @@ export const ENEMIES: Record<string, EnemyArchetype> = {
     id: 'dummy',
     name: 'Training Post',
     kind: 'dummy',
+    level: 1,
     maxHealth: 9999,
     defense: 0,
     poise: 60,

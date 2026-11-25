@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { ENEMIES, mitigate } from '@alloy/game-rules';
 import { WORLD_PROTOCOL, type AvatarState, type WorldServerMsg } from '@alloy/protocol';
 import { Session, newSessionData, playerHit } from '@alloy/session';
-import { ENEMY_SPAWNS, FORGE_ANVIL, NPCS, RESOURCE_NODES, RESPAWN_POINT, terrainHeight } from '@alloy/world';
+import { ENEMY_SPAWNS, FORGE_ANVIL, FORGE_PLAN, NPCS, RESOURCE_NODES, RESPAWN_POINT, containerDef, terrainHeight } from '@alloy/world';
 import { CharacterHost, MemoryCharacterStore, SAVE_DELAY_MS } from '../src/characters';
 import { WorldRoom } from '../src/worldRoom';
 
@@ -48,6 +48,20 @@ async function signedIn(ctx: ReturnType<typeof setup>, accountId: string) {
 }
 
 describe('server-owned characters', () => {
+  it('searches containers with the server position, including the height of the loft', async () => {
+    const ctx = setup();
+    const p = await signedIn(ctx, 'acct-search');
+    const chest = containerDef('forge-loft-chest')!;
+    const g = terrainHeight(chest.pos.x, chest.pos.z);
+    p.at(chest.pos.x + 0.5, chest.pos.z, { y: g });
+    expect(p.act({ k: 'search', id: chest.id })).toMatchObject({ ok: false, error: 'out_of_range' }); // on the floor below
+    p.at(chest.pos.x + 0.5, chest.pos.z, { y: g + FORGE_PLAN.loft.y });
+    const coins = p.char.session.data.inventory.coins;
+    expect(p.act({ k: 'search', id: chest.id }).ok).toBe(true);
+    expect(p.lastChar()!.data.inventory.coins).toBeGreaterThan(coins);
+    expect(p.act({ k: 'search', id: chest.id })).toMatchObject({ ok: false, error: 'searched' });
+  });
+
   it('sends the character on join, and applies actions only where the player is', async () => {
     const ctx = setup();
     const p = await signedIn(ctx, 'acct-1');
