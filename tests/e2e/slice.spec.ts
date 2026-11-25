@@ -173,6 +173,8 @@ test('full loop: gather, forge (quick + masterwork UI), equip, elite, report, sa
   await call(page, 'teleport', -14.94, 13.4); // inside the forge, in front of the anvil
   await page.waitForTimeout(200);
   await page.keyboard.press('KeyE');
+  // Orla explains the current step in plain words.
+  await expect(page.getByTestId('forge-guide')).toContainText('Quick Forge makes a solid blade');
   await page.getByTestId('quick-forge-confirm').click();
   await expect(page.getByTestId('forge-result')).toContainText('Quick Forge');
   // Forge: Masterwork (heat, hammer via hint, temper)

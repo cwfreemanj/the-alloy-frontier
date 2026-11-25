@@ -1,7 +1,11 @@
 /**
  * Forge interface (GDD 7.3, 7.5; AF-006).
- * Left: blueprints, materials, mastery. Centre: preview, buffer, forging interaction.
- * Right: projected stats, quality, rating, comparison with equipped gear.
+ * Left: blueprints, materials, mastery. Centre: the blade, the steps, Orla's guidance and the
+ * forging interaction. Right: projected stats against your weapon, why the numbers are what
+ * they are, and how the same steel fares in other hands.
+ *
+ * Everything shown is computed by the same rules that make the item (@alloy/crafting); the
+ * exact maths sits in hover tooltips so the screen reads plainly first.
  */
 import {
   HEAT_LEVELS,
@@ -37,11 +41,23 @@ import {
   type Specialization,
   type TemperStrategy,
 } from '@alloy/item-gen';
+import { RARITY_COLORS } from '../entities/Weapons';
 import type { Session } from '../state/Session';
 import { clear, h } from './dom';
+import { icon } from './icons';
 import { drawSword, itemHeader, statTable, traitsBlock } from './ItemView';
 
 type Stage = 'setup' | 'heat' | 'hammer' | 'temper' | 'done';
+/** Feedback the game plays for the forge (sound). */
+export type ForgeFx = 'strike' | 'overwork' | 'step';
+
+const TIPS_KEY = 'alloy-frontier.forge-tips';
+const SPEC_ICON: Record<Specialization, string> = { balanced: 'scales', keen: 'slash', heavy: 'guard', agile: 'feather' };
+const HEAT_COLOR: Record<string, string> = { dull: '#b0442a', cherry: '#ff6a2a', bright: '#ffd36a' };
+const TEMPER_ICON: Record<string, string> = { oil: 'quench', water: 'quench', air: 'feather' };
+const MAT_ICON: Record<string, string> = { iron_ore: 'ore', ironwood: 'log', ironglass: 'crystal', binding_flux: 'flask' };
+
+const section = (ico: string, title: string, extra?: HTMLElement | null) => h('h3', { class: 'fx-h' }, icon(ico), h('span', null, title), extra ?? null);
 
 export class ForgePanel {
   readonly el: HTMLElement;
@@ -59,6 +75,9 @@ export class ForgePanel {
   private result: ItemInstance | null = null;
   private txId: string;
   private busy = false;
+  /** The cells the last strike hit (for the flash and sparks), and whether it overworked. */
+  private flash: { cells: number[]; over: boolean } | null = null;
+  private tips = true;
 
   constructor(
     private session: Session,
@@ -66,9 +85,15 @@ export class ForgePanel {
     private onEquip: (itemId: string) => void,
     /** Asks the authority to forge (server for accounts, this browser for guests). */
     private onForge: (req: Omit<ForgeRequest, 'maker' | 'createdAt'>) => Promise<{ ok: boolean; item?: ItemInstance }>,
+    private fx: (f: ForgeFx) => void = () => {},
   ) {
     this.el = h('div', { class: 'overlay', role: 'dialog', 'aria-label': 'Forge' });
     this.txId = session.nextTxId('forge');
+    try {
+      this.tips = localStorage.getItem(TIPS_KEY) !== 'off';
+    } catch {
+      /* storage unavailable: keep tips on */
+    }
     const first = CRAFTABLE_BLUEPRINTS.find((b) => this.canAfford(b.id)) ?? CRAFTABLE_BLUEPRINTS[0];
     this.selectBlueprint(first.id);
     if (this.session.passed('quick_forge') && !this.session.passed('masterwork')) this.mode = 'masterwork';
@@ -77,6 +102,10 @@ export class ForgePanel {
 
   private get mastery(): number {
     return this.session.smithMastery;
+  }
+  /** New smiths (nothing forged yet) get the fuller explanations open. */
+  private get novice(): boolean {
+    return this.session.data.stats.crafted < 2;
   }
 
   private quickAllowed(): boolean {
@@ -104,6 +133,13 @@ export class ForgePanel {
     this.board = null;
     this.hammer = null;
     this.result = null;
+    this.flash = null;
+  }
+
+  private go(stage: Stage): void {
+    this.stage = stage;
+    this.fx('step');
+    this.render();
   }
 
   private request(): Omit<ForgeRequest, 'maker' | 'createdAt'> {
@@ -134,12 +170,13 @@ export class ForgePanel {
     clear(this.el);
     const panel = h(
       'div',
-      { class: 'panel forge' },
+      { class: 'panel forge fx' },
       h(
         'div',
-        { class: 'panel-head' },
+        { class: 'fx-head' },
+        h('div', { class: 'fx-emblem' }, icon('forge')),
         h('h2', null, 'Emberhold Forge'),
-        h('span', { class: 'small muted' }, 'Craftsmanship transforms ordinary steel. Every projection below is computed by the same rules that make the item.'),
+        h('div', { class: 'fx-tagline' }, h('span', { class: 'orn' }, '◆'), 'Craftsmanship transforms ordinary steel. Every projection below is computed by the same rules that make the item.', h('span', { class: 'orn' }, '◆')),
         h('button', { class: 'close-x', onclick: () => this.onClose(), 'aria-label': 'Close forge', title: 'Close (Esc)' }, '✕'),
       ),
       h('div', { class: 'forge-grid' }, this.renderLeft(), this.renderCenter(), this.renderRight()),
@@ -149,11 +186,12 @@ export class ForgePanel {
     if (canvas) requestAnimationFrame(() => drawSword(canvas, this.result ?? (this.preview().ok ? (this.preview() as { ok: true; plan: { item: ItemInstance } }).plan.item : null), this.blueprintId));
   }
 
+  // ---------------- Left: blueprints, materials, mastery ----------------
   private renderLeft(): HTMLElement {
     const inv = this.session.inventory;
     const b = this.session.data.progression.professions.blacksmithing;
     const col = h('div', { class: 'forge-col' });
-    col.append(h('h3', null, 'Blueprints'));
+    col.append(section('scroll', 'Blueprints'));
     const list = h('div', { class: 'list' });
     for (const bp of CRAFTABLE_BLUEPRINTS) {
       const locked = this.mastery < bp.masteryRequirement;
@@ -164,11 +202,12 @@ export class ForgePanel {
       });
       const bufHave = materialTotal(inv, bp.buffer.materialId);
       reqs.push(h('span', { class: `req ${bufHave >= bp.buffer.min ? 'ok' : 'no'}` }, `Flux ≥${bp.buffer.min} (${bufHave})`));
+      const glass = bp.materials.some((m) => m.materialId === 'ironglass');
       list.append(
         h(
           'button',
           {
-            class: `card ${bp.id === this.blueprintId ? 'selected' : ''} ${locked ? 'disabled' : ''}`,
+            class: `card bp-card ${bp.id === this.blueprintId ? 'selected' : ''} ${locked ? 'disabled' : ''}`,
             'data-blueprint': bp.id,
             onclick: () => {
               if (locked || this.busy) return;
@@ -177,32 +216,47 @@ export class ForgePanel {
               this.render();
             },
           },
-          h('div', { class: 'row' }, h('span', { class: 'ttl' }, bp.name), h('span', { class: 'spacer' }), locked ? h('span', { class: 'tag bad' }, `Mastery ${bp.masteryRequirement}`) : afford ? h('span', { class: 'tag good' }, 'Ready') : h('span', { class: 'tag dim' }, 'Missing')),
-          h('div', { class: 'sub' }, `${bp.tier} · base ${bp.baseDamage} dmg · ${bp.baseAttackSpeed.toFixed(2)}× speed`),
-          h('div', { class: 'sub', style: 'display:flex;flex-wrap:wrap;gap:2px 10px' }, ...reqs),
-          bp.potentialImbuements.length ? h('div', { class: 'sub cyan' }, `Potential: ${bp.potentialImbuements.map((i) => IMBUEMENTS[i]?.name).join(', ')}`) : null,
+          h('div', { class: `bp-thumb ${glass ? 'glass' : ''}` }, icon('weapon')),
+          h(
+            'div',
+            { class: 'bp-body' },
+            h('div', { class: 'row' }, h('span', { class: 'ttl' }, bp.name), h('span', { class: 'spacer' }), locked ? h('span', { class: 'tag bad' }, `Mastery ${bp.masteryRequirement}`) : afford ? h('span', { class: 'tag good' }, 'Ready') : h('span', { class: 'tag dim' }, 'Missing')),
+            h('div', { class: 'sub' }, `${bp.tier} · base ${bp.baseDamage} dmg · ${bp.baseAttackSpeed.toFixed(2)}× speed`),
+            h('div', { class: 'sub reqs' }, ...reqs),
+            bp.potentialImbuements.length ? h('div', { class: 'sub cyan' }, icon('storm'), ` Potential: ${bp.potentialImbuements.map((i) => IMBUEMENTS[i]?.name).join(', ')}`) : null,
+          ),
         ),
       );
     }
     col.append(list);
-    col.append(h('h3', null, 'Materials'));
-    const mats = h('table', { class: 'stat-table' });
+    col.append(section('box', 'Materials'));
+    const mats = h('div', { class: 'fx-mats' });
     for (const id of ['iron_ore', 'ironwood', 'ironglass', 'binding_flux'] as const) {
       const q = averageQuality(inv, id);
-      mats.append(h('tr', null, h('td', null, materialName(id)), h('td', null, String(materialTotal(inv, id))), h('td', { class: 'muted' }, q === null ? '—' : `q ${Math.round(q * 100)}%`)));
+      mats.append(
+        h(
+          'div',
+          { class: `fx-mat m-${id}`, title: 'Quality comes from where it was gathered. Better material makes stronger steel.' },
+          h('span', { class: 'mi' }, icon(MAT_ICON[id])),
+          h('span', null, materialName(id)),
+          h('b', null, String(materialTotal(inv, id))),
+          h('span', { class: 'q' }, q === null ? '—' : `q ${Math.round(q * 100)}%`),
+        ),
+      );
     }
     col.append(mats);
     col.append(h('div', { class: 'small dim', style: 'margin-top:4px' }, 'Best-quality lots are used first. Quality comes from each deposit\'s procedural traits.'));
-    col.append(h('h3', null, 'Blacksmithing mastery'));
+    col.append(section('smithing', 'Blacksmithing mastery'));
     const need = smithXpToNext(b.mastery);
     col.append(
-      h('div', { class: 'row' }, h('b', { class: 'ember', style: 'font-size:22px' }, String(b.mastery)), h('span', { class: 'muted small' }, `Smith factor ×${smithFactor(b.mastery).toFixed(3)}`)),
-      h('div', { class: 'meter', style: 'margin-top:4px' }, h('div', { style: `width:${Math.min(100, (b.xp / need) * 100)}%` })),
+      h('div', { class: 'fx-mastery', title: `Every blade you forge trains this. Your smith factor multiplies the damage of everything you make (×${smithFactor(b.mastery).toFixed(3)} now).` }, h('b', null, String(b.mastery)), h('span', null, `Smith factor ×${smithFactor(b.mastery).toFixed(3)}`)),
+      h('div', { class: 'meter ember-meter', style: 'margin-top:6px' }, h('div', { style: `width:${Math.min(100, (b.xp / need) * 100)}%` })),
       h('div', { class: 'small muted' }, `${b.xp}/${need} XP to mastery ${b.mastery + 1}. Open-ended: no hard cap.`),
     );
     return col;
   }
 
+  // ---------------- Centre ----------------
   private renderCenter(): HTMLElement {
     const col = h('div', { class: 'forge-col forge-center' });
     const tabs = h(
@@ -217,21 +271,80 @@ export class ForgePanel {
     );
     col.append(tabs);
     if (!this.quickAllowed()) {
-      col.append(h('div', { class: 'forge-result' }, h('b', null, 'Orla: '), 'Before you strike iron, go see what Bram sells. Know what coin buys, then show me what your hands can do.'));
+      col.append(this.orla('Before you strike iron, go see what Bram sells. Know what coin buys, then show me what your hands can do.', true));
       return col;
     }
-    col.append(h('div', { class: 'preview-wrap' }, h('canvas', { class: 'sword', 'aria-label': 'Weapon preview' })));
+    col.append(h('div', { class: 'fx-showcase' }, h('canvas', { class: 'sword', 'aria-label': 'Weapon preview' }), h('div', { class: 'fx-anvil' })));
+    if (this.mode === 'masterwork' && !this.result) col.append(this.stepTrack());
+    const tip = this.tipFor();
+    if (tip) col.append(this.orla(tip));
 
-    const body = h('div', { style: 'display:grid;gap:10px;align-content:start' });
-    if (this.result) {
-      body.append(this.renderResult());
-    } else if (this.mode === 'quick') {
-      body.append(this.renderBuffer(), this.renderQuickConfirm());
-    } else {
-      body.append(this.renderMasterwork());
-    }
+    const body = h('div', { class: 'fx-body' });
+    if (this.result) body.append(this.renderResult());
+    else if (this.mode === 'quick') body.append(this.renderBuffer(), this.renderQuickConfirm());
+    else body.append(this.renderMasterwork());
     col.append(body);
     return col;
+  }
+
+  /** What Orla would tell you right now, in plain words. */
+  private tipFor(): string | null {
+    if (this.result) return 'Look at what your hands made. Compare it with what you carry, then equip it or forge another.';
+    if (this.mode === 'quick')
+      return 'Quick Forge makes a solid blade with no fuss. Pick a blueprint you have the materials for, then press Forge. When you want a better blade, try the Masterwork Forge.';
+    switch (this.stage) {
+      case 'setup':
+        return 'First, prepare. Choose how much Binding Flux to use (a little more is a little better, each extra batch helps less) and the fighting style of the blade. Nothing is used up until you finish.';
+      case 'heat':
+        return 'How hot do you work the ingot? Hotter metal gives you more hammer strikes, but every wasted strike costs you more. Cherry Red is a good start.';
+      case 'hammer':
+        return 'The numbers are stress trapped in the metal. Strike to bring them down to 0 before your strikes run out. Red outlines mean a wasted strike on metal already at 0. Stuck? Press Hint.';
+      case 'temper':
+        return 'Now cool the blade. Each route trades steadiness for performance; read the cards, then quench.';
+      default:
+        return null;
+    }
+  }
+
+  private orla(text: string, always = false): HTMLElement {
+    if (!this.tips && !always)
+      return h('button', { class: 'linkish fx-tips-on', onclick: () => this.setTips(true) }, 'Show Orla’s guidance');
+    return h(
+      'div',
+      { class: `fx-orla ${this.novice ? 'novice' : ''}`, 'data-testid': 'forge-guide' },
+      h('div', { class: 'who' }, icon('smithing'), h('b', null, 'Orla')),
+      h('div', { class: 'say' }, text),
+      always ? null : h('button', { class: 'x', title: 'Hide guidance', 'aria-label': 'Hide guidance', onclick: () => this.setTips(false) }, '✕'),
+    );
+  }
+
+  private setTips(on: boolean): void {
+    this.tips = on;
+    try {
+      localStorage.setItem(TIPS_KEY, on ? 'on' : 'off');
+    } catch {
+      /* ignore */
+    }
+    this.render();
+  }
+
+  private stepTrack(): HTMLElement {
+    const steps: Array<[Stage, string, string]> = [
+      ['setup', '1 · Prepare', 'ingot'],
+      ['heat', '2 · Heat', 'flame'],
+      ['hammer', '3 · Hammer', 'hammer'],
+      ['temper', '4 · Temper', 'quench'],
+    ];
+    const order: Stage[] = ['setup', 'heat', 'hammer', 'temper', 'done'];
+    const now = order.indexOf(this.stage);
+    return h(
+      'div',
+      { class: 'fx-steps stepper' },
+      ...steps.map(([s, l, ic]) => {
+        const i = order.indexOf(s);
+        return h('div', { class: `fx-step ${i === now ? 'on' : i < now ? 'done' : ''}` }, h('div', { class: 'node' }, icon(i < now ? 'guard' : ic)), h('span', null, l));
+      }),
+    );
   }
 
   private setMode(m: 'quick' | 'masterwork'): void {
@@ -272,12 +385,12 @@ export class ForgePanel {
     });
     return h(
       'div',
-      { class: 'buffer-box' },
-      h('div', { class: 'row' }, h('b', null, `Binding Flux (buffer): ${this.buffer}`), h('span', { class: 'spacer' }), h('span', { class: 'small muted' }, `required ${bp.buffer.min} · owned ${owned} · batch ${bp.buffer.standardBatch}`)),
+      { class: 'buffer-box', title: 'Binding Flux holds the alloy together. The minimum is required; more improves the steel a little, and each extra batch adds less than the one before.' },
+      h('div', { class: 'row' }, h('span', { class: 'mi' }, icon('flask')), h('b', null, `Binding Flux (buffer): ${this.buffer}`), h('span', { class: 'spacer' }), h('span', { class: 'small muted' }, `required ${bp.buffer.min} · owned ${owned} · batch ${bp.buffer.standardBatch}`)),
       input,
       h(
         'div',
-        { class: 'small', style: 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:4px' },
+        { class: 'small fx-buf-stats' },
         h('div', null, h('div', { class: 'dim' }, 'Buffer factor'), h('b', { class: 'mono' }, `×${bf.toFixed(4)}`)),
         h('div', null, h('div', { class: 'dim' }, `vs minimum (${bp.buffer.min})`), h('b', { class: 'mono good' }, `+${((bf / bfMin - 1) * 100).toFixed(2)}%`), dmgNow !== null && dmgMin !== null ? h('span', { class: 'muted mono' }, ` (${dmgMin}→${dmgNow} dmg)`) : null),
         h('div', null, h('div', { class: 'dim' }, `+1 batch (${bp.buffer.standardBatch} more)`), h('b', { class: 'mono cyan' }, `+${((bfNext / bf - 1) * 100).toFixed(2)}%`), h('span', { class: 'muted' }, ' (diminishing)')),
@@ -299,32 +412,25 @@ export class ForgePanel {
       h('div', { class: 'small muted' }, 'Quick Forge: predictable, serviceable output in the standard Balanced pattern. Limited customisation (up to Uncommon).'),
       h('span', { class: 'spacer' }),
       reason ? h('span', { class: 'small bad' }, reason) : null,
-      h('button', { class: 'btn primary', disabled: !!reason || this.busy, 'data-testid': 'quick-forge-confirm', onclick: () => this.commit() }, 'Forge'),
+      h('button', { class: 'btn primary fx-go', disabled: !!reason || this.busy, 'data-testid': 'quick-forge-confirm', onclick: () => this.commit() }, icon('hammer'), 'Forge'),
     );
+  }
+
+  private choiceCard(selected: boolean, ico: string, title: string, sub: string, attrs: Record<string, string>, onPick: () => void): HTMLElement {
+    return h('button', { ...attrs, class: `card fx-choice ${attrs.class ?? ''} ${selected ? 'selected' : ''}`, onclick: onPick }, h('span', { class: 'ci' }, icon(ico)), h('div', null, h('div', { class: 'ttl' }, title), h('div', { class: 'sub' }, sub)));
   }
 
   private renderMasterwork(): HTMLElement {
     const wrap = h('div', { style: 'display:grid;gap:10px' });
-    const steps: Array<[Stage, string]> = [
-      ['setup', '1 · Prepare'],
-      ['heat', '2 · Heat'],
-      ['hammer', '3 · Hammer'],
-      ['temper', '4 · Temper'],
-    ];
-    const order: Stage[] = ['setup', 'heat', 'hammer', 'temper', 'done'];
-    wrap.append(h('div', { class: 'stepper' }, ...steps.map(([s, l]) => h('span', { class: s === this.stage ? 'on' : order.indexOf(s) < order.indexOf(this.stage) ? 'done' : '' }, l))));
-
     if (this.stage === 'setup') {
       wrap.append(this.renderBuffer());
-      wrap.append(h('h3', { style: 'margin:0' }, 'Specialization'));
+      wrap.append(h('div', { class: 'fx-sub-h' }, '→ Specialization'));
       const bp = getBlueprint(this.blueprintId)!;
       wrap.append(
         h(
           'div',
           { class: 'choices' },
-          ...bp.allowedSpecializations.map((s) =>
-            h('button', { class: `card ${this.spec === s ? 'selected' : ''}`, 'data-spec': s, onclick: () => ((this.spec = s), this.render()) }, h('div', { class: 'ttl' }, SPECIALIZATIONS[s].name), h('div', { class: 'sub' }, SPECIALIZATIONS[s].description)),
-          ),
+          ...bp.allowedSpecializations.map((s) => this.choiceCard(this.spec === s, SPEC_ICON[s] ?? 'weapon', SPECIALIZATIONS[s].name, SPECIALIZATIONS[s].description, { 'data-spec': s }, () => ((this.spec = s), this.render()))),
         ),
       );
       const reason = this.missingReason();
@@ -332,46 +438,41 @@ export class ForgePanel {
         h(
           'div',
           { class: 'row' },
-          h('span', { class: 'small muted' }, 'Materials are only consumed when you finish. Leaving midway costs nothing.'),
+          h('span', { class: 'small muted' }, icon('info'), ' Materials are only consumed when you finish. Leaving midway costs nothing.'),
           h('span', { class: 'spacer' }),
           reason ? h('span', { class: 'small bad' }, reason) : null,
-          h('button', { class: 'btn primary', disabled: !!reason, 'data-testid': 'mw-begin', onclick: () => ((this.stage = 'heat'), this.render()) }, 'Begin forging'),
+          h('button', { class: 'btn primary fx-go', disabled: !!reason, 'data-testid': 'mw-begin', onclick: () => this.go('heat') }, icon('forge'), 'Begin forging'),
         ),
       );
     } else if (this.stage === 'heat') {
-      wrap.append(h('div', { class: 'small muted' }, 'Choose how hot to work the ingot. Hotter metal gives you more strikes to relieve stress, but mistakes hurt more: an overwork (striking metal already at 0) counts as extra stress left in the blade.'));
       wrap.append(
         h(
           'div',
           { class: 'choices' },
-          ...(Object.keys(HEAT_LEVELS) as HeatLevel[]).map((k) =>
-            h(
-              'button',
-              { class: `card ${this.heat === k ? 'selected' : ''}`, 'data-heat': k, onclick: () => ((this.heat = k), this.render()) },
-              h('div', { class: 'ttl' }, HEAT_LEVELS[k].name),
-              h('div', { class: 'sub' }, HEAT_LEVELS[k].description),
-            ),
-          ),
+          ...(Object.keys(HEAT_LEVELS) as HeatLevel[]).map((k) => {
+            const lv = HEAT_LEVELS[k];
+            return this.choiceCard(this.heat === k, 'flame', lv.name, lv.description, { 'data-heat': k, class: 'heat-card', style: `--heat:${HEAT_COLOR[k] ?? '#ff6a2a'}` }, () => ((this.heat = k), this.render()));
+          }),
         ),
       );
       wrap.append(
         h(
           'div',
           { class: 'row' },
-          h('button', { class: 'btn', onclick: () => ((this.stage = 'setup'), this.render()) }, 'Back'),
+          h('button', { class: 'btn', onclick: () => this.go('setup') }, 'Back'),
           h('span', { class: 'spacer' }),
           h(
             'button',
             {
-              class: 'btn primary',
+              class: 'btn primary fx-go',
               'data-testid': 'mw-heat-confirm',
               onclick: () => {
                 this.board = boardFor(this.session.inventory, this.blueprintId);
                 this.hammer = startHammering(this.board, this.heat, this.mastery);
-                this.stage = 'hammer';
-                this.render();
+                this.go('hammer');
               },
             },
+            icon('flame'),
             'Heat the ingot',
           ),
         ),
@@ -379,14 +480,11 @@ export class ForgePanel {
     } else if (this.stage === 'hammer' && this.board && this.hammer) {
       wrap.append(this.renderHammer());
     } else if (this.stage === 'temper') {
-      wrap.append(h('div', { class: 'small muted' }, 'Choose a cooling route: stability versus performance.'));
       wrap.append(
         h(
           'div',
           { class: 'choices' },
-          ...(['oil', 'water', 'air'] as TemperStrategy[]).map((t) =>
-            h('button', { class: `card ${this.temper === t ? 'selected' : ''}`, 'data-temper': t, onclick: () => ((this.temper = t), this.render()) }, h('div', { class: 'ttl' }, TEMPERS[t].name), h('div', { class: 'sub' }, TEMPERS[t].description)),
-          ),
+          ...(['oil', 'water', 'air'] as TemperStrategy[]).map((t) => this.choiceCard(this.temper === t, TEMPER_ICON[t] ?? 'quench', TEMPERS[t].name, TEMPERS[t].description, { 'data-temper': t }, () => ((this.temper = t), this.render()))),
         ),
       );
       const reason = this.missingReason();
@@ -397,7 +495,7 @@ export class ForgePanel {
           h('span', { class: 'small muted' }, `Hammering quality locked at ${Math.round((this.currentScore() ?? 0) * 100)}%.`),
           h('span', { class: 'spacer' }),
           reason ? h('span', { class: 'small bad' }, reason) : null,
-          h('button', { class: 'btn primary', disabled: !!reason || this.busy, 'data-testid': 'mw-finish', onclick: () => this.commit() }, 'Quench & finish'),
+          h('button', { class: 'btn primary fx-go', disabled: !!reason || this.busy, 'data-testid': 'mw-finish', onclick: () => this.commit() }, icon('quench'), 'Quench & finish'),
         ),
       );
     }
@@ -409,7 +507,7 @@ export class ForgePanel {
     const penalty = HEAT_LEVELS[this.heat].overworkPenalty;
     return h(
       'details',
-      { class: 'explain', open: true },
+      { class: 'explain', open: this.novice },
       h('summary', null, 'How hammering works'),
       h(
         'ul',
@@ -423,7 +521,7 @@ export class ForgePanel {
           ' means hitting metal that is already at 0 (including the 0-cells a spread strike touches, or a focused strike on a 1). ',
           penalty > 0 ? `At ${HEAT_LEVELS[this.heat].name}, each one counts as ${penalty} extra stress against your quality.` : `At ${HEAT_LEVELS[this.heat].name} it costs nothing, it just wastes the strike.`,
         ),
-        h('li', null, 'Quality = 1 − (stress left + overwork penalty) ÷ starting stress. It sets the weapon’s damage multiplier and whether hidden powers awaken.'),
+        h('li', null, 'Higher structure quality means more damage and can awaken hidden powers.'),
       ),
     );
   }
@@ -432,7 +530,7 @@ export class ForgePanel {
   private qualityEffects(score: number): HTMLElement {
     const ff = 0.95 + 0.3 * score;
     const bp = getBlueprint(this.blueprintId);
-    const lines: Array<HTMLElement> = [h('div', null, `Damage multiplier ×${ff.toFixed(3)} `, h('span', { class: 'dim' }, '(×0.950 at 0% → ×1.250 at 100%)'))];
+    const lines: Array<HTMLElement> = [h('div', { title: 'Structure quality 0% gives ×0.950 damage, 100% gives ×1.250.' }, `Damage ×${ff.toFixed(3)} `, h('span', { class: 'dim' }, '(up to ×1.250 at 100%)'))];
     const imb = bp?.potentialImbuements[0];
     if (imb) {
       const catalyst = bp!.materials.some((r) => r.materialId === 'ironglass') ? averageQuality(this.session.inventory, 'ironglass') ?? 0 : 0;
@@ -442,7 +540,7 @@ export class ForgePanel {
       lines.push(
         h(
           'div',
-          { class: resonance >= 0.6 ? 'good' : 'bad' },
+          { class: resonance >= 0.6 ? 'good' : 'bad', title: 'Resonance = structure quality × 0.7 + ironglass quality × 0.3. It awakens at 60%.' },
           resonance >= 0.6 ? `⚡ ${name} will awaken (${Math.round(resonance * 100)}% resonance)` : `${name} dormant: reach about ${Math.ceil(needed * 100)}% quality to awaken it`,
         ),
       );
@@ -458,13 +556,17 @@ export class ForgePanel {
     const remaining = st.cells.reduce((a, b) => a + b, 0);
     const grid = h('div', { class: 'board', style: `grid-template-columns:repeat(${board.size},54px)`, role: 'grid', 'aria-label': 'Ingot stress grid' });
     this.cells = [];
+    const flash = this.flash;
+    this.flash = null;
     for (let y = 0; y < board.size; y++)
       for (let x = 0; x < board.size; x++) {
-        const v = st.cells[y * board.size + x];
+        const i = y * board.size + x;
+        const v = st.cells[i];
+        const hit = flash?.cells.includes(i);
         const cell = h(
           'button',
           {
-            class: `cell s${v}`,
+            class: `cell s${v} ${hit ? (flash!.over && v === 0 ? 'struck over-hit' : 'struck') : ''}`,
             'data-x': x,
             'data-y': y,
             'aria-label': `Row ${y + 1} column ${x + 1}, stress ${v}`,
@@ -476,38 +578,40 @@ export class ForgePanel {
           String(v),
           h('span', { class: 'pips' }, '•'.repeat(v)),
         );
+        if (hit) for (let k = 0; k < 5; k++) cell.append(h('span', { class: 'spark', style: `--dx:${Math.round((Math.random() - 0.5) * 60)}px;--dy:${Math.round(-10 - Math.random() * 30)}px;animation-delay:${k * 20}ms` }));
         this.cells.push(cell);
         grid.append(cell);
       }
     const left = st.strikesAllowed - st.strikesUsed;
     const penalty = HEAT_LEVELS[this.heat].overworkPenalty;
+    const strikeBtn = (kind: StrikeKind, title: string, sub: string, glyph: string) =>
+      h('button', { class: `fx-strike ${this.strikeKind === kind ? 'on' : ''}`, 'data-strike': kind, onclick: () => ((this.strikeKind = kind), this.render()) }, h('span', { class: 'g' }, glyph), h('span', null, h('b', null, title), h('span', { class: 'sub' }, sub)));
     const side = h(
       'div',
-      { style: 'display:grid;gap:8px' },
-      this.hammerExplainer(),
+      { class: 'fx-hammer-side' },
+      h('div', { class: 'fx-strikes' }, strikeBtn('spread', 'Spread strike', '−1 to a cell and its 4 neighbours', '✚'), strikeBtn('focused', 'Focused strike', '−2 to one cell', '●')),
       h(
         'div',
-        { class: 'row' },
-        h('button', { class: `btn small ${this.strikeKind === 'spread' ? 'primary' : ''}`, 'data-strike': 'spread', onclick: () => ((this.strikeKind = 'spread'), this.render()) }, 'Spread strike (−1 ✚)'),
-        h('button', { class: `btn small ${this.strikeKind === 'focused' ? 'primary' : ''}`, 'data-strike': 'focused', onclick: () => ((this.strikeKind = 'focused'), this.render()) }, 'Focused strike (−2 ●)'),
+        { class: 'fx-gauges' },
+        h('div', null, h('div', { class: 'small dim' }, 'Strikes left'), h('div', { class: 'fx-pips', 'aria-label': `${left} of ${st.strikesAllowed} strikes left` }, ...Array.from({ length: st.strikesAllowed }, (_, i) => h('span', { class: i < left ? 'on' : '' }))), h('b', { class: 'mono ember' }, `${left} / ${st.strikesAllowed}`)),
+        h('div', null, h('div', { class: 'small dim' }, 'Stress left'), h('div', { class: 'meter ember-meter' }, h('div', { style: `width:${initial ? (remaining / initial) * 100 : 0}%` })), h('b', { class: 'mono' }, `${remaining}/${initial}`)),
       ),
-      h('div', { class: 'mono small' }, `Strikes left: `, h('b', { class: 'ember' }, String(left)), ` / ${st.strikesAllowed}`),
-      h('div', { class: 'mono small' }, `Stress left: ${remaining}/${initial}`),
+      h('div', null, h('div', { class: 'small dim' }, 'Structure quality'), h('div', { class: 'meter cyan fx-quality' }, h('div', { style: `width:${score * 100}%` })), h('b', { class: 'mono fx-score' }, `${Math.round(score * 100)}%`)),
       h(
         'div',
         { class: 'mono small' },
         `Overworks: ${st.overworks}`,
         penalty > 0 ? h('span', { class: st.overworks ? 'bad' : 'dim' }, ` (each counts as ${penalty} extra stress)`) : h('span', { class: 'dim' }, ' (free at Dull Red)'),
       ),
-      h('div', null, h('div', { class: 'small dim' }, 'Structure quality'), h('div', { class: 'meter cyan' }, h('div', { style: `width:${score * 100}%` })), h('b', { class: 'mono' }, `${Math.round(score * 100)}%`)),
       this.qualityEffects(score),
+      this.hammerExplainer(),
       h(
         'div',
         { class: 'row' },
-        h('button', { class: 'btn small', title: 'Highlights the strike with the best immediate effect (accessibility aid).', onclick: () => this.hint() }, 'Hint'),
+        h('button', { class: 'btn small', title: 'Highlights the strike with the best immediate effect.', onclick: () => this.hint() }, 'Hint'),
         h('button', { class: 'btn small', onclick: () => ((this.hammer = startHammering(board, this.heat, this.mastery)), this.render()) }, 'Restart'),
         h('span', { class: 'spacer' }),
-        h('button', { class: 'btn primary small', 'data-testid': 'mw-hammer-done', onclick: () => ((this.stage = 'temper'), this.render()) }, left > 0 ? 'Finish early' : 'Continue'),
+        h('button', { class: 'btn primary small', 'data-testid': 'mw-hammer-done', onclick: () => this.go('temper') }, left > 0 ? 'Finish early' : 'Continue'),
       ),
       h('div', { class: 'small dim' }, 'Turn-based: take as long as you like. Keyboard: Tab to a cell, Enter to strike.'),
     );
@@ -539,20 +643,21 @@ export class ForgePanel {
 
   private strike(x: number, y: number): void {
     if (!this.board || !this.hammer) return;
+    const before = this.hammer.overworks;
     const r = applyStrike(this.hammer, this.board.size, { x, y, kind: this.strikeKind });
     if (!r) return;
     this.hammer = r.state;
+    const over = r.state.overworks > before;
+    this.flash = { cells: strikeTargets(this.board.size, { x, y, kind: this.strikeKind }).map(([tx, ty]) => ty * this.board!.size + tx), over };
+    this.fx(over ? 'overwork' : 'strike');
     this.render();
     const c = this.cells[y * this.board.size + x];
     c?.focus();
     if (r.state.strikesUsed >= r.state.strikesAllowed) {
       // Out of strikes: move on automatically after a beat.
       setTimeout(() => {
-        if (this.stage === 'hammer') {
-          this.stage = 'temper';
-          this.render();
-        }
-      }, 400);
+        if (this.stage === 'hammer') this.go('temper');
+      }, 500);
     }
   }
 
@@ -576,7 +681,7 @@ export class ForgePanel {
     const isEquipped = eq?.itemId === item.itemId;
     return h(
       'div',
-      { class: 'forge-result', 'data-testid': 'forge-result' },
+      { class: 'forge-result fx-result', 'data-testid': 'forge-result', style: `--rarity:${RARITY_COLORS[item.result.rarity]}` },
       h('div', { class: 'small ember', style: 'letter-spacing:.12em;text-transform:uppercase' }, 'Forged'),
       itemHeader(item),
       traitsBlock(item),
@@ -592,24 +697,30 @@ export class ForgePanel {
     );
   }
 
+  // ---------------- Right: projection and why ----------------
   private renderRight(): HTMLElement {
     const col = h('div', { class: 'forge-col' });
     const eq = this.session.equipped();
     if (this.result) {
-      col.append(h('h3', null, 'Result vs. previously equipped'));
+      col.append(section('target', 'Result vs. previously equipped'));
       col.append(statTable(this.result, eq && eq.itemId !== this.result.itemId ? eq : null));
       return col;
     }
     if (!this.quickAllowed()) return col;
     const r = this.preview();
-    col.append(h('h3', null, this.mode === 'masterwork' ? `Projection ${this.currentScore() === null ? '(at 75% forge quality)' : '(current forge quality)'}` : 'Projected result'));
+    col.append(section('target', this.mode === 'masterwork' ? `Projection ${this.currentScore() === null ? '(at 75% forge quality)' : '(current forge quality)'}` : 'Projected result'));
     if (!r.ok) {
       col.append(h('div', { class: 'small bad' }, r.message));
       return col;
     }
     const item = r.plan.item;
     col.append(
-      h('div', { class: 'row' }, h('b', null, item.displayName), h('span', { class: 'spacer' }), h('span', { class: 'small muted' }, `${RARITY_LABEL[item.result.rarity]} (projected)`)),
+      h(
+        'div',
+        { class: 'fx-proj-item' },
+        h('div', { class: 'bp-thumb' }, icon('weapon')),
+        h('div', null, h('b', null, item.displayName), h('div', { class: 'small', style: `color:${RARITY_COLORS[item.result.rarity]}` }, `${RARITY_LABEL[item.result.rarity]} (projected)`)),
+      ),
       statTable(item, eq),
     );
     if (this.mode === 'masterwork') {
@@ -621,17 +732,18 @@ export class ForgePanel {
       }
     }
     const f = item.forge;
+    const row = (label: string, value: string, help: string, strong = false) => h('tr', { title: help, class: strong ? 'total' : '' }, h('td', null, strong ? h('b', null, label) : label), h('td', null, strong ? h('b', null, value) : value));
     col.append(
-      h('h3', null, 'Quality breakdown (GDD 4.11)'),
+      section('gear', 'Quality breakdown'),
       h(
         'table',
-        { class: 'stat-table' },
-        h('tr', null, h('td', null, 'Base material damage'), h('td', null, String(r.plan.blueprint.baseDamage)), h('td', null, '')),
-        h('tr', null, h('td', null, `Smith (mastery ${f.mastery})`), h('td', null, `×${f.smithFactor.toFixed(3)}`), h('td', null, '')),
-        h('tr', null, h('td', null, `Material (q ${Math.round(item.materialQuality * 100)}%)`), h('td', null, `×${f.materialFactor.toFixed(3)}`), h('td', null, '')),
-        h('tr', null, h('td', null, `Buffer (${item.buffer.quantity} flux)`), h('td', null, `×${f.bufferFactor.toFixed(4)}`), h('td', null, '')),
-        h('tr', null, h('td', null, `Forge (${this.mode === 'quick' ? 'Quick' : `${Math.round(f.forgeScore * 100)}%`})`), h('td', null, `×${f.forgeFactor.toFixed(3)}`), h('td', null, '')),
-        h('tr', null, h('td', null, h('b', null, 'Formula damage')), h('td', null, h('b', null, String(f.formulaDamage))), h('td', null, '')),
+        { class: 'stat-table fx-breakdown' },
+        row('Base material damage', String(r.plan.blueprint.baseDamage), 'What the blueprint deals before any craftsmanship.'),
+        row(`Smith (mastery ${f.mastery})`, `×${f.smithFactor.toFixed(3)}`, 'Your blacksmithing mastery. It grows with every blade you forge.'),
+        row(`Material (q ${Math.round(item.materialQuality * 100)}%)`, `×${f.materialFactor.toFixed(3)}`, 'The average quality of the ore and wood used. Rich deposits make better steel.'),
+        row(`Buffer (${item.buffer.quantity} flux)`, `×${f.bufferFactor.toFixed(4)}`, 'Binding Flux used. More helps a little, less each time.'),
+        row(`Forge (${this.mode === 'quick' ? 'Quick' : `${Math.round(f.forgeScore * 100)}%`})`, `×${f.forgeFactor.toFixed(3)}`, 'How well the hammering went (Masterwork), or the fixed Quick Forge result.'),
+        row('Formula damage', String(f.formulaDamage), 'All of the above multiplied together.', true),
       ),
       h('div', { class: 'small dim' }, 'Specialization, tempering and rarity affixes then modify the formula result.'),
     );
@@ -641,18 +753,18 @@ export class ForgePanel {
     const shop = merchantPreview(MERCHANT_STOCK[0]);
     if (master.ok && novice.ok) {
       col.append(
-        h('h3', null, 'Same steel, different hands'),
+        section('users', 'Same steel, different hands'),
         h(
           'table',
-          { class: 'stat-table' },
+          { class: 'stat-table fx-hands' },
           h('tr', null, h('td', null, 'Novice (mastery 0)'), h('td', null, `${novice.plan.item.result.damage} dmg`), h('td', { class: 'muted' }, `R ${novice.plan.item.result.rating}`)),
-          h('tr', null, h('td', null, h('b', null, `You (mastery ${this.mastery})`)), h('td', null, h('b', null, `${item.result.damage} dmg`)), h('td', { class: 'muted' }, `R ${item.result.rating}`)),
+          h('tr', { class: 'you' }, h('td', null, h('b', null, `You (mastery ${this.mastery})`)), h('td', null, h('b', null, `${item.result.damage} dmg`)), h('td', { class: 'muted' }, `R ${item.result.rating}`)),
           h('tr', null, h('td', null, 'Master Orla (100)'), h('td', null, `${master.plan.item.result.damage} dmg`), h('td', { class: 'muted' }, `R ${master.plan.item.result.rating}`)),
           shop ? h('tr', null, h('td', null, "Bram's shop steel"), h('td', null, `${shop.result.damage} dmg`), h('td', { class: 'muted' }, `R ${shop.result.rating}`)) : null,
         ),
       );
     }
-    col.append(h('h3', null, 'Consumes'));
+    col.append(section('box', 'Consumes'));
     const use = [...r.plan.consumed, ...r.plan.bufferConsumed].reduce<Record<string, number>>((a, c) => ((a[c.materialId] = (a[c.materialId] ?? 0) + c.quantity), a), {});
     col.append(h('div', { class: 'small' }, Object.entries(use).map(([k, v]) => `${v}× ${materialName(k as never)}`).join(' · ')));
     return col;
