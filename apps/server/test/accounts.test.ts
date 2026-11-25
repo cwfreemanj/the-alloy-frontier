@@ -83,9 +83,9 @@ for (const [label, make] of [
       if (!r.ok) throw new Error('register failed');
       const id = (await svc.accountFor(r.value.token))!.id;
       expect(await svc.getSave(id)).toBeNull();
-      const i1 = await svc.importCharacter(id, goodSave(1));
+      const i1 = await svc.importCharacter(id, goodSave(1), 1, 'Importer');
       expect(i1.ok && i1.value.revision).toBe(1);
-      const again = await svc.importCharacter(id, goodSave(2));
+      const again = await svc.importCharacter(id, goodSave(2), 1, 'Importer');
       expect(again.ok === false && again.error).toBe('has_character');
       expect((await svc.serverPutSave(id, goodSave(3), 3)).revision).toBe(2);
       expect(JSON.parse((await svc.getSave(id))!.raw).data.player.x).toBe(3);
@@ -103,7 +103,7 @@ for (const [label, make] of [
       expect((await svc.importCharacter(id, 'x'.repeat(600 * 1024))).ok).toBe(false);
       const rich = newSessionData(1);
       rich.inventory.coins = 999999;
-      expect((await svc.importCharacter(id, serialize(rich, 1))).ok).toBe(true);
+      expect((await svc.importCharacter(id, serialize(rich, 1), 1, 'Rich Guest')).ok).toBe(true);
       expect(JSON.parse((await svc.getSave(id))!.raw).data.inventory.coins).toBe(MAX_IMPORT_COINS);
     });
   });
@@ -122,7 +122,7 @@ describe('HTTP API and signed-in world', () => {
     const reg = await (await post(base, '/api/register', { username: 'Traveler', password: 'password1' })).json();
     expect(reg.username).toBe('Traveler');
     const auth = { authorization: `Bearer ${reg.token}` };
-    const imp = await post(base, '/api/character/import', { save: goodSave(7) }, auth);
+    const imp = await post(base, '/api/character/import', { save: goodSave(7), name: 'Wanderer' }, auth);
     expect((await imp.json()).revision).toBe(1);
     // Second device logs in with the password and gets the same character.
     const login = await (await post(base, '/api/login', { username: 'traveler', password: 'password1' })).json();
@@ -138,14 +138,15 @@ describe('HTTP API and signed-in world', () => {
     expect(taken.status).toBe(409);
     expect((await taken.json()).error).toBe('slot_taken');
     // A second character goes into slot 2; slot 1 is kept.
-    const second = await post(base, '/api/character/new', { slot: 2 }, auth);
+    const second = await post(base, '/api/character/new', { slot: 2, name: 'Second' }, auth);
     expect((await second.json()).revision).toBe(1);
     expect(JSON.parse((await (await fetch(`${base}/api/save?slot=2`, { headers: auth })).json()).save).data.player.x).toBe(0);
     expect(JSON.parse((await (await fetch(`${base}/api/save?slot=1`, { headers: auth })).json()).save).data.player.x).toBe(7);
     expect((await fetch(`${base}/api/save?slot=3`, { headers: auth })).status).toBe(400);
     const list = (await (await fetch(`${base}/api/characters`, { headers: auth })).json()).slots;
     expect(list.map((x: { slot: number; exists: boolean }) => [x.slot, x.exists])).toEqual([[1, true], [2, true]]);
-    expect(list[0]).toMatchObject({ rank: 1, questStep: 0, questDone: false });
+    expect(list[0]).toMatchObject({ name: 'Wanderer', rank: 1, questStep: 0, questDone: false });
+    expect(list[1]).toMatchObject({ name: 'Second' });
     // Deleting needs the typed confirmation; then the slot is empty and can start over.
     expect((await post(base, '/api/character/delete', { slot: 2 }, auth)).status).toBe(400);
     expect((await post(base, '/api/character/delete', { slot: 2, confirm: 'delete' }, auth)).status).toBe(400);
@@ -153,8 +154,38 @@ describe('HTTP API and signed-in world', () => {
     expect((await (await fetch(`${base}/api/save?slot=2`, { headers: auth })).json()).save).toBeNull();
     expect((await post(base, '/api/character/delete', { slot: 2, confirm: 'DELETE' }, auth)).status).toBe(404);
     expect(JSON.parse((await (await fetch(`${base}/api/save?slot=1`, { headers: auth })).json()).save).data.player.x).toBe(7);
-    const again = await post(base, '/api/character/new', { slot: 2 }, auth);
+    // Deleting freed the name: it can be used again.
+    const again = await post(base, '/api/character/new', { slot: 2, name: 'second' }, auth);
     expect(again.status).toBe(200);
+    expect((await again.json()).name).toBe('second');
+  });
+
+  it('character names: checked, unique across accounts (ignoring case), and old characters can be named once', async () => {
+    const kv = new MemoryKV();
+    const svc = new AccountService(kv);
+    const one = await svc.register('AccountOne', 'password123', '1.1.1.1');
+    const two = await svc.register('AccountTwo', 'password123', '1.1.1.2');
+    if (!one.ok || !two.ok) throw new Error('register');
+    const a = (await svc.accountFor(one.value.token))!.id;
+    const b = (await svc.accountFor(two.value.token))!.id;
+    const build = () => newSessionData(1);
+    expect(await svc.newCharacter(a, 1, 'x', build)).toMatchObject({ ok: false, error: 'bad_name' });
+    expect(await svc.newCharacter(a, 1, 'Orla', build)).toMatchObject({ ok: false, error: 'bad_name' });
+    expect(await svc.newCharacter(a, 1, '  Kael   Ashford ', build)).toMatchObject({ ok: true, value: { name: 'Kael Ashford' } });
+    expect(await svc.newCharacter(b, 1, 'kael ashford', build)).toMatchObject({ ok: false, error: 'name_taken' });
+    expect(await svc.newCharacter(b, 1, 'Kael Ash', build)).toMatchObject({ ok: true });
+    // A character from before names: stored without one, named once.
+    const t = Date.now();
+    await kv.put(`save:${a}~2`, { raw: serialize(newSessionData(1), t), revision: 1, savedAt: t, updatedAt: t });
+    expect((await svc.listCharacters(a))[1]).toMatchObject({ exists: true });
+    expect((await svc.listCharacters(a))[1].name).toBeUndefined();
+    expect(await svc.nameCharacter(a, 2, 'Kael Ash')).toMatchObject({ ok: false, error: 'name_taken' });
+    expect(await svc.nameCharacter(a, 2, 'Brann')).toMatchObject({ ok: true, value: { name: 'Brann' } });
+    expect(await svc.nameCharacter(a, 2, 'Other')).toMatchObject({ ok: false, error: 'already_named' });
+    expect((await svc.listCharacters(a))[1].name).toBe('Brann');
+    // Deleting frees the name for anyone.
+    expect((await svc.deleteCharacter(a, 2)).ok).toBe(true);
+    expect(await svc.newCharacter(b, 2, 'BRANN', build)).toMatchObject({ ok: true });
   });
 
   it('deleting a character keeps it in a dated trash record (undo by hand)', async () => {
@@ -164,7 +195,15 @@ describe('HTTP API and signed-in world', () => {
     const reg = await svc.register('Trashy', 'password123', '1.1.1.1');
     if (!reg.ok) throw new Error('register');
     const id = (await svc.accountFor(reg.value.token))!.id;
-    expect((await svc.newCharacter(id, 2, goodSave(3))).ok).toBe(true);
+    expect(
+      (
+        await svc.newCharacter(id, 2, 'Trashy', () => {
+          const d = newSessionData(1);
+          d.player.x = 3;
+          return d;
+        })
+      ).ok,
+    ).toBe(true);
     t = 9_000;
     const del = await svc.deleteCharacter(id, 2);
     if (!del.ok) throw new Error('delete');
@@ -273,8 +312,8 @@ describe('HTTP API and signed-in world', () => {
     const base = `http://127.0.0.1:${server.port}`;
     const reg = await (await post(base, '/api/register', { username: 'TwoSlots', password: 'password1' })).json();
     const auth = { authorization: `Bearer ${reg.token}` };
-    expect((await post(base, '/api/character/new', { slot: 1 }, auth)).status).toBe(200);
-    expect((await post(base, '/api/character/new', { slot: 2 }, auth)).status).toBe(200);
+    expect((await post(base, '/api/character/new', { slot: 1, name: 'First Blade' }, auth)).status).toBe(200);
+    expect((await post(base, '/api/character/new', { slot: 2, name: 'Ember Child' }, auth)).status).toBe(200);
     const c = new WebSocket(base.replace('http', 'ws') + '/world');
     const box: WorldServerMsg[] = [];
     c.on('message', (d) => box.push(JSON.parse(d.toString())));
@@ -289,6 +328,8 @@ describe('HTTP API and signed-in world', () => {
     };
     c.send(JSON.stringify({ t: 'hello', name: 'x', protocol: WORLD_PROTOCOL, token: reg.token, slot: 2 }));
     await waitFor((m) => m.t === 'char');
+    // Other players see the character's name, not the account's.
+    expect(server!.room.playerNames()).toEqual(['Ember Child']);
     c.send(JSON.stringify({ t: 'state', s: { x: -9, y: 0, z: 7.5, yaw: 0, spd: 0, ph: 'idle', atk: null, pr: 0, hp: 200, mhp: 200, wpn: null } }));
     c.send(JSON.stringify({ t: 'act', id: 1, a: { k: 'talk', npc: 'orla' } }));
     expect(await waitFor((m) => m.t === 'actResult' && m.id === 1)).toMatchObject({ ok: true });

@@ -8,8 +8,11 @@
  *   GET  /api/me                                   -> {username}
  *   GET  /api/characters                           -> {slots: CharacterSummary[]}   (both slots)
  *   GET  /api/save?slot=N                          -> {save: string|null, revision}   (read-only)
- *   POST /api/character/new {slot}                 -> {revision}   (server builds one, empty slot only)
- *   POST /api/character/import {save, slot}        -> {revision}   (a guest character, empty slot only)
+ *   POST /api/character/new {slot, name}           -> {revision, name}   (server builds one, empty slot only)
+ *   POST /api/character/import {save, slot, name?} -> {revision}   (a guest character, empty slot only)
+ *   POST /api/character/name {slot, name}          -> {revision, name}   (names an unnamed character)
+ *
+ * Character names are unique across all accounts (ignoring case); see @alloy/session names.ts.
  *   POST /api/character/delete {slot, confirm: "DELETE"} -> {ok}   (moves it to trash)
  *
  * `slot` is 1 or 2 and defaults to 1 (older clients).
@@ -17,7 +20,7 @@
  * Browsers never upload a signed-in character: the world server owns and saves it.
  */
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { MAX_SAVE_BYTES, serialize } from '@alloy/save';
+import { MAX_SAVE_BYTES } from '@alloy/save';
 import { ensureNodes, newSessionData } from '@alloy/session';
 import type { CharacterHost } from '../characters';
 import { charKey, isSlot, type AccountService, type Slot } from './service';
@@ -135,7 +138,7 @@ export async function handleApi(svc: AccountService, opts: ApiOptions, req: Inco
       if (!isSlot(slot)) return send(400, { error: 'bad_slot', message: 'No such character slot.' }), true;
       const s = await svc.getSave(acct.id, slot);
       send(200, { save: s?.raw ?? null, revision: s?.revision ?? 0 });
-    } else if (route === 'POST /api/character/new' || route === 'POST /api/character/import' || route === 'POST /api/character/delete') {
+    } else if (route === 'POST /api/character/new' || route === 'POST /api/character/import' || route === 'POST /api/character/delete' || route === 'POST /api/character/name') {
       const body = (await readJson(req)) ?? (route.endsWith('/import') ? null : {});
       if (!body) return send(413, { error: 'too_large', message: 'Save is too large or invalid.' }), true;
       const slot: Slot | null = body.slot === undefined ? 1 : isSlot(body.slot) ? body.slot : null;
@@ -148,10 +151,15 @@ export async function handleApi(svc: AccountService, opts: ApiOptions, req: Inco
       }
       await host?.settled(key);
       if (route.endsWith('/new')) {
-        const t = Date.now();
-        const data = newSessionData(t);
-        ensureNodes(data);
-        const r = await svc.newCharacter(acct.id, slot, serialize(data, t));
+        const r = await svc.newCharacter(acct.id, slot, body.name, () => {
+          const data = newSessionData(Date.now());
+          ensureNodes(data);
+          return data;
+        });
+        if (r.ok) send(200, r.value);
+        else fail(r);
+      } else if (route.endsWith('/name')) {
+        const r = await svc.nameCharacter(acct.id, slot, body.name);
         if (r.ok) send(200, r.value);
         else fail(r);
       } else if (route.endsWith('/delete')) {
@@ -161,7 +169,7 @@ export async function handleApi(svc: AccountService, opts: ApiOptions, req: Inco
         if (r.ok) send(200, { ok: true });
         else fail(r);
       } else {
-        const r = await svc.importCharacter(acct.id, body.save, slot);
+        const r = await svc.importCharacter(acct.id, body.save, slot, body.name);
         if (r.ok) send(200, r.value);
         else fail(r);
       }

@@ -7,7 +7,8 @@ Everyone who opens the link shares the same world.
 and mouse needed).
 - The free server sleeps when nobody is on, so the first load can take about a minute.
 - **Sign in** (create an account on the title screen) to keep your character on the server.
-  Each account has **two character slots**. Guests are saved in this browser only.
+  Each account has **two character slots**, and you name each character when you create it (other
+  players see the name). Guests are saved in this browser only.
 - The build version is at the bottom of the title screen and in the Esc menu. Note it with your
   feedback.
 

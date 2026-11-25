@@ -3,3 +3,4 @@ export * from './session';
 export * from './nodes';
 export * from './actions';
 export * from './containers';
+export * from './names';

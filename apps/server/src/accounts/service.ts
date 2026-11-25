@@ -11,7 +11,8 @@
  * - Abuse limits: attempts per IP per window, and a short lock after repeated failures.
  */
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual, type ScryptOptions } from 'node:crypto';
-import { MAX_SAVE_BYTES, deserialize, serialize } from '@alloy/save';
+import { MAX_SAVE_BYTES, deserialize, serialize, type SessionData } from '@alloy/save';
+import { characterNameKey, checkCharacterName } from '@alloy/session';
 import type { KV } from './kv';
 
 const scrypt = (pw: string, salt: Buffer, len: number, opts: ScryptOptions) =>
@@ -48,6 +49,8 @@ export const charKey = (accountId: string, slot: Slot): string => (slot === 1 ? 
 export interface CharacterSummary {
   slot: Slot;
   exists: boolean;
+  /** The character's name (absent for characters made before names existed). */
+  name?: string;
   rank?: number;
   smithMastery?: number;
   weaponLevel?: number;
@@ -224,6 +227,7 @@ export class AccountService {
       out.push({
         slot,
         exists: true,
+        ...(d.name ? { name: d.name } : {}),
         rank: d.progression.adventurer.rank,
         smithMastery: d.progression.professions.blacksmithing.mastery,
         weaponLevel: Math.max(...Object.values(d.progression.weaponMastery).map((w) => w?.level ?? 1)),
@@ -238,14 +242,58 @@ export class AccountService {
     return out;
   }
 
-  /** Start a character the server builds itself, in an empty slot only. */
-  async newCharacter(accountId: string, slot: Slot, raw: string): Promise<Result<{ revision: number }>> {
+  /**
+   * Reserve a character name for an account's slot (names are unique across all accounts,
+   * ignoring case). Returns the tidied name, or why it can't be used.
+   */
+  private async reserveName(accountId: string, slot: Slot, raw: unknown): Promise<Result<string>> {
+    const c = checkCharacterName(raw);
+    if (!c.ok) return err(400, 'bad_name', c.message);
+    const key = `cname:${characterNameKey(c.name)}`;
+    const held = await this.kv.get<{ accountId: string; slot: Slot }>(key);
+    if (held && !(held.accountId === accountId && held.slot === slot)) return err(409, 'name_taken', `Someone already has the name ${c.name}.`);
+    await this.kv.put(key, { accountId, slot });
+    return { ok: true as const, value: c.name };
+  }
+
+  private async releaseName(name: string | undefined, accountId: string, slot: Slot): Promise<void> {
+    if (!name) return;
+    const key = `cname:${characterNameKey(name)}`;
+    const held = await this.kv.get<{ accountId: string; slot: Slot }>(key);
+    if (held?.accountId === accountId && held.slot === slot) await this.kv.delete(key);
+  }
+
+  /** Start a character the server builds itself, with a name, in an empty slot only. */
+  async newCharacter(accountId: string, slot: Slot, name: unknown, build: () => SessionData): Promise<Result<{ revision: number; name: string }>> {
     return this.withLock(accountId, async () => {
       const key = `save:${charKey(accountId, slot)}`;
       if (await this.kv.get<SaveRec>(key)) return err(409, 'slot_taken', 'That slot already has a character. Delete it first to start over.');
+      const n = await this.reserveName(accountId, slot, name);
+      if (!n.ok) return n;
       const t = this.now();
-      await this.kv.put(key, { raw, revision: 1, savedAt: t, updatedAt: t } satisfies SaveRec);
-      return { ok: true as const, value: { revision: 1 } };
+      const data = build();
+      data.name = n.value;
+      await this.kv.put(key, { raw: serialize(data, t), revision: 1, savedAt: t, updatedAt: t } satisfies SaveRec);
+      return { ok: true as const, value: { revision: 1, name: n.value } };
+    });
+  }
+
+  /** Name a character that doesn't have one yet (made before names existed). */
+  async nameCharacter(accountId: string, slot: Slot, name: unknown): Promise<Result<{ revision: number; name: string }>> {
+    return this.withLock(accountId, async () => {
+      const key = `save:${charKey(accountId, slot)}`;
+      const rec = await this.kv.get<SaveRec>(key);
+      if (!rec) return err(404, 'no_character', 'There is no character in that slot.');
+      const r = deserialize(rec.raw);
+      if (!r.ok) return err(422, 'invalid_save', `Stored character is invalid: ${r.reason}`);
+      if (r.data.name) return err(409, 'already_named', `This character is already called ${r.data.name}.`);
+      const n = await this.reserveName(accountId, slot, name);
+      if (!n.ok) return n;
+      r.data.name = n.value;
+      const t = this.now();
+      const out: SaveRec = { raw: serialize(r.data, t), revision: rec.revision + 1, savedAt: t, updatedAt: t };
+      await this.kv.put(key, out);
+      return { ok: true as const, value: { revision: out.revision, name: n.value } };
     });
   }
 
@@ -261,6 +309,9 @@ export class AccountService {
       const trashKey = `trash:${key}:${this.now()}`;
       await this.kv.put(trashKey, { ...rec, deletedAt: this.now() });
       await this.kv.delete(`save:${key}`);
+      // The name is free again (the trash copy keeps it, for a restore by hand).
+      const r = deserialize(rec.raw);
+      await this.releaseName(r.ok ? r.data.name : undefined, accountId, slot);
       return { ok: true as const, value: { trashKey } };
     });
   }
@@ -271,7 +322,7 @@ export class AccountService {
    * are capped. Accepted risk: a guest save can be edited before import (see
    * docs/server-authority.md); after import, the server owns the character.
    */
-  async importCharacter(accountId: string, raw: unknown, slot: Slot = 1): Promise<Result<{ revision: number }>> {
+  async importCharacter(accountId: string, raw: unknown, slot: Slot = 1, name?: unknown): Promise<Result<{ revision: number }>> {
     if (typeof raw !== 'string' || raw.length > MAX_SAVE_BYTES) return err(413, 'too_large', 'Save is too large.');
     const check = deserialize(raw);
     if (!check.ok) return err(422, 'invalid_save', `Save rejected: ${check.reason}`);
@@ -279,6 +330,10 @@ export class AccountService {
     data.inventory.coins = Math.min(data.inventory.coins, MAX_IMPORT_COINS);
     return this.withLock(accountId, async () => {
       if (await this.kv.get<SaveRec>(`save:${charKey(accountId, slot)}`)) return err(409, 'has_character', 'That slot already has a character.');
+      // The imported character gets a (unique) name: the one given, else the guest's own.
+      const n = await this.reserveName(accountId, slot, name ?? data.name);
+      if (!n.ok) return n;
+      data.name = n.value;
       const t = this.now();
       const rec: SaveRec = { raw: serialize(data, t), revision: 1, savedAt: t, updatedAt: t };
       await this.kv.put(`save:${charKey(accountId, slot)}`, rec);

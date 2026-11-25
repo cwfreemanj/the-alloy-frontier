@@ -6,8 +6,16 @@ import { expect, test, type Browser, type Page } from '@playwright/test';
 
 const WORLD = 'http://localhost:2569';
 const uniq = () => `t${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`.slice(0, 20);
+/** A unique character name (letters only, like real names). */
+const charName = () => 'Tess ' + Array.from({ length: 8 }, () => 'abcdefghijklmnopqrstuvwxyz'[Math.floor(Math.random() * 26)]).join('');
+/** Name a character in an empty slot and create it. */
+async function createIn(page: Page, slot: 1 | 2, name = charName()): Promise<string> {
+  await page.getByTestId(`slot-${slot}-name`).fill(name);
+  await page.getByTestId(`slot-${slot}-new`).click();
+  return name;
+}
 
-type S = { started: boolean; modal: string | null; quest: { step: string }; equipped: { name: string } | null; coins: number; world: { status: string; name: string; mode: string } };
+type S = { started: boolean; modal: string | null; quest: { step: string }; equipped: { name: string } | null; coins: number; world: { status: string; name: string; account: string | null; mode: string } };
 const state = (p: Page) => p.evaluate(() => (window as unknown as { __alloy: { state: () => S } }).__alloy.state());
 
 async function freshBrowser(browser: Browser): Promise<Page> {
@@ -44,9 +52,11 @@ test('the same character on a different browser; one device at a time', async ({
   // Browser 1: create an account and make progress.
   const a = await freshBrowser(browser);
   await signIn(a, user, pw, true);
-  await a.getByTestId('slot-1-new').click();
+  const hero = await createIn(a, 1);
   await expect.poll(async () => (await state(a)).world.status, { timeout: 15_000 }).toBe('online');
-  expect((await state(a)).world.name).toBe(user);
+  // The character has its own name, separate from the account's.
+  expect((await state(a)).world.name).toBe(hero);
+  expect((await state(a)).world.account).toBe(user);
   // Talk to Orla through the server (it checks we're next to her, then grants the sword).
   await a.evaluate(({ x, z }) => (window as unknown as { __alloy: Hooks }).__alloy.teleport(x, z), ORLA);
   await actWhenThere(a, { k: 'talk', npc: 'orla' });
@@ -75,7 +85,7 @@ test('signing in on a second device signs the first out of the world', async ({ 
   const user = uniq();
   const a = await freshBrowser(browser);
   await signIn(a, user, 'forge-and-anvil', true);
-  await a.getByTestId('slot-1-new').click();
+  await createIn(a, 1);
   await expect.poll(async () => (await state(a)).world.status, { timeout: 15_000 }).toBe('online');
   const b = await freshBrowser(browser);
   await signIn(b, user, 'forge-and-anvil', false);
@@ -93,7 +103,7 @@ test('a signed-in character cannot be changed from the browser', async ({ browse
   const page = await freshBrowser(browser);
   const user = uniq();
   await signIn(page, user, 'no-cheating-here', true);
-  await page.getByTestId('slot-1-new').click();
+  await createIn(page, 1);
   await expect.poll(async () => (await state(page)).world.status, { timeout: 15_000 }).toBe('online');
   const start = await state(page);
 
@@ -135,6 +145,7 @@ test('a guest character can be brought into a new account', async ({ browser }) 
   await page.reload();
 
   await signIn(page, uniq(), 'guest-to-account', true);
+  await page.getByTestId('slot-1-name').fill(charName());
   await page.getByTestId('slot-1-import').click();
   await expect.poll(async () => (await state(page)).started).toBe(true);
   expect((await state(page)).quest.step).toBe('first_blood');
@@ -169,7 +180,7 @@ test('two character slots: a second character, and a deliberate, confirmed delet
   const page = await freshBrowser(browser);
   await signIn(page, uniq(), 'two-slots-please', true);
   // Slot 1: play a character and make some progress.
-  await page.getByTestId('slot-1-new').click();
+  const first = await createIn(page, 1);
   await expect.poll(async () => (await state(page)).world.status, { timeout: 15_000 }).toBe('online');
   await page.evaluate(({ x, z }) => (window as unknown as { __alloy: Hooks }).__alloy.teleport(x, z), ORLA);
   await actWhenThere(page, { k: 'talk', npc: 'orla' });
@@ -177,9 +188,17 @@ test('two character slots: a second character, and a deliberate, confirmed delet
   // Back to the title: slot 1 shows its progress, slot 2 is empty.
   await page.reload();
   await expect(page.getByTestId('slot-1')).toContainText('Quest step 2/', { timeout: 15_000 });
+  await expect(page.getByTestId('slot-1-title')).toHaveText(first);
   await expect(page.getByTestId('slot-2')).toContainText('Empty slot');
-  // Slot 2: a brand-new character, while slot 1 is kept.
+  // Slot 2 needs a valid, unused name: Create stays disabled until then.
+  await page.getByTestId('slot-2-name').fill('X1');
+  await expect(page.getByTestId('slot-2-new')).toBeDisabled();
+  await expect(page.getByTestId('slot-2-name-hint')).toHaveClass(/bad/);
+  await page.getByTestId('slot-2-name').fill(first);
   await page.getByTestId('slot-2-new').click();
+  await expect(page.getByTestId('acct-error')).toContainText('already has the name', { timeout: 15_000 });
+  // Slot 2: a brand-new character, while slot 1 is kept.
+  const second = await createIn(page, 2);
   await expect.poll(async () => (await state(page)).world.status, { timeout: 15_000 }).toBe('online');
   expect((await state(page)).quest.step).toBe('commission');
   await page.waitForTimeout(800);
@@ -189,7 +208,8 @@ test('two character slots: a second character, and a deliberate, confirmed delet
   // Delete slot 2: the card turns red and lists what is lost; the button needs DELETE typed.
   await page.getByTestId('slot-2-delete').click();
   await expect(page.getByTestId('slot-2')).toHaveClass(/deleting/);
-  await expect(page.getByTestId('slot-2')).toContainText('Delete Character 2?');
+  await expect(page.getByTestId('slot-2-title')).toBeHidden(); // the card shows the warning instead
+  await expect(page.getByTestId('slot-2')).toContainText(`Delete ${second} (Character 2)?`);
   const confirm = page.getByTestId('slot-2-confirm-delete');
   await expect(confirm).toBeDisabled();
   await page.getByTestId('slot-2-confirm-text').fill('delete');

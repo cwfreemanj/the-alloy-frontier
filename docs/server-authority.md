@@ -106,7 +106,20 @@ type CharAction =
 - **Delete:** `POST /api/character/delete {slot, confirm: "DELETE"}` requires the typed confirmation (400 `not_confirmed` without it) and is refused while that character is in the world (409 `in_world`).
   - The record isn't erased: it moves to `trash:<key>:<time>` with `deletedAt`, so a mistake can be undone by hand from the database.
   - On the title screen, deleting turns the card red, lists what will be lost, and the delete button only enables once DELETE is typed.
-- **Listing:** `GET /api/characters` summarises both slots (rank, masteries, coins, play time, quest step).
+- **Listing:** `GET /api/characters` summarises both slots (name, rank, masteries, coins, play time, quest step).
+
+**Update: character names.**
+- Every character has a name, separate from the account name. Other players see it, and it appears
+  in the HUD and on the character screen.
+- **Rules** (`@alloy/session` `checkCharacterName`, shared by the browser and the server):
+  3–16 characters; letters with single spaces, apostrophes or hyphens; starts with a letter;
+  not reserved (NPCs, staff-like names).
+- **Unique across all accounts, ignoring case:** a `cname:<name>` record holds each name for its
+  account and slot.
+  - Creating (`/api/character/new {slot, name}`) or importing reserves a name (409 `name_taken`).
+  - Deleting a character frees its name.
+- **Characters made before names existed** must be named once before they can play:
+  `POST /api/character/name {slot, name}`; 409 `already_named` after that.
 
 ### 5. Client (account mode)
 
