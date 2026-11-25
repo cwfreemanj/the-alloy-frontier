@@ -1,19 +1,27 @@
 /**
  * Chests and trail caches (searchable containers, @alloy/world CONTAINERS). Barrels are the
  * scene's own barrels_crates models, so only chests and caches get a model here. A container
- * this character has searched shows its lid open until it refills.
+ * this character has searched shows its lid open (code-built chest) or turns dark (the authored
+ * chest, which loads in the background) until it refills.
  */
 import * as THREE from 'three';
 import { CONTAINERS, terrainHeight, type ContainerDef } from '@alloy/world';
+import { authoredModel, authoredObject, fitScale } from './AuthoredModels';
 
 interface Prop {
   def: ContainerDef;
   lid: THREE.Object3D;
   glint: THREE.Mesh | null;
   open: number;
+  group: THREE.Group;
+  /** The code-built chest's meshes (hidden once the authored chest loads). */
+  pieces: THREE.Object3D[];
+  /** The authored chest's own materials (darkened while searched). */
+  mats: THREE.MeshStandardMaterial[];
+  width: number;
 }
 
-function buildChest(kind: 'chest' | 'cache'): { group: THREE.Group; lid: THREE.Group; glint: THREE.Mesh | null } {
+function buildChest(kind: 'chest' | 'cache'): { group: THREE.Group; lid: THREE.Group; glint: THREE.Mesh | null; pieces: THREE.Object3D[]; width: number } {
   const g = new THREE.Group();
   const wood = new THREE.MeshStandardMaterial({ color: kind === 'cache' ? '#5a3e26' : '#6b4526', roughness: 0.85 });
   const iron = new THREE.MeshStandardMaterial({ color: '#3d3f44', metalness: 0.7, roughness: 0.45 });
@@ -42,6 +50,7 @@ function buildChest(kind: 'chest' | 'cache'): { group: THREE.Group; lid: THREE.G
   lock.position.set(0, -0.02, d + 0.01);
   lid.add(lock);
   g.add(lid);
+  const pieces = [...g.children];
   g.traverse((o) => {
     if ((o as THREE.Mesh).isMesh) {
       o.castShadow = true;
@@ -66,7 +75,7 @@ function buildChest(kind: 'chest' | 'cache'): { group: THREE.Group; lid: THREE.G
     glint.position.set(0, 0.42, d / 2 + 0.05);
     g.add(glint);
   }
-  return { group: g, lid, glint };
+  return { group: g, lid, glint, pieces, width: w };
 }
 
 export class ContainerProps {
@@ -76,12 +85,32 @@ export class ContainerProps {
   constructor() {
     for (const def of CONTAINERS) {
       if (def.kind === 'barrel') continue;
-      const { group, lid, glint } = buildChest(def.kind);
+      const { group, lid, glint, pieces, width } = buildChest(def.kind);
       group.position.set(def.pos.x, terrainHeight(def.pos.x, def.pos.z) + def.floor, def.pos.z);
       group.rotation.y = (def.yaw * Math.PI) / 180;
       if (def.kind === 'cache') group.scale.setScalar(1.25);
       this.group.add(group);
-      this.props.push({ def, lid, glint, open: 0 });
+      this.props.push({ def, lid, glint, open: 0, group, pieces, width, mats: [] });
+    }
+    void this.upgrade();
+  }
+
+  /** Swap the code-built chests for the authored chest model once it loads. */
+  private async upgrade(): Promise<void> {
+    const m = await authoredModel('chest');
+    if (!m) return;
+    for (const p of this.props) {
+      const o = authoredObject(m);
+      o.traverse((c) => {
+        const mesh = c as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const mat = (mesh.material as THREE.MeshStandardMaterial).clone();
+        mesh.material = mat;
+        p.mats.push(mat);
+      });
+      o.scale.setScalar(fitScale(m, p.width * 1.1, 'x'));
+      p.group.add(o);
+      for (const piece of p.pieces) piece.visible = false;
     }
   }
 
@@ -91,6 +120,7 @@ export class ContainerProps {
       const target = searched(p.def.id) ? 1 : 0;
       p.open += (target - p.open) * Math.min(1, dt * 6);
       p.lid.rotation.x = -p.open * 1.9;
+      for (const m of p.mats) m.color.setScalar(1 - 0.45 * p.open);
       if (p.glint) {
         p.glint.visible = target === 0;
         const k = Math.max(0, Math.sin(time * 2.2 + p.def.pos.x));

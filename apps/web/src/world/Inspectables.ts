@@ -36,7 +36,7 @@ export const INSPECTABLES: Inspectable[] = [
   },
   {
     id: 'watch_rack',
-    pos: front(FORGE_PLAN.rack.x, FORGE_PLAN.rack.z, 0, 0.75),
+    pos: front(FORGE_PLAN.rack.x, FORGE_PLAN.rack.z, 0, 1.15),
     floor: 0,
     label: 'Examine the sword rack',
     title: "The Watch's Blades",

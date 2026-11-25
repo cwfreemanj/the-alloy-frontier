@@ -38,9 +38,9 @@ export const FORGE_PLAN = {
   wallHeight: 3.6,
   ridgeHeight: 6.5,
   /** Hearth against the back wall, chimney behind it. */
-  hearth: { x: -1.6, z: -2.45, hw: 1.2, hd: 0.65, h: 1.0 },
+  hearth: { x: -1.6, z: -2.0, hw: 1.0, hd: 1.12, h: 1.1 },
   chimney: { x: -1.6, z: -3.55, half: 0.8, h: 9.2 },
-  bellows: { x: -3.15, z: -2.35 },
+  bellows: { x: -3.12, z: -2.3 },
   /** Quench trough along the left wall. */
   trough: { x: -3.25, z: -0.6 },
   /** The anvil (world item origin) faces the hearth. */
@@ -51,7 +51,9 @@ export const FORGE_PLAN = {
   /** Orla's masterwork, on the left wall near the door. */
   masterwork: { x: -3.62, z: 1.7, y: 1.95 },
   /** The watch's sword rack, under the loft against the back wall. */
-  rack: { x: 2.05, z: -2.95 },
+  rack: { x: 1.85, z: -2.5 },
+  /** A workbench against the right wall under the loft. */
+  workbench: { x: 3.18, z: -1.4 },
   /** A chest up in the loft. */
   loftChest: { x: 2.7, z: -2.55 },
 } as const;
@@ -75,9 +77,10 @@ function shapes(): ForgeShape[] {
     // Fire
     ['r', P.chimney.x, P.chimney.z, P.chimney.half, P.chimney.half, P.chimney.h],
     ['r', P.hearth.x, P.hearth.z, P.hearth.hw, P.hearth.hd, P.hearth.h],
-    ['r', P.bellows.x, P.bellows.z, 0.45, 0.6, 1.3],
+    ['r', P.bellows.x, P.bellows.z, 0.5, 0.3, 1.0],
     ['r', P.trough.x, P.trough.z, 0.35, 0.7, 0.9],
-    ['r', P.rack.x, P.rack.z, 0.9, 0.18, 2.0],
+    ['r', P.rack.x, P.rack.z, 0.85, 0.62, 2.1],
+    ['r', P.workbench.x, P.workbench.z, 0.49, 0.7, 1.1],
   ];
   // Loft: a floor overhead (walk under it, stand on it), its post and railings.
   const L = P.loft;

@@ -2,6 +2,7 @@
  * The First Forge: integrates rendering, input, rules modules, UI and persistence.
  * Gameplay decisions are delegated to @alloy/* packages; this file wires them together.
  */
+import { hiddenScenery } from '../world/AuthoredScenery';
 import { INSPECTABLES } from '../world/Inspectables';
 import * as THREE from 'three';
 import {
@@ -187,6 +188,8 @@ export class Game {
     for (const n of this.npcs) this.scene.add(n.object);
     for (const d of ALL_RESOURCE_NODES) {
       // Grove trees are drawn with the scenery: the node animates its instance there.
+      // Grove trees on the steep hills outside the playable area aren't drawn (nor reachable).
+      if (d.instanced && hiddenScenery('ironwood_tree', d.pos.x, d.pos.z)) continue;
       const n = new ResourceNode(d, d.instanced ? this.world.instanceAt('ironwood_tree', d.pos.x, d.pos.z) : null);
       this.nodes.push(n);
       this.scene.add(n.object);

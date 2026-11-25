@@ -69,9 +69,13 @@ const NODE_MODELS: Partial<Record<MaterialId, { model: string; scale: number; y:
 
 /** One instance of an instanced scenery model (the grove trees are drawn with the scenery). */
 export interface InstanceHandle {
-  parts: Array<{ mesh: THREE.InstancedMesh; index: number }>;
+  /** `local`: the model's own fit (an authored model scaled to the replaced one's size). */
+  parts: Array<{ mesh: THREE.InstancedMesh; index: number; local?: THREE.Matrix4 }>;
+  /** Bumped when the parts change (the scenery was swapped): poses are re-applied. */
+  version?: number;
 }
 
+const TMP_M2 = new THREE.Matrix4();
 const FALL_SECONDS = 1.1;
 const SINK_SECONDS = 0.9;
 const REGROW_SECONDS = 1.6;
@@ -206,14 +210,14 @@ export class ResourceNode {
     const shake = this.wobble > 0 ? Math.sin(this.wobble * 40) * 0.035 * (this.wobble / WOBBLE_SECONDS) : 0;
     const scale = this.baseScale * (this.sink >= 1 ? 0 : (1 - 0.6 * this.sink) * (0.15 + 0.85 * this.grow));
     const y = this.baseY - this.sink * 0.8;
-    const key = `${fallAngle.toFixed(4)}|${shake.toFixed(4)}|${scale.toFixed(4)}|${y.toFixed(3)}`;
+    const key = `${fallAngle.toFixed(4)}|${shake.toFixed(4)}|${scale.toFixed(4)}|${y.toFixed(3)}|${this.instance?.version ?? 0}`;
     if (key === this.applied) return; // nothing changed: don't touch the GPU buffers
     this.applied = key;
     TMP_Q.setFromAxisAngle(this.fallAxis, fallAngle + shake).multiply(this.yawQ);
     if (this.instance) {
       TMP_M.compose(TMP_P.set(this.def.pos.x, y, this.def.pos.z), TMP_Q, TMP_S.setScalar(scale));
       for (const p of this.instance.parts) {
-        p.mesh.setMatrixAt(p.index, TMP_M);
+        p.mesh.setMatrixAt(p.index, p.local ? TMP_M2.multiplyMatrices(TMP_M, p.local) : TMP_M);
         p.mesh.instanceMatrix.needsUpdate = true;
       }
     } else {
