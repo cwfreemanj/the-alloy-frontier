@@ -57,6 +57,42 @@ export class PerfMonitor {
     };
   }
 
+  /** The GPU as the browser reports it (null if the browser hides it). */
+  gpu(): string | null {
+    try {
+      const gl = this.renderer.getContext();
+      const ext = gl.getExtension('WEBGL_debug_renderer_info');
+      return ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : String(gl.getParameter(gl.RENDERER));
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * A plain-text report for M4 evidence (GDD 8.5: performance measured on target machines):
+   * build, machine, settings and the last ~10 s of frame timing.
+   */
+  report(ctx: { build: string; quality: string; area: string; players: number }): string {
+    const s = this.snapshot();
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+    const browser = /Edg\/([\d.]+)/.exec(ua)?.[0] ?? /Chrome\/([\d.]+)/.exec(ua)?.[0] ?? /Firefox\/([\d.]+)/.exec(ua)?.[0] ?? /Version\/([\d.]+).*Safari/.exec(ua)?.[0] ?? 'unknown';
+    const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : undefined;
+    const memGB = typeof navigator !== 'undefined' ? (navigator as unknown as { deviceMemory?: number }).deviceMemory : undefined;
+    return [
+      'Alloy Frontier performance report',
+      `Build: ${ctx.build}`,
+      `Taken: ${new Date().toISOString()}`,
+      `Browser: ${browser}${/Windows/.test(ua) ? ' · Windows' : /Mac OS/.test(ua) ? ' · macOS' : /Linux/.test(ua) ? ' · Linux' : ''}`,
+      `GPU: ${this.gpu() ?? 'not reported'}`,
+      `CPU threads: ${cores ?? '?'} · device memory: ${memGB ? memGB + ' GB' : '?'}`,
+      `Screen: ${s.resolution} @ pixel ratio ${s.pixelRatio.toFixed(2)} · graphics preset: ${ctx.quality}`,
+      `Where: ${ctx.area} · players online: ${ctx.players}`,
+      `Frame rate (last ${s.samples} frames): average ${s.fps.toFixed(0)} FPS · 1% low ${s.low1.toFixed(0)} FPS · worst frame ${s.worstMs.toFixed(1)} ms`,
+      `Scene: ${s.drawCalls} draw calls · ${(s.triangles / 1000).toFixed(0)}k triangles · ${s.textures} textures`,
+      `Memory: ${s.heapMB === null ? 'n/a' : s.heapMB.toFixed(0) + ' MB JS heap'} · load ${(s.loadMs / 1000).toFixed(1)} s`,
+    ].join('\n');
+  }
+
   text(): string {
     const s = this.snapshot();
     return [

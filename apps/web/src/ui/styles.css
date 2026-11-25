@@ -534,3 +534,4 @@ select, input[type=number] { background: var(--panel-2); color: var(--text); bor
 .fx .stat-table td { padding: 4px 4px; }
 .fx h3.fx-h { margin: 12px 0 6px; }
 .fx .bp-card .sub { margin-top: 1px; }
+.perf-report { width: 100%; font-family: var(--mono); font-size: 11px; background: #0e0f11; color: var(--text); border: 1px solid var(--steel); border-radius: 3px; padding: 6px; resize: vertical; }

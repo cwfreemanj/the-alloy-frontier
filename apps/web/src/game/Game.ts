@@ -2,6 +2,7 @@
  * The First Forge: integrates rendering, input, rules modules, UI and persistence.
  * Gameplay decisions are delegated to @alloy/* packages; this file wires them together.
  */
+import { buildLabel } from '../buildInfo';
 import { hiddenScenery } from '../world/AuthoredScenery';
 import { INSPECTABLES } from '../world/Inspectables';
 import * as THREE from 'three';
@@ -757,6 +758,8 @@ export class Game {
       pausePanel({
         settings: this.settings,
         saveInfo: this.lastSave,
+        build: buildLabel(),
+        onPerfReport: () => this.perf.report({ build: buildLabel(), quality: this.settings.quality, area: this.zone.name, players: 1 + this.online.remotes.size }),
         onResume: () => this.closeModal(),
         onSave: () => {
           this.save('manual');

@@ -279,6 +279,18 @@ export class EmberholdWorld {
         this.group.add(im);
       }
     }
+    this.warmUp(models.values());
+  }
+
+  /**
+   * Upload the new models' textures and compile their shaders now, so the first time one comes
+   * into view (walking into a new area) doesn't stall a frame.
+   */
+  private warmUp(models: Iterable<{ parts: Array<{ material: THREE.MeshStandardMaterial }> }>): void {
+    for (const m of models)
+      for (const p of m.parts)
+        for (const t of [p.material.map, p.material.normalMap, p.material.roughnessMap, p.material.metalnessMap, p.material.emissiveMap]) if (t) this.renderer.initTexture(t);
+    void this.renderer.compileAsync(this.scene, this.camera).catch(() => undefined);
   }
 
   /**
