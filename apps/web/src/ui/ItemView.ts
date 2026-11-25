@@ -2,9 +2,13 @@
 import { IMBUEMENTS, RARITY_LABEL, SPECIALIZATIONS, TEMPERS, getBlueprint, itemDisplayName, type ItemInstance } from '@alloy/item-gen';
 import { RARITY_COLORS } from '../entities/Weapons';
 import { h } from './dom';
+import { icon } from './icons';
 
 interface StatDef {
   label: string;
+  /** Icon name (icons.ts) and a plain-language explanation shown on hover. */
+  icon: string;
+  help: string;
   get: (i: ItemInstance) => number;
   fmt: (v: number) => string;
   /** true if lower is better */
@@ -13,12 +17,12 @@ interface StatDef {
 }
 
 export const STATS: StatDef[] = [
-  { label: 'Damage', get: (i) => i.result.damage, fmt: (v) => v.toFixed(0), dp: 0 },
-  { label: 'Attack speed', get: (i) => i.result.attackSpeed, fmt: (v) => `${v.toFixed(2)}×`, dp: 2 },
-  { label: 'Stagger', get: (i) => i.result.stagger, fmt: (v) => v.toFixed(1), dp: 1 },
-  { label: 'Stamina cost', get: (i) => i.result.staminaCostMultiplier, fmt: (v) => `${(v * 100).toFixed(0)}%`, lowerBetter: true, dp: 2 },
-  { label: 'Critical chance', get: (i) => i.result.critChance, fmt: (v) => `${(v * 100).toFixed(1)}%`, dp: 3 },
-  { label: 'Equipment rating', get: (i) => i.result.rating, fmt: (v) => v.toFixed(0), dp: 0 },
+  { label: 'Damage', icon: 'damage', help: 'How hard each hit lands before the enemy’s defense.', get: (i) => i.result.damage, fmt: (v) => v.toFixed(0), dp: 0 },
+  { label: 'Attack speed', icon: 'speed', help: 'How quickly you swing. 1.10× is 10% faster than a standard blade.', get: (i) => i.result.attackSpeed, fmt: (v) => `${v.toFixed(2)}×`, dp: 2 },
+  { label: 'Stagger', icon: 'stagger', help: 'How much each hit breaks an enemy’s poise. Enough stagger interrupts their attack.', get: (i) => i.result.stagger, fmt: (v) => v.toFixed(1), dp: 1 },
+  { label: 'Stamina cost', icon: 'stamina', help: 'Stamina each swing costs, against a standard blade. Lower is better.', get: (i) => i.result.staminaCostMultiplier, fmt: (v) => `${(v * 100).toFixed(0)}%`, lowerBetter: true, dp: 2 },
+  { label: 'Critical chance', icon: 'crit', help: 'Chance a hit lands as a critical for extra damage.', get: (i) => i.result.critChance, fmt: (v) => `${(v * 100).toFixed(1)}%`, dp: 3 },
+  { label: 'Equipment rating', icon: 'rating', help: 'One number for the whole weapon: higher is better overall.', get: (i) => i.result.rating, fmt: (v) => v.toFixed(0), dp: 0 },
 ];
 
 export function deltaCell(cur: number, base: number | null, lowerBetter = false, dp = 0): HTMLElement {
@@ -28,12 +32,12 @@ export function deltaCell(cur: number, base: number | null, lowerBetter = false,
   if (Math.abs(d) < eps) return h('td', { class: 'dim' }, '=');
   const better = lowerBetter ? d < 0 : d > 0;
   const shown = lowerBetter && Math.abs(base) > 0 && dp >= 2 ? `${(d * 100).toFixed(0)}%` : d.toFixed(dp);
-  return h('td', { class: `${better ? 'good' : 'bad'} ${d > 0 ? 'delta-up' : 'delta-down'}`, title: better ? 'better' : 'worse' }, d > 0 ? `+${shown}` : shown);
+  return h('td', { class: `${better ? 'good' : 'bad'} ${d > 0 ? 'delta-up' : 'delta-down'}`, title: better ? 'better' : 'worse' }, h('span', { class: 'arrow' }, better ? '▲' : '▼'), d > 0 ? `+${shown}` : shown.replace('-', '−'));
 }
 
 export function statTable(item: ItemInstance, compare: ItemInstance | null, compareLabel = 'vs equipped'): HTMLElement {
   const rows = STATS.map((s) =>
-    h('tr', null, h('td', null, s.label), h('td', null, s.fmt(s.get(item))), deltaCell(s.get(item), compare ? s.get(compare) : null, s.lowerBetter, s.dp)),
+    h('tr', { title: s.help }, h('td', null, h('span', { class: 'stat-ico' }, icon(s.icon)), s.label), h('td', null, s.fmt(s.get(item))), deltaCell(s.get(item), compare ? s.get(compare) : null, s.lowerBetter, s.dp)),
   );
   return h(
     'table',

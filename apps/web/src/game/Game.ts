@@ -804,6 +804,7 @@ export class Game {
           if (r.ok) this.audio.sfx('anvil');
           return r;
         }),
+      (f) => (f === 'strike' ? this.audio.sfx('anvil', 0.45) : f === 'overwork' ? this.audio.sfx('guarded', 0.8) : this.audio.sfx('click')),
     );
     this.setModal('forge', p.el);
     this.forgePanel = p;
