@@ -17,7 +17,8 @@ export interface SessionData {
   version: 1;
   createdAt: number;
   playTime: number;
-  player: { x: number; z: number; yaw: number; health: number };
+  /** potionReadyAt: play time (s) when the next potion may be used (optional in older saves). */
+  player: { x: number; z: number; yaw: number; health: number; potionReadyAt?: number };
   inventory: InventoryState;
   progression: ProgressionState;
   quest: QuestState;

@@ -20,6 +20,8 @@ export type Action =
   | 'skill2'
   | 'skill3'
   | 'skill4'
+  | 'potion1'
+  | 'potion2'
   | 'lock'
   | 'interact'
   | 'inventory'
@@ -48,6 +50,8 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   skill2: ['Digit2'],
   skill3: ['Digit3'],
   skill4: ['Digit4'],
+  potion1: ['Digit5'],
+  potion2: ['Digit6'],
   lock: ['Tab', 'Mouse1', 'KeyT'],
   interact: ['KeyE'],
   inventory: ['KeyI'],

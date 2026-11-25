@@ -16,6 +16,7 @@ export const MERCHANT_ID = 'bram';
 export const MERCHANT_STOCK: StockEntry[] = [
   { id: 'steel_longsword', kind: 'item', name: 'Shop Steel Longsword', price: 35, blueprintId: 'merchant_steel_longsword' },
   { id: 'binding_flux', kind: 'material', name: 'Binding Flux', price: 1, materialId: 'binding_flux', quality: 0.5 },
+  { id: 'healing_salve', kind: 'material', name: 'Healing Salve', price: 8, materialId: 'healing_salve', quality: 0.4 },
 ];
 
 const SUPPLIER = { id: 'npc-emberhold-supply', name: 'Emberhold Supply Co.', mastery: 0 };

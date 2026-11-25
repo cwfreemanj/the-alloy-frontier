@@ -34,7 +34,7 @@ export const PROFICIENCY_YIELD_BONUS = 0.01;
 
 /** Which proficiency a material trains. */
 export function proficiencyFor(material: string): GatheringProficiency {
-  return material === 'ironwood' ? 'woodcutting' : material === 'herb' ? 'herbalism' : 'mining';
+  return material === 'ironwood' ? 'woodcutting' : material === 'emberleaf' ? 'herbalism' : 'mining';
 }
 
 /** Add XP to a gathering proficiency in place. Returns the levels gained. */

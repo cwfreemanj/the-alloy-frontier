@@ -137,7 +137,14 @@ export function startWorldServer(opts: WorldServerOptions = {}): Promise<Running
     ws.on('pong', () => alive.set(ws, true));
     // A signed-in hello needs an async account lookup; hold later messages until it's done.
     let joining: Promise<void> | null = null;
-    const close = () => ws.close(4001, 'signed in elsewhere');
+    const close = () => {
+      ws.close(4001, 'signed in elsewhere');
+      // Some proxies (Render) never complete the close handshake: cut the connection if the
+      // browser hasn't acknowledged within 2 s. It has already been told and removed from the world.
+      setTimeout(() => {
+        if (ws.readyState !== ws.CLOSED) ws.terminate();
+      }, 2000).unref?.();
+    };
     ws.on('message', (data) => {
       const raw = data.toString();
       if (joining) {

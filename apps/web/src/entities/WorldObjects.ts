@@ -59,11 +59,12 @@ export { NODE_MAX_CHARGES, NODE_RESPAWN_SECONDS, nodeTraits, nodeYield, type Nod
 import { NODE_MAX_CHARGES, nodeTraits, type NodeRuntime } from '@alloy/session';
 
 /** Workshop model, size and ground offset per node material (matches the World view). */
-const NODE_MODELS: Record<MaterialId, { model: string; scale: number; y: number }> = {
+const NODE_MODELS: Partial<Record<MaterialId, { model: string; scale: number; y: number }>> = {
   iron_ore: { model: 'iron_ore_node', scale: 1, y: -0.1 },
   ironwood: { model: 'ironwood_tree', scale: 1.15, y: 0 },
   ironglass: { model: 'ironglass_cluster', scale: 1, y: -0.1 },
   binding_flux: { model: 'iron_ore_node', scale: 1, y: -0.1 },
+  emberleaf: { model: 'shrub', scale: 0.75, y: 0 },
 };
 
 /** One instance of an instanced scenery model (the grove trees are drawn with the scenery). */
@@ -113,12 +114,20 @@ export class ResourceNode {
   ) {
     this.traits = nodeTraits(def);
     this.isTree = def.material === 'ironwood';
-    const spec = NODE_MODELS[def.material];
+    const spec = NODE_MODELS[def.material] ?? NODE_MODELS.iron_ore!;
     if (!instance) {
       const model = gameModel(spec.model);
       for (const p of model?.parts ?? []) {
         let material = p.material;
-        if (material.userData.baseGlow !== undefined) {
+        if (def.material === 'emberleaf') {
+          // Emberleaf: a shrub whose leaves glow a warm ember orange.
+          const m = (material as THREE.MeshStandardMaterial).clone();
+          m.color.lerp(new THREE.Color('#d9822b'), 0.55);
+          m.emissive = new THREE.Color('#ff7a2a');
+          m.userData = { ...p.material.userData, baseGlow: 0.35 };
+          material = m;
+          this.glowMats.push(m);
+        } else if (material.userData.baseGlow !== undefined) {
           material = material.clone();
           material.userData = { ...p.material.userData };
           if (this.traits.rich && def.material === 'iron_ore') {

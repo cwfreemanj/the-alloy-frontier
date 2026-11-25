@@ -21,7 +21,7 @@ export function nodeTraits(def: NodeDef): { quality: number; rich: boolean; labe
   const r = rng.next();
   const rich = rng.next() < 0.2;
   const quality = Math.round((rich ? 0.85 + r * 0.15 : 0.32 + r * 0.46) * 1000) / 1000;
-  const traitName = def.material === 'iron_ore' ? 'purity' : def.material === 'ironglass' ? 'conductivity' : 'grain';
+  const traitName = def.material === 'iron_ore' ? 'purity' : def.material === 'ironglass' ? 'conductivity' : def.material === 'emberleaf' ? 'potency' : 'grain';
   const label = `${rich ? 'Rich ' : ''}${materialName(def.material)} · ${traitName} ${Math.round(quality * 100)}%`;
   return { quality, rich, label, traits: { [traitName]: quality } };
 }

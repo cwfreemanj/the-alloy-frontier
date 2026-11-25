@@ -1,4 +1,5 @@
 /** Main HUD (GDD 7.2): vitals upper-left, minimap + objective upper-right, abilities bottom-centre. */
+import { POTION_COOLDOWN } from '@alloy/crafting';
 import * as THREE from 'three';
 import { ATTACKS, QUEST_EDGE_YOU_MAKE, STAMINA_CONFIG, describeProgress, weaponXpToNext, type AttackId, type PlayerCombat, WEAPON_FAMILIES } from '@alloy/game-rules';
 import { IMBUEMENTS, itemDisplayName, materialName, type ItemInstance, type MaterialId } from '@alloy/item-gen';
@@ -35,6 +36,7 @@ export class Hud {
   private slots: Record<string, SlotRefs> = {};
   /** Skill bar slots (keys 1-4). */
   private skillSlots: Array<SlotRefs & { name: HTMLElement }> = [];
+  private potionSlots: Array<SlotRefs & { id: 'healing_salve' | 'stamina_tonic' }> = [];
   private prompt: HTMLElement;
   private gatherBar: HTMLElement;
   private gatherFill: HTMLElement;
@@ -90,6 +92,16 @@ export class Hud {
       abilities.append(el);
     }
     // Skill bar: learned skills on keys 1-4 (assigned on the Skills screen).
+    abilities.append(h('div', { class: 'slot-gap' }));
+    // Potions: keys 5 and 6 (count and shared cooldown).
+    for (const [i, id, label] of [[5, 'healing_salve', 'Salve'], [6, 'stamina_tonic', 'Tonic']] as const) {
+      const cd = h('div', { class: 'cd', style: 'height:0' });
+      const cdText = h('div', { class: 'cdtext' });
+      const cost = h('div', { class: 'cost' });
+      const el = h('div', { class: `slot potion-slot ${id}`, 'data-slot': id, 'data-testid': `potion-slot-${i}` }, h('div', { class: 'key' }, String(i)), h('div', { class: 'name' }, label), cost, cd, cdText);
+      this.potionSlots.push({ el, cd, cdText, cost, id });
+      abilities.append(el);
+    }
     abilities.append(h('div', { class: 'slot-gap' }));
     for (let i = 0; i < 4; i++) {
       const cd = h('div', { class: 'cd', style: 'height:0' });
@@ -224,6 +236,17 @@ export class Hud {
       storm_arc: STAMINA_CONFIG.costs.storm_arc * mult,
       block: STAMINA_CONFIG.blockHoldDrainPerSec,
     };
+    // Potions
+    const totals = session.totals();
+    const potionCd = session.potionCooldown;
+    for (const p of this.potionSlots) {
+      const n = totals[p.id] ?? 0;
+      p.cost.textContent = `×${n}`;
+      p.el.classList.toggle('locked', n <= 0);
+      p.cd.style.height = potionCd > 0 ? `${(potionCd / POTION_COOLDOWN) * 100}%` : '0';
+      p.cdText.textContent = potionCd > 0 ? potionCd.toFixed(1) : '';
+      p.el.title = n > 0 ? `${p.id === 'healing_salve' ? 'Healing Salve' : 'Stamina Tonic'} (${n})` : 'None: brew them from Emberleaf (I → Inventory) or buy salves from Bram';
+    }
     // Skill bar
     const bar = session.skillBar;
     const usable = session.usableSkills();

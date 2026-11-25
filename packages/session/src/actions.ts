@@ -29,7 +29,9 @@ export type CharAction =
   | { k: 'event'; ev: 'open_merchant' }
   | { k: 'allocate'; attr: AttributeId; n: number }
   | { k: 'respec' }
-  | { k: 'skillbar'; slot: number; skill: string | null };
+  | { k: 'skillbar'; slot: number; skill: string | null }
+  | { k: 'brew'; recipe: string; qty: number }
+  | { k: 'consume'; item: string };
 
 export interface ActionContext {
   /** Where the player is, as the authority knows it. Null = unknown (range-checked actions fail). */
@@ -77,7 +79,8 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
       const rt = nodeStateForGather(s.data, def.id);
       if (rt.charges <= 0) return no('depleted', 'This deposit is depleted. It will replenish.');
       const kind = toolFor(def.material);
-      const power = s.toolPower(kind);
+      // Herbs are picked by hand; ore and wood need the right tool in the tool slot.
+      const power = kind ? s.toolPower(kind) : 1;
       if (power <= 0) return no('no_tool', kind === 'mining' ? 'Put a pickaxe in your tool slot to mine this.' : 'Put a hatchet in your tool slot to cut this.');
       // Better tools (25% per point of power above 1) and proficiency (1% per level above 1)
       // add a chance of one extra unit.
@@ -142,6 +145,14 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
       const { value: r, events } = captureEvents(s, () => s.allocate(a.attr, a.n));
       return r.ok ? { ok: true, events } : no(r.error, r.message, events);
     }
+    case 'brew': {
+      const { value: r, events } = captureEvents(s, () => s.brew(a.recipe, a.qty));
+      return r.ok ? { ok: true, events } : no(r.error, r.message, events);
+    }
+    case 'consume': {
+      const { value: r, events } = captureEvents(s, () => s.consume(a.item));
+      return r.ok ? { ok: true, events } : no(r.error, r.message, events);
+    }
     case 'skillbar': {
       const { value: r, events } = captureEvents(s, () => s.setSkillBar(a.slot, a.skill));
       return r.ok ? { ok: true, events } : no(r.error, r.message, events);
@@ -197,7 +208,7 @@ export function playerHit(s: Session, attackId: string, rng: () => number, targe
 export const UNARMED: WeaponStats = { damage: 8, attackSpeed: 1, stagger: 8, staminaCostMultiplier: 1, critChance: 0 };
 
 /** Which tool a material needs. */
-export const toolFor = (material: string): ToolKind => (material === 'ironwood' ? 'woodcutting' : 'mining');
+export const toolFor = (material: string): ToolKind | null => (material === 'emberleaf' ? null : material === 'ironwood' ? 'woodcutting' : 'mining');
 
 export interface CharacterStats {
   maxHealth: number;

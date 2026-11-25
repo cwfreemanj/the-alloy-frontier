@@ -4,7 +4,7 @@
  * exactly the same colliders as the browser.
  */
 import { ColliderWorld } from './Colliders';
-import { RESOURCE_NODES, type NodeDef } from './Layout';
+import { PATH, RESOURCE_NODES, type NodeDef } from './Layout';
 import { terrainHeight } from './Terrain';
 import { EMBERHOLD_MODELS, EMBERHOLD_SEAMS, EMBERHOLD_STATIC, type EmberholdModel } from './emberholdData';
 
@@ -45,8 +45,6 @@ export const GROVE_NODES: NodeDef[] = emberholdItems()
   .filter((it) => it.model === 'ironwood_tree')
   .map((it, i) => ({ id: `wood-g${i}`, material: 'ironwood', pos: { x: it.x, z: it.z }, scale: it.scale / 1.15, yaw: it.yaw, instanced: true }));
 
-/** Every node the player can gather from: the hand-placed quest nodes, the generated seams and the grove. */
-export const ALL_RESOURCE_NODES: NodeDef[] = [...RESOURCE_NODES, ...SEAM_NODES, ...GROVE_NODES];
 
 /** Collision shapes in a model's own metres: circles [x, z, r, height] and rectangles [x, z, halfW, halfD, height]. */
 type Shape = ['c', number, number, number, number] | ['r', number, number, number, number, number];
@@ -151,3 +149,34 @@ export function buildWorldColliders(): ColliderWorld {
   for (const n of RESOURCE_NODES) if (n.material === 'ironwood') addItem(world, { model: 'ironwood_tree', x: n.pos.x, z: n.pos.z, y: 0, yaw: 0, scale: 1.15 });
   return world;
 }
+
+/**
+ * Emberleaf patches (herbs, no tool needed): along both sides of the trail from the village to
+ * the quarry, every ~11 m, 4-8 m off the path, skipping spots inside buildings, rocks or trees.
+ * Deterministic: the server and every browser place the same patches.
+ */
+export const HERB_NODES: NodeDef[] = (() => {
+  const world = buildWorldColliders();
+  let seed = 7331;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const out: NodeDef[] = [];
+  for (let i = 0; i < PATH.length - 1 && PATH[i].z < 150; i++) {
+    const a = PATH[i];
+    const b = PATH[i + 1];
+    const len = Math.hypot(b.x - a.x, b.z - a.z);
+    const nx = -(b.z - a.z) / len;
+    const nz = (b.x - a.x) / len;
+    for (let d = 5; d < len; d += 8) {
+      const side = rnd() < 0.5 ? -1 : 1;
+      const off = side * (4 + rnd() * 4);
+      const x = a.x + ((b.x - a.x) * d) / len + nx * off;
+      const z = a.z + ((b.z - a.z) * d) / len + nz * off;
+      if (world.blocksPoint(x, 0.3, z, 1.2)) continue;
+      out.push({ id: `herb-${out.length}`, material: 'emberleaf', pos: { x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100 }, scale: 0.8 + rnd() * 0.4, yaw: rnd() * 360 });
+    }
+  }
+  return out;
+})();
+
+/** Every node the player can gather from: the hand-placed quest nodes, the generated seams, the grove and the herbs. */
+export const ALL_RESOURCE_NODES: NodeDef[] = [...RESOURCE_NODES, ...SEAM_NODES, ...GROVE_NODES, ...HERB_NODES];

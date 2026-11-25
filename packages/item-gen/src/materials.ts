@@ -30,6 +30,27 @@ export const MATERIALS: Record<MaterialId, MaterialDefinition> = {
     description: 'Common stabilising powder. Extra flux always helps, with diminishing returns.',
     traitNames: [],
   },
+  emberleaf: {
+    id: 'emberleaf',
+    name: 'Emberleaf',
+    kind: 'herb',
+    description: 'A frontier herb whose leaves hold a faint warmth. Brewed into salves and tonics.',
+    traitNames: ['potency'],
+  },
+  healing_salve: {
+    id: 'healing_salve',
+    name: 'Healing Salve',
+    kind: 'consumable',
+    description: 'Emberleaf paste. Restores health; stronger salves come from better leaves.',
+    traitNames: [],
+  },
+  stamina_tonic: {
+    id: 'stamina_tonic',
+    name: 'Stamina Tonic',
+    kind: 'consumable',
+    description: 'A bitter emberleaf brew. Restores stamina.',
+    traitNames: [],
+  },
 };
 
 export const MATERIAL_IDS = Object.keys(MATERIALS) as MaterialId[];

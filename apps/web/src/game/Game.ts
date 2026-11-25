@@ -517,6 +517,18 @@ export class Game {
         case 'skillbar':
           this.panel?.render();
           break;
+        case 'consumed': {
+          // Health and stamina are the browser's; the rules decided the amounts.
+          const c = this.player.combat;
+          if (e.heal > 0 && c.alive) c.health = Math.min(c.maxHealth, c.health + e.heal);
+          if (e.stamina > 0) c.stamina.current = Math.min(c.stamina.max, c.stamina.current + e.stamina);
+          this.audio.sfx('drink');
+          this.effects.ring(this.player.position, e.heal > 0 ? '#7fd28a' : '#d9b44a', 1.8, 0.6);
+          this.effects.sparks(this.player.position.clone().add(new THREE.Vector3(0, 1.2, 0)), e.heal > 0 ? '#7fd28a' : '#ffd27a', 14, 1.5);
+          this.hud.toast(e.heal > 0 ? `+${e.heal} health` : `+${e.stamina} stamina`, 'good');
+          this.panel?.render();
+          break;
+        }
         case 'progress':
           if (e.levels > 0) {
             this.audio.sfx('levelUp');
@@ -609,17 +621,17 @@ export class Game {
   }
 
   private showTitle(): void {
-    // The title redraws when the account check finishes: keep a name typed meanwhile
-    // (it may not have fired an event yet), and keep the caret in the box.
+    // The title redraws when the account check finishes. The name box being typed in is moved
+    // into the new title as it is (value, caret, focus), so nothing typed meanwhile is lost.
     const typed = this.modal === 'title' ? (this.modalEl?.querySelector('[data-testid="player-name"]') as HTMLInputElement | null) : null;
     const hadFocus = !!typed && document.activeElement === typed;
     if (typed && typed.value.trim() && typed.value !== this.playerName) this.setPlayerName(typed.value);
     queueMicrotask(() => {
-      if (!hadFocus) return;
+      if (!typed) return;
       const box = this.modalEl?.querySelector('[data-testid="player-name"]') as HTMLInputElement | null;
-      if (box) {
-        box.focus();
-        box.setSelectionRange(box.value.length, box.value.length);
+      if (box && box !== typed) {
+        box.replaceWith(typed);
+        if (hadFocus) typed.focus();
       }
     });
     const has = this.saves.hasSave();
@@ -745,6 +757,8 @@ export class Game {
       (attr, n) => this.act({ k: 'allocate', attr, n }),
       () => this.act({ k: 'respec' }),
       (slot, skill) => this.act({ k: 'skillbar', slot, skill }),
+      (recipe, qty) => this.act({ k: 'brew', recipe, qty }),
+      (item) => this.usePotion(item),
     );
     this.setModal('inventory', p.el);
     this.panel = p;
@@ -946,6 +960,8 @@ export class Game {
         if (inp.pressed('ability')) tryAct('storm_arc', 'storm_arc');
         // Skill bar: keys 1-4
         const bar = this.session.skillBar;
+        if (inp.pressed('potion1')) this.usePotion('healing_salve');
+        if (inp.pressed('potion2')) this.usePotion('stamina_tonic');
         (['skill1', 'skill2', 'skill3', 'skill4'] as const).forEach((key, i) => {
           if (!inp.pressed(key)) return;
           const sk = bar[i];
@@ -1357,6 +1373,12 @@ export class Game {
     return this.zone.id === 'village' ? 'town' : 'wilds';
   }
 
+  /** Use a potion (keys 5 / 6, or from the Inventory screen). */
+  private usePotion(item: string): Promise<unknown> {
+    if (!this.player.combat.alive) return Promise.resolve();
+    return this.act({ k: 'consume', item });
+  }
+
   /** Sound and particles of a successful gather; a felled tree crashes down a moment later. */
   private gatherFx(n: ResourceNode): void {
     const p = new THREE.Vector3(n.def.pos.x, terrainHeight(n.def.pos.x, n.def.pos.z) + 0.9, n.def.pos.z);
@@ -1374,6 +1396,10 @@ export class Game {
           this.cam.addShake(this.settings.reducedShake ? 0.02 : 0.12);
         }, 1000);
       }
+    } else if (n.def.material === 'emberleaf') {
+      this.audio.sfx('herb');
+      this.effects.sparks(p, '#ffb347', 10, 1.6); // warm leaf motes
+      this.effects.sparks(p, '#6f8f3a', 8, 2);
     } else if (n.def.material === 'ironglass') {
       this.audio.sfx('crystal');
       this.effects.sparks(p, '#7fdcff', 14, 2.5);
@@ -1390,7 +1416,7 @@ export class Game {
    */
   private async readyTool(material: string): Promise<boolean> {
     const kind = toolFor(material);
-    if (this.session.toolPower(kind) > 0) return true;
+    if (!kind || this.session.toolPower(kind) > 0) return true; // herbs: by hand
     const best = Object.values(this.session.inventory.items)
       .filter((i) => toolPower(i, kind) > 0)
       .sort((a, b) => toolPower(b, kind) - toolPower(a, kind))[0];
@@ -1443,7 +1469,7 @@ export class Game {
     for (const e of this.enemies) if (e.brain.alive && e.def.kind !== 'dummy' && dist2(e.pos2, this.player.pos2) < 80) markers.push({ x: e.position.x, z: e.position.z, color: e.def.kind === 'elite' ? '#ff5a3a' : '#d24a3a', r: e.def.kind === 'elite' ? 4 : 2.5 });
     for (const n of this.npcs) markers.push({ x: n.pos2.x, z: n.pos2.z, color: '#e6e1d8', r: 3 });
     // Only nearby nodes (the world has hundreds of trees): what the minimap actually shows.
-    for (const n of this.nodes) if (dist2(n.pos2, this.player.pos2) < 60 * 60 && nodeState(this.session.data, n.def.id).charges > 0) markers.push({ x: n.pos2.x, z: n.pos2.z, color: n.def.material === 'ironglass' ? '#4fe3ff' : n.def.material === 'iron_ore' ? '#b0702e' : '#8a5a2a', r: 1.6 });
+    for (const n of this.nodes) if (dist2(n.pos2, this.player.pos2) < 60 && nodeState(this.session.data, n.def.id).charges > 0) markers.push({ x: n.pos2.x, z: n.pos2.z, color: n.def.material === 'ironglass' ? '#4fe3ff' : n.def.material === 'iron_ore' ? '#b0702e' : n.def.material === 'emberleaf' ? '#ffb347' : '#8a5a2a', r: 1.6 });
     markers.push({ x: FORGE_ANVIL.x, z: FORGE_ANVIL.z, color: '#ff8a3d', r: 2 });
     for (const r of this.online.remotes.values()) if (r.state) markers.push({ x: r.position.x, z: r.position.z, color: '#5ad1ff', r: 3 });
     this.hud.drawMinimap({ x: this.player.position.x, z: this.player.position.z, yaw: this.player.yaw }, this.cam.yaw, markers, this.objectivePos());
@@ -1576,6 +1602,7 @@ export class Game {
       coins: (n: number) => (this.mode !== 'account' ? (this.session.addCoins(n), true) : false),
       act: (a: CharAction) => this.act(a),
       heal: () => this.player.combat.revive(),
+      hurt: (n: number) => (this.player.combat.health = Math.max(1, this.player.combat.health - n)),
       face: (yaw: number) => {
         this.player.yaw = yaw;
         this.cam.snapBehind(yaw);

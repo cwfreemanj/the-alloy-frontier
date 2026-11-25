@@ -351,6 +351,36 @@ test('skills: learned at a mastery milestone, used from the skill bar, rearrange
   expect(errors).toEqual([]);
 });
 
+test('herbs and potions: pick Emberleaf, brew a salve, heal with key 5', async ({ page }) => {
+  const errors = await newGame(page);
+  const herb = { id: 'herb-0', x: 4.32, z: -9 }; // HERB_NODES[0]
+  // Stand next to the patch, facing it, and pick it by hand (E). Retry if interrupted.
+  await expect(async () => {
+    await call(page, 'teleport', herb.x, herb.z - 1.6);
+    await call(page, 'face', 0);
+    await page.waitForTimeout(300);
+    await expect(page.getByTestId('prompt')).toContainText('Emberleaf');
+    await page.keyboard.press('KeyE');
+    await expect.poll(async () => (await state(page)).totals.emberleaf ?? 0, { timeout: 4000 }).toBeGreaterThan(0);
+  }).toPass({ timeout: 20_000 });
+  // Top up herbs (debug) and brew a salve on the Inventory screen.
+  await call(page, 'give', 'emberleaf', 4, 0.6);
+  await page.keyboard.press('KeyI');
+  await page.getByTestId('tab-inventory').click();
+  await page.getByTestId('brew-healing_salve-1').click();
+  await expect(page.getByTestId('have-healing_salve')).toHaveText('×1');
+  await page.keyboard.press('KeyI');
+  await expect.poll(async () => (await state(page)).modal).toBeNull();
+  // Take some damage (debug), then heal with key 5.
+  await page.evaluate(() => ((window as unknown as { __alloy: { hurt?: (n: number) => void } }).__alloy.hurt ?? (() => undefined))(100));
+  const before = (await state(page)).health;
+  expect(before).toBeLessThan(200);
+  await page.keyboard.press('Digit5');
+  await expect.poll(async () => (await state(page)).health).toBeGreaterThan(before);
+  await expect(page.getByTestId('potion-slot-5')).toContainText('×0');
+  expect(errors).toEqual([]);
+});
+
 test('performance capture (1920x1080, medium preset)', async ({ page }) => {
   await newGame(page);
   const results: Record<string, unknown> = {};

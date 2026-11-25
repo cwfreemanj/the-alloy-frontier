@@ -28,7 +28,9 @@ export type Sfx =
   | 'levelUp'
   | 'uiOpen'
   | 'uiClose'
-  | 'click';
+  | 'click'
+  | 'herb'
+  | 'drink';
 
 const TRACKS: Record<MusicTrack, string> = {
   town: `${import.meta.env.BASE_URL}audio/music/town-mossheart-village.mp3`,
@@ -286,4 +288,13 @@ const SOUNDS: Record<Sfx, (s: Synth) => void> = {
   uiOpen: (s) => s.tone('sine', 520, 780, 0, 0.12, 0.005, 0.12),
   uiClose: (s) => s.tone('sine', 700, 440, 0, 0.1, 0.005, 0.1),
   click: (s) => s.tone('triangle', 900, 880, 0, 0.08, 0.001, 0.05),
+  herb: (s) => {
+    s.noise('bandpass', 2400, 1600, 1.2, 0, 0.22, 0.02, 0.18);
+    s.noise('bandpass', 3200, 2200, 1.5, 0.08, 0.16, 0.02, 0.14);
+    s.tone('sine', 1560, 1560, 0.05, 0.05, 0.005, 0.25);
+  },
+  drink: (s) => {
+    for (let i = 0; i < 3; i++) s.tone('sine', 420 + i * 40, 300 + i * 40, i * 0.13, 0.18, 0.01, 0.1);
+    s.tone('sine', 880, 1320, 0.4, 0.12, 0.02, 0.4);
+  },
 };
