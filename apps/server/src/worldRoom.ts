@@ -11,6 +11,7 @@ import { ATTACKS, checkMove, finisherMultiplier, heightOk, dist2, forwardPoint, 
 import { WORLD_LIMITS, WORLD_PROTOCOL, parseWorldClientMsg, type AvatarState, type CharAction, type EnemyNetState, type WorldPlayerInfo, type WorldServerMsg } from '@alloy/protocol';
 import { GATHER_SECONDS, RANGE_SLACK, applyAction, damageAgainst, playerHit, rewardHit, rewardHitTaken, rewardKill } from '@alloy/session';
 import type { CharacterHost, LiveCharacter } from './characters';
+import { WorldObserver, noticeFor, type AreaId } from './worldObserver';
 import { ENEMY_SPAWNS, EnemySim, RESPAWN_POINT, buildWorldColliders, terrainHeight, type ColliderWorld } from '@alloy/world';
 
 const PLAYER_RADIUS = 0.4;
@@ -20,6 +21,8 @@ const HIT_SLACK = 2.5;
 /** The Foundry Warden has no respawn in single-player; in the shared world it returns. */
 const ELITE_SHARED_RESPAWN = 180;
 const RESPAWN_CLEAR_RADIUS = 35;
+/** How often (seconds) the observer updates its tallies and area levels. */
+const OBSERVE_INTERVAL = 2;
 /** Minimum time between two gathers (the browser channels for GATHER_SECONDS). */
 const MIN_GATHER_INTERVAL_MS = GATHER_SECONDS * 900;
 /** At most this often, a character update caused by hits/XP is sent (actions reply at once). */
@@ -83,6 +86,10 @@ export class WorldRoom {
   readonly enemies: EnemySim[];
   private contributors = new Map<string, Map<string, number>>();
   private lastSent = new Map<string, string>();
+  /** What players are doing, area by area (adaptive world). */
+  readonly observer: WorldObserver;
+  private observeTimer = 0;
+  private enemyArea = new Map<string, AreaId>();
   private nextId = 1;
   stats: WorldStats = { malformed: 0, rateLimited: 0, rejectedHits: 0, acceptedHits: 0, enemyHitsOnPlayers: 0, kills: 0, acts: 0, rejectedActs: 0, speedRejected: 0, heightRejected: 0, damageByType: {}, damageByFamily: {} };
 
@@ -93,6 +100,7 @@ export class WorldRoom {
     /** Skip the speed check (debug teleports in local tests). Never set on a hosted server. */
     readonly allowTeleport = false,
   ) {
+    this.observer = new WorldObserver(now);
     const colliders = worldColliders();
     this.enemies = ENEMY_SPAWNS.filter((s) => s.type !== 'dummy').map((s) => new EnemySim(s, colliders));
   }
@@ -203,7 +211,10 @@ export class WorldRoom {
     p.z = Math.round(s.z * 100) / 100;
     p.yaw = Math.round(s.yaw * 1000) / 1000;
     p.health = Math.max(1, Math.round(s.hp));
-    if (s.ph === 'dead' && !wasDead) c.session.data.stats.deaths++;
+    if (s.ph === 'dead' && !wasDead) {
+      c.session.data.stats.deaths++;
+      this.observer.death({ x: s.x, z: s.z });
+    }
     this.host?.changed(c);
   }
 
@@ -222,6 +233,7 @@ export class WorldRoom {
     if (!r.ok) return refuse(r.error, r.message);
     this.stats.acts++;
     if (a.k === 'gather') c.lastGatherAt = t;
+    if ((a.k === 'gather' || a.k === 'search') && pos) this.observer.activity(pos, a.k);
     this.host?.changed(c);
     me.send({ t: 'actResult', id, ok: true, ...(r.item ? { item: r.item } : {}) });
     this.pushChar(me, r.events, true);
@@ -342,13 +354,14 @@ export class WorldRoom {
     const list = [...(this.contributors.get(e.id) ?? new Map<string, number>()).entries()].filter(([id, at]) => t - at < CREDIT_WINDOW_MS && this.members.has(id)).map(([id]) => id);
     this.contributors.delete(e.id);
     this.stats.kills++;
+    this.observer.kill(e.pos2, list.map((id) => this.members.get(id)?.char?.session.data.progression.adventurer.rank).filter((r): r is number => r !== undefined));
     this.broadcast({ t: 'enemies', list: [netState(e)] });
     this.broadcast({ t: 'kill', enemyId: e.id, type: e.spawn.type, contributors: list });
     // Rewards for signed-in contributors are rolled here; guests roll their own.
     for (const id of list) {
       const m = this.members.get(id);
       if (!m?.char) continue;
-      const r = rewardKill(m.char.session, e.spawn.type, e.id, this.rng);
+      const r = rewardKill(m.char.session, e.spawn.type, e.id, this.rng, e.level);
       this.host?.changed(m.char);
       const loot = `${e.def.name} defeated · +${r.coins} coins${r.flux ? ` · +${r.flux} Binding Flux` : ''}`;
       this.pushChar(m, [{ type: 'toast', text: loot, tone: 'good' }, ...r.events], true);
@@ -365,6 +378,11 @@ export class WorldRoom {
   step(dt: number): void {
     if (this.members.size === 0) return;
     for (const m of this.members.values()) if (m.char && m.state) m.char.session.data.playTime += dt;
+    this.observeTimer += dt;
+    if (this.observeTimer >= OBSERVE_INTERVAL) {
+      this.observeTimer = 0;
+      this.observeWorld();
+    }
     const players = this.livingPlayers();
     for (const e of this.enemies) {
       // Target: the nearest living player.
@@ -409,7 +427,32 @@ export class WorldRoom {
     const r = e.def.respawnSeconds ?? (e.def.kind === 'elite' ? ELITE_SHARED_RESPAWN : null);
     if (r === null || e.deadFor < r) return;
     for (const m of this.members.values()) if (m.state && dist2({ x: m.state.x, z: m.state.z }, e.home) < RESPAWN_CLEAR_RADIUS) return;
+    // Respawn at the area's current level.
+    e.setLevel(this.observer.levelOf(this.areaOf(e)));
     e.reset();
+  }
+
+  private areaOf(e: EnemySim): AreaId {
+    let a = this.enemyArea.get(e.id);
+    if (!a) this.enemyArea.set(e.id, (a = this.observer.areaAt(e.home)));
+    return a;
+  }
+
+  /**
+   * Update the observer's tallies; announce areas whose level changed; bring enemies that are
+   * out of a fight (or dead) to their area's level. One in a fight keeps its level until then.
+   */
+  private observeWorld(): void {
+    const players = [...this.members.values()].filter((m) => m.char && m.state).map((m) => ({ pos: { x: m.state!.x, z: m.state!.z }, rank: m.char!.session.data.progression.adventurer.rank }));
+    for (const c of this.observer.observe(players)) this.broadcast({ t: 'notice', text: noticeFor(c) });
+    for (const e of this.enemies) {
+      if (e.def.kind === 'dummy') continue;
+      const want = this.observer.levelOf(this.areaOf(e));
+      if (want === e.level) continue;
+      const st = e.brain.state;
+      const calm = !e.brain.alive || ((st === 'idle' || st === 'patrol' || st === 'return') && e.brain.health >= e.def.maxHealth);
+      if (calm) e.setLevel(want);
+    }
   }
 
   /** Relay avatars and changed enemies (called at the network rate). */
@@ -455,6 +498,7 @@ export function netState(e: EnemySim): EnemyNetState {
     st: Math.round(b.stateTime * 100) / 100,
     hp: Math.round(b.health * 100) / 100,
     p2: b.phase2,
+    lv: e.level,
   };
   if (e.attackCenter) {
     s.cx = Math.round(e.attackCenter.x * 100) / 100;

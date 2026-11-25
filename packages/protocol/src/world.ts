@@ -52,6 +52,8 @@ export interface EnemyNetState {
   st: number;
   hp: number;
   p2: boolean;
+  /** Level (adaptive world; missing from older servers = the archetype's own). */
+  lv?: number;
   cx?: number;
   cz?: number;
 }
@@ -85,6 +87,8 @@ export type WorldServerMsg =
   | { t: 'left'; id: string; name: string }
   | { t: 'players'; list: Array<{ id: string; s: AvatarState }> }
   | { t: 'enemies'; list: EnemyNetState[] }
+  /** A world announcement (an area grows dangerous or settles). Older clients ignore it. */
+  | { t: 'notice'; text: string }
   | ({ t: 'hitResult' } & HitVerdict)
   | { t: 'playerHit'; enemyId: string; damage: number; heavy: boolean }
   | { t: 'kill'; enemyId: string; type: string; contributors: string[] }

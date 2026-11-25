@@ -13,6 +13,17 @@ const seq = (...xs: number[]) => {
   return () => xs[i++ % xs.length];
 };
 
+describe('kill rewards by level', () => {
+  it('pays more XP for a levelled-up enemy', () => {
+    const a = fresh();
+    const b = fresh();
+    rewardKill(a, 'scavenger', 'scav-1', () => 0.5);
+    rewardKill(b, 'scavenger', 'scav-1', () => 0.5, ENEMIES.scavenger.level + 2);
+    const xp = (s: Session) => s.data.progression.adventurer.xp + s.data.progression.adventurer.rank * 1000;
+    expect(xp(b)).toBeGreaterThan(xp(a));
+  });
+});
+
 describe('applyAction', () => {
   it('gathers only in range, with server-decided quantity and quality', () => {
     const s = fresh();

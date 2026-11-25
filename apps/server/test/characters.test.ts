@@ -48,6 +48,32 @@ async function signedIn(ctx: ReturnType<typeof setup>, accountId: string) {
 }
 
 describe('server-owned characters', () => {
+  it('raises the trail while a strong player lingers there: notice, enemy levels, scaled stats', async () => {
+    const ctx = setup();
+    const p = await signedIn(ctx, 'acct-adapt');
+    p.char.session.data.progression.adventurer.rank = 8;
+    const scav = ctx.room.enemies.find((e) => e.spawn.type === 'scavenger')!;
+    expect(scav.level).toBe(ENEMIES.scavenger.level);
+    // On the Ironwood Trail, out of the scavengers' sight, for 15 minutes.
+    for (let i = 0; i < 450; i++) {
+      p.at(-10, 95);
+      ctx.clock.advance(2000);
+      ctx.room.step(2);
+    }
+    const notices = p.inbox.filter((m) => m.t === 'notice');
+    expect(notices.length).toBeGreaterThan(0);
+    expect(notices[0]).toMatchObject({ t: 'notice' });
+    expect(scav.level).toBe(ENEMIES.scavenger.level + 3);
+    expect(scav.def.maxHealth).toBeGreaterThan(ENEMIES.scavenger.maxHealth);
+    expect(scav.brain.health).toBe(scav.def.maxHealth);
+    ctx.room.publish();
+    const sent = p.inbox.filter((m) => m.t === 'enemies').flatMap((m) => (m.t === 'enemies' ? m.list : [])).filter((x) => x.id === scav.id);
+    expect(sent.at(-1)?.lv).toBe(ENEMIES.scavenger.level + 3);
+    // The quarry and foundry are untouched.
+    expect(ctx.room.enemies.find((e) => e.spawn.type === 'sentinel')!.level).toBe(ENEMIES.sentinel.level);
+    expect((ctx.room.observer.snapshot() as Record<string, { players: number }>).trail.players).toBe(1);
+  });
+
   it('searches containers with the server position, including the height of the loft', async () => {
     const ctx = setup();
     const p = await signedIn(ctx, 'acct-search');

@@ -1553,7 +1553,9 @@ export class Game {
         );
       });
       (el.querySelector('.bar') as HTMLElement).style.visibility = engaged ? '' : 'hidden';
-      (el.querySelector('.lv') as HTMLElement).style.color = levelColor(e.def.level - this.session.data.progression.adventurer.rank);
+      const lvEl = el.querySelector('.lv') as HTMLElement;
+      if (e.def.kind !== 'dummy') lvEl.textContent = `Lv ${e.def.level}`; // the area's level can change (adaptive world)
+      lvEl.style.color = levelColor(e.def.level - this.session.data.progression.adventurer.rank);
       const sp = this.hud.project(this.camera, e.position, 2.15 * e.def.scale + 0.2, w, hgt);
       el.style.display = sp.visible ? '' : 'none';
       el.style.left = `${sp.x}px`;

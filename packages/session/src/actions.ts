@@ -6,7 +6,7 @@
  * only ever send the action (an intent), never its result.
  */
 import { EQUIP_SLOTS, type EquipSlot, type ForgeRequest } from '@alloy/crafting';
-import { ATTACKS, ATTRIBUTE_IDS, SKILLS, isSkill, GATHER_PROFICIENCY_XP, PROFICIENCY_YIELD_BONUS, proficiencyFor, proficiencyLevel, damageTypeOf, mitigate, resistanceMultiplier, ATTRIBUTE_XP, ENEMIES, computeOutgoingHit, critContest, staggerContest, type AttackDefinition, type AttributeId, type AttributeLevels, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
+import { ATTACKS, ATTRIBUTE_IDS, SKILLS, isSkill, GATHER_PROFICIENCY_XP, PROFICIENCY_YIELD_BONUS, proficiencyFor, proficiencyLevel, damageTypeOf, mitigate, resistanceMultiplier, ATTRIBUTE_XP, ENEMIES, scaledArchetype, computeOutgoingHit, critContest, staggerContest, type AttackDefinition, type AttributeId, type AttributeLevels, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
 import { Rng, getBlueprint, materialName, type DamageType, type ItemInstance, type ToolKind, type WeaponStats } from '@alloy/item-gen';
 import { FORGE_ANVIL, NPCS, SEARCH_HEIGHT, SEARCH_RANGE, containerDef, terrainHeight } from '@alloy/world';
 import { searchContainer } from './containers';
@@ -182,9 +182,11 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
 }
 
 /** Rewards for a kill this character took part in: coins, adventurer XP, drops, quest progress. */
-export function rewardKill(s: Session, enemyType: string, enemyId: string, rng: () => number): { coins: number; flux: number; events: SessionEvent[] } {
-  const def = ENEMIES[enemyType];
-  if (!def) return { coins: 0, flux: 0, events: [] };
+export function rewardKill(s: Session, enemyType: string, enemyId: string, rng: () => number, level?: number): { coins: number; flux: number; events: SessionEvent[] } {
+  const base = ENEMIES[enemyType];
+  if (!base) return { coins: 0, flux: 0, events: [] };
+  // A levelled-up enemy (adaptive world) is worth more XP and coins.
+  const def = level !== undefined ? scaledArchetype(base, level) : base;
   let coins = 0;
   let flux = 0;
   const { events } = captureEvents(s, () => {
