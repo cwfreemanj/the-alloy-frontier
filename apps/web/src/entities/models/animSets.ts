@@ -36,6 +36,9 @@ const PLAYER_ATTACKS: Record<string, AttackAnim> = {
   heavy: { clip: 'p_heavy', shape: { lead: 0.5, after: 0.12, tail: 0.5 } }, // two-handed great-sword slash
   guardbreaker: { clip: 'p_guardbreaker', shape: { lead: 0.45, after: 0.12, tail: 0.6 } }, // shield-breaking kick
   storm_arc: { clip: 'p_storm_arc', shape: { lead: 0.8, before: 0.1, after: 0.2, tail: 0.5 } }, // 360° spin
+  // Skills reuse existing clips until dedicated animations exist.
+  lunging_thrust: { clip: 'p_light3', shape: { lead: 0.55, after: 0.12, tail: 0.5 } }, // leaping lunge
+  final_slash: { clip: 'p_heavy', shape: { lead: 0.65, after: 0.12, tail: 0.55 } }, // big two-handed slash
 };
 
 export const PLAYER_HEIGHT: Record<'maria' | 'exo', number> = { maria: 1.75, exo: 1.8 };

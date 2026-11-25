@@ -16,6 +16,10 @@ export type Action =
   | 'dodge'
   | 'guardbreaker'
   | 'ability'
+  | 'skill1'
+  | 'skill2'
+  | 'skill3'
+  | 'skill4'
   | 'lock'
   | 'interact'
   | 'inventory'
@@ -40,6 +44,10 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   dodge: ['KeyQ', 'KeyC'],
   guardbreaker: ['KeyR'],
   ability: ['KeyG'],
+  skill1: ['Digit1'],
+  skill2: ['Digit2'],
+  skill3: ['Digit3'],
+  skill4: ['Digit4'],
   lock: ['Tab', 'Mouse1', 'KeyT'],
   interact: ['KeyE'],
   inventory: ['KeyI'],

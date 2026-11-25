@@ -20,6 +20,8 @@ import {
   PROFICIENCY_YIELD_BONUS,
   WEAPON_FAMILIES,
   WEAPON_MASTERY_MAX,
+  SKILLS,
+  isSkill,
   adventurerXpToNext,
   attributeXpToNext,
   proficiencyXpToNext,
@@ -141,6 +143,7 @@ export class CharacterWindow {
     private onDiscard: (id: string) => Promise<boolean>,
     private onAllocate: (attr: AttributeId, n: number) => Promise<unknown>,
     private onRespec: () => Promise<unknown>,
+    private onSkillBar: (slot: number, skill: string | null) => Promise<unknown>,
   ) {
     this.selected = session.inventory.equipped.weapon ?? session.inventory.itemOrder[0] ?? null;
     window.addEventListener('keydown', this.onKey);
@@ -554,6 +557,7 @@ export class CharacterWindow {
     const type = DAMAGE_TYPE_NAMES[weaponDamageType(s)];
     const list = h('div', { class: 'cs-list' });
     for (const a of Object.values(ATTACKS)) {
+      if (isSkill(a.id)) continue; // weapon skills have their own panel
       const known = a.id !== 'storm_arc' || imbued.includes('storm_arc');
       const info = ATTACK_INFO[a.id] ?? { icon: 'slash', text: '' };
       list.append(
@@ -570,10 +574,69 @@ export class CharacterWindow {
         ),
       );
     }
+    // Weapon skills: learned at mastery milestones, used from the skill bar (keys 1-4).
+    const bar = s.skillBar;
+    const learned = s.learnedSkills().map((x) => x.id);
+    const usable = s.usableSkills();
+    const skills = h('div', { class: 'cs-list' });
+    for (const sk of Object.values(SKILLS)) {
+      const a = ATTACKS[sk.id];
+      const has = learned.includes(sk.id);
+      const level = s.masteryOf(sk.family);
+      const fam = WEAPON_FAMILIES[sk.family].name;
+      const onKey = bar.indexOf(sk.id);
+      const dmgType = DAMAGE_TYPE_NAMES[sk.damageType ?? WEAPON_FAMILIES[sk.family].damageType];
+      const assign = has
+        ? h(
+            'div',
+            { class: 'cs-assign', role: 'group', 'aria-label': `Put ${sk.name} on a key` },
+            h('span', { class: 'cs-note' }, 'Key:'),
+            ...[0, 1, 2, 3].map((i) =>
+              h(
+                'button',
+                {
+                  class: `cs-key ${onKey === i ? 'active' : ''}`,
+                  'data-testid': `assign-${sk.id}-${i + 1}`,
+                  title: onKey === i ? `Remove from key ${i + 1}` : `Put on key ${i + 1}${bar[i] ? ` (replaces ${ATTACKS[bar[i] as keyof typeof ATTACKS]?.name})` : ''}`,
+                  onclick: () => void this.onSkillBar(i, onKey === i ? null : sk.id),
+                },
+                String(i + 1),
+              ),
+            ),
+          )
+        : null;
+      skills.append(
+        h(
+          'div',
+          { class: `cs-skill ${has ? '' : 'locked'}`, 'data-skill': sk.id },
+          h('div', { class: 'cs-prof-ico' }, icon(has ? (sk.id === 'final_slash' ? 'heavy' : 'slash') : 'lock')),
+          h(
+            'div',
+            { class: 'cs-prof-main' },
+            h(
+              'div',
+              { class: 'row' },
+              h('b', null, sk.name),
+              h('span', { class: 'spacer' }),
+              h('span', { class: 'cs-skill-dmg' }, has ? `${Math.round(st.weapon.damage * a.damageMult * (1 + st.damageBonus))} dmg` : `${fam} ${sk.unlockLevel}`),
+              h('span', { class: 'cs-skill-tag' }, `${a.cooldown}s CD`),
+            ),
+            h('div', { class: 'cs-note' }, `${sk.description} ${dmgType} damage.${sk.finisher ? ` ×${sk.finisher.multiplier} on staggered enemies or below ${Math.round(sk.finisher.belowHealth * 100)}% health.` : ''}`),
+            h(
+              'div',
+              { class: 'cs-note', 'data-testid': `skill-status-${sk.id}` },
+              has ? (usable.includes(sk.id) ? 'Learned. Ready with your weapon in hand.' : `Learned. Needs a ${fam.toLowerCase()} in hand.`) : `Unlocks at ${fam} mastery ${sk.unlockLevel} (you: ${level}).`,
+            ),
+            assign,
+          ),
+        ),
+      );
+    }
     return h(
       'div',
-      { class: 'cs-cols cs-cols-one' },
-      panel('Skills', 'skills', h('div', { class: 'cs-note', style: 'margin-bottom:10px' }, `Combat abilities. Damage shown is ${type.toLowerCase()} damage before the target's defense and resistances, without critical hits.`), list),
+      { class: 'cs-cols cs-cols-two' },
+      panel('Weapon skills', 'skills', h('div', { class: 'cs-note', style: 'margin-bottom:10px' }, 'Learned as your weapon mastery grows. Put them on keys 1-4 and use them in combat.'), skills),
+      panel('Attacks', 'weapon', h('div', { class: 'cs-note', style: 'margin-bottom:10px' }, `Damage shown is ${type.toLowerCase()} damage before the target's defense and resistances, without critical hits.`), list),
     );
   }
 }

@@ -127,6 +127,27 @@ describe('server-owned characters', () => {
     expect(ctx.room.stats.rejectedHits).toBe(before + 1);
   });
 
+  it('refuses skills a character has not learned, and reuse during the cooldown', async () => {
+    const ctx = setup();
+    const p = await signedIn(ctx, 'acct-skill');
+    p.char.session.talk('orla');
+    const e = ctx.room.enemies.find((x) => x.id === scav.id)!;
+    p.at(e.x + 1.2, e.z);
+    const before = ctx.room.stats.rejectedHits;
+    p.hit(e.id, 'lunging_thrust', 10);
+    expect(ctx.room.stats.rejectedHits).toBe(before + 1); // not learned
+    while (p.char.session.weaponLevel < 3) p.char.session.gainWeaponXp(50);
+    ctx.clock.advance(1000);
+    p.hit(e.id, 'lunging_thrust', 10);
+    expect(ctx.room.stats.rejectedHits).toBe(before + 1); // learned: accepted
+    ctx.clock.advance(2000);
+    p.hit(e.id, 'lunging_thrust', 10);
+    expect(ctx.room.stats.rejectedHits).toBe(before + 2); // 6 s cooldown
+    ctx.clock.advance(6000);
+    p.hit(e.id, 'lunging_thrust', 10);
+    expect(ctx.room.stats.rejectedHits).toBe(before + 2);
+  });
+
   it('rolls kill rewards on the server for signed-in contributors', async () => {
     const ctx = setup();
     const p = await signedIn(ctx, 'acct-6');

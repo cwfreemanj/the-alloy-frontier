@@ -1,6 +1,6 @@
 /** Main HUD (GDD 7.2): vitals upper-left, minimap + objective upper-right, abilities bottom-centre. */
 import * as THREE from 'three';
-import { ATTACKS, QUEST_EDGE_YOU_MAKE, STAMINA_CONFIG, describeProgress, weaponXpToNext, type PlayerCombat, WEAPON_FAMILIES } from '@alloy/game-rules';
+import { ATTACKS, QUEST_EDGE_YOU_MAKE, STAMINA_CONFIG, describeProgress, weaponXpToNext, type AttackId, type PlayerCombat, WEAPON_FAMILIES } from '@alloy/game-rules';
 import { IMBUEMENTS, itemDisplayName, materialName, type ItemInstance, type MaterialId } from '@alloy/item-gen';
 import type { Session } from '../state/Session';
 import { PATH, ZONES, type Zone } from '@alloy/world';
@@ -33,6 +33,8 @@ export class Hud {
   private zoneLabel: HTMLElement;
   private weaponLine: HTMLElement;
   private slots: Record<string, SlotRefs> = {};
+  /** Skill bar slots (keys 1-4). */
+  private skillSlots: Array<SlotRefs & { name: HTMLElement }> = [];
   private prompt: HTMLElement;
   private gatherBar: HTMLElement;
   private gatherFill: HTMLElement;
@@ -85,6 +87,18 @@ export class Hud {
       const cost = h('div', { class: 'cost' });
       const el = h('div', { class: 'slot', 'data-slot': id }, h('div', { class: 'key' }, key), h('div', { class: 'name', style: 'white-space:pre-line' }, name), cost, cd, cdText);
       this.slots[id] = { el, cd, cdText, cost };
+      abilities.append(el);
+    }
+    // Skill bar: learned skills on keys 1-4 (assigned on the Skills screen).
+    abilities.append(h('div', { class: 'slot-gap' }));
+    for (let i = 0; i < 4; i++) {
+      const cd = h('div', { class: 'cd', style: 'height:0' });
+      const cdText = h('div', { class: 'cdtext' });
+      const cost = h('div', { class: 'cost' });
+      const name = h('div', { class: 'name', style: 'white-space:pre-line' });
+      const el = h('div', { class: 'slot skill-slot locked', 'data-slot': `skill${i + 1}`, 'data-testid': `skill-slot-${i + 1}` }, h('div', { class: 'key' }, String(i + 1)), name, cost, cd, cdText);
+      this.skillSlots.push({ el, cd, cdText, cost, name });
+      this.slots[`skill${i + 1}`] = { el, cd, cdText, cost };
       abilities.append(el);
     }
     this.prompt = h('div', { class: 'prompt', 'data-testid': 'prompt' });
@@ -210,7 +224,25 @@ export class Hud {
       storm_arc: STAMINA_CONFIG.costs.storm_arc * mult,
       block: STAMINA_CONFIG.blockHoldDrainPerSec,
     };
+    // Skill bar
+    const bar = session.skillBar;
+    const usable = session.usableSkills();
+    this.skillSlots.forEach((s, i) => {
+      const id = bar[i];
+      const def = id ? ATTACKS[id as AttackId] : null;
+      const label = def ? def.name.replace(' ', '\n') : '—';
+      if (s.name.textContent !== label) s.name.textContent = label;
+      s.el.classList.toggle('locked', !def || !usable.includes(id!));
+      s.el.title = def ? (usable.includes(id!) ? `${def.name} (${i + 1})` : `${def.name}: needs its weapon in hand`) : 'Empty: skills unlock with weapon mastery (I → Skills)';
+      s.cost.textContent = def ? (STAMINA_CONFIG.costs[def.stamina] * mult).toFixed(1) : '';
+      const total = def?.cooldown ?? 0;
+      const remaining = id ? (combat.cooldowns[id] ?? 0) : 0;
+      s.cd.style.height = total > 0 ? `${(remaining / total) * 100}%` : '0';
+      s.cdText.textContent = remaining > 0 ? remaining.toFixed(1) : '';
+      s.el.style.borderColor = combat.attack && combat.attack.id === id ? 'var(--ember)' : '';
+    });
     for (const [id, s] of Object.entries(this.slots)) {
+      if (id.startsWith('skill')) continue;
       s.cost.textContent = id === 'block' ? `${costs.block}/s` : costs[id].toFixed(1);
       const total = id === 'guardbreaker' ? (ATTACKS.guardbreaker.cooldown ?? 8) : id === 'storm_arc' ? (IMBUEMENTS.storm_arc.cooldown ?? 12) : 0;
       const remaining = combat.cooldowns[id] ?? 0;

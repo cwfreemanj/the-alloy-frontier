@@ -5,6 +5,9 @@
 import * as THREE from 'three';
 import {
   ATTRIBUTES,
+  SKILLS,
+  finisherMultiplier,
+  type ActionKind,
   STAT_POINTS_PER_RANK,
   incomingContest,
   resistanceMultiplier,
@@ -208,7 +211,8 @@ export class Game {
 
     window.addEventListener('resize', () => this.resize());
     // Browsers allow sound only after a user gesture: start the audio on the first one.
-    const unlockAudio = () => this.audio.unlock();
+    // `?noaudio` keeps the game silent (automated tests on slow machines).
+    const unlockAudio = () => !new URLSearchParams(location.search).has('noaudio') && this.audio.unlock();
     window.addEventListener('pointerdown', unlockAudio, { passive: true });
     window.addEventListener('keydown', unlockAudio);
     this.resize();
@@ -502,6 +506,17 @@ export class Game {
         case 'equip':
           this.player.setWeapon(e.item);
           break;
+        case 'skill_learned': {
+          const sk = SKILLS[e.skill];
+          const key = this.session.skillBar.indexOf(e.skill);
+          this.hud.toast(`New skill: ${sk?.name ?? e.skill}${key >= 0 ? ` · key ${key + 1}` : ' · assign it in I → Skills'}`, 'good');
+          this.audio.sfx('levelUp');
+          this.panel?.render();
+          break;
+        }
+        case 'skillbar':
+          this.panel?.render();
+          break;
         case 'progress':
           if (e.levels > 0) {
             this.audio.sfx('levelUp');
@@ -729,6 +744,7 @@ export class Game {
       async (id) => (await this.act({ k: 'discard', item: id })).ok,
       (attr, n) => this.act({ k: 'allocate', attr, n }),
       () => this.act({ k: 'respec' }),
+      (slot, skill) => this.act({ k: 'skillbar', slot, skill }),
     );
     this.setModal('inventory', p.el);
     this.panel = p;
@@ -878,7 +894,8 @@ export class Game {
     const w = this.weapon();
     return {
       weapon: characterStats(this.session).weapon,
-      abilities: w?.result.imbuements ?? [],
+      // Imbued abilities plus learned skills usable with the weapon in hand.
+      abilities: [...(w?.result.imbuements ?? []), ...this.session.usableSkills()],
       abilityCooldowns: { storm_arc: IMBUEMENTS.storm_arc.cooldown },
     };
   }
@@ -914,11 +931,12 @@ export class Game {
     // Combat requests
     const dir = this.moveDir();
     if (c.alive && this.player.gathering <= 0) {
-      const tryAct = (kind: 'light' | 'heavy' | 'guardbreaker' | 'dodge' | 'storm_arc', slot: string) => {
+      const tryAct = (kind: ActionKind, slot: string) => {
         const r = c.request(kind, ctx);
         if (r === 'no_stamina' || r === 'cooldown' || r === 'unavailable') {
           this.hud.flashSlot(slot);
-          if (r === 'unavailable') this.hud.toast('This weapon has no active ability. A strong ironglass masterwork may awaken Storm Arc.', 'info');
+          if (r === 'unavailable' && kind === 'storm_arc') this.hud.toast('This weapon has no active ability. A strong ironglass masterwork may awaken Storm Arc.', 'info');
+          else if (r === 'unavailable') this.hud.toast(`${SKILLS[kind]?.name ?? 'That skill'} needs a ${WEAPON_FAMILIES[SKILLS[kind]?.family ?? 'longsword'].name.toLowerCase()} in hand.`, 'info');
         }
       };
       if (this.player.grounded) {
@@ -926,6 +944,17 @@ export class Game {
         if (inp.pressed('heavy')) tryAct('heavy', 'heavy');
         if (inp.pressed('guardbreaker')) tryAct('guardbreaker', 'guardbreaker');
         if (inp.pressed('ability')) tryAct('storm_arc', 'storm_arc');
+        // Skill bar: keys 1-4
+        const bar = this.session.skillBar;
+        (['skill1', 'skill2', 'skill3', 'skill4'] as const).forEach((key, i) => {
+          if (!inp.pressed(key)) return;
+          const sk = bar[i];
+          if (sk) tryAct(sk as ActionKind, key);
+          else {
+            this.hud.flashSlot(key);
+            this.hud.toast('No skill on this key. Skills unlock with weapon mastery (I → Skills).', 'info');
+          }
+        });
       }
       if (inp.pressed('dodge')) tryAct('dodge', 'dodge');
       c.setBlock(inp.held('block'));
@@ -996,6 +1025,13 @@ export class Game {
       if (a.id === 'storm_arc') {
         this.effects.lightning(this.player.position, a.range);
         this.cam.addShake(this.settings.reducedShake ? 0.05 : 0.25);
+      } else if (a.id === 'lunging_thrust') {
+        this.effects.slash(this.player.position, this.player.yaw, { radius: a.range + 0.6, arcDeg: 24, tilt: 0, color: '#9fe8ff' });
+        this.effects.ring(this.player.position, '#9fe8ff', 1.6, 0.3);
+      } else if (a.id === 'final_slash') {
+        this.effects.slash(this.player.position, this.player.yaw, { radius: a.range + 0.4, arcDeg: a.arcDeg, tilt: 1.35, color: '#ffb03a' });
+        this.effects.ring(this.player.position, '#ff8a3d', a.range + 1, 0.5);
+        this.cam.addShake(this.settings.reducedShake ? 0.05 : 0.3);
       } else {
         const tilt = a.id === 'light1' ? 0.25 : a.id === 'light2' ? -0.25 : a.id === 'light3' || a.id === 'heavy' ? 1.35 : 0.1;
         this.effects.slash(this.player.position, this.player.yaw, { radius: a.range, arcDeg: Math.min(160, a.arcDeg), tilt, color: a.id === 'guardbreaker' ? '#ff9a4a' : col });
@@ -1079,8 +1115,8 @@ export class Game {
       if (!inArc(this.player.pos2, this.player.yaw, e.pos2, a.range, a.arcDeg, e.def.radius)) continue;
       if (!c.tryRegisterHit(e.id)) continue;
       const out = hitAgainst(this.session, a, Math.random(), e.def.attributes);
-      const landed = damageAgainst(this.session, out.damage, e.def);
-      const dmg = landed.damage;
+      const landed = damageAgainst(this.session, out.damage, e.def, a.id);
+      const dmg = landed.damage * finisherMultiplier(a.id, { staggered: e.brain.state === 'stagger', healthFraction: e.brain.health / e.def.maxHealth });
       if (this.online.online && e.def.kind !== 'dummy') {
         // The server decides the outcome; show impact now, numbers when it answers.
         this.online.sendHit(e, a.id, dmg, out.stagger, a.guardBreak, out.crit);

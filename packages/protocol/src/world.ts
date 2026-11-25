@@ -136,6 +136,8 @@ function charAction(v: unknown): CharAction | null {
       return (ATTRIBUTE_IDS as readonly unknown[]).includes(v.attr) && int(v.n, 1, 100) ? { k: 'allocate', attr: v.attr as (typeof ATTRIBUTE_IDS)[number], n: v.n } : null;
     case 'respec':
       return { k: 'respec' };
+    case 'skillbar':
+      return int(v.slot, 0, 3) && (v.skill === null || str(v.skill, 32)) ? { k: 'skillbar', slot: v.slot, skill: v.skill as string | null } : null;
     case 'forge': {
       const r = v.req;
       if (!obj(r) || !str(r.txId, 128) || !str(r.blueprintId) || (r.mode !== 'quick' && r.mode !== 'masterwork') || !int(r.bufferQuantity, 0, 1000)) return null;
