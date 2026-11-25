@@ -5,7 +5,7 @@
  * Reductions compose multiplicatively and can never produce a negative cost.
  */
 
-export type StaminaAction = 'light' | 'heavy' | 'dodge' | 'guardbreaker' | 'storm_arc' | 'jump';
+export type StaminaAction = 'light' | 'heavy' | 'dodge' | 'guardbreaker' | 'storm_arc' | 'lunging_thrust' | 'final_slash' | 'jump';
 
 export const STAMINA_CONFIG = {
   max: 100,
@@ -27,6 +27,8 @@ export const STAMINA_CONFIG = {
     dodge: 4,
     guardbreaker: 6,
     storm_arc: 5,
+    lunging_thrust: 4,
+    final_slash: 7,
     /** PROTOTYPE DECISION: not in GDD table. */
     jump: 1,
   } as Record<StaminaAction, number>,

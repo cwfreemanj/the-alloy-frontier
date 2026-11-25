@@ -7,3 +7,4 @@ export * from './quest';
 export * from './attributes';
 export * from './damage';
 export * from './movement';
+export * from './skills';

@@ -298,6 +298,10 @@ export const ATTACK_POSES: Record<string, [Pose, Pose]> = {
   ],
 };
 
+// Skills borrow the closest existing poses (procedural rig fallback).
+ATTACK_POSES.lunging_thrust = ATTACK_POSES.light3;
+ATTACK_POSES.final_slash = ATTACK_POSES.heavy;
+
 export const POSE_DODGE: Pose = {
   spine: [0.6, 0, 0],
   chest: [0.3, 0, 0],

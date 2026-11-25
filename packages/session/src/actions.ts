@@ -6,7 +6,7 @@
  * only ever send the action (an intent), never its result.
  */
 import { EQUIP_SLOTS, type EquipSlot, type ForgeRequest } from '@alloy/crafting';
-import { ATTACKS, ATTRIBUTE_IDS, GATHER_PROFICIENCY_XP, PROFICIENCY_YIELD_BONUS, proficiencyFor, proficiencyLevel, damageTypeOf, mitigate, resistanceMultiplier, ATTRIBUTE_XP, ENEMIES, computeOutgoingHit, critContest, staggerContest, type AttackDefinition, type AttributeId, type AttributeLevels, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
+import { ATTACKS, ATTRIBUTE_IDS, SKILLS, isSkill, GATHER_PROFICIENCY_XP, PROFICIENCY_YIELD_BONUS, proficiencyFor, proficiencyLevel, damageTypeOf, mitigate, resistanceMultiplier, ATTRIBUTE_XP, ENEMIES, computeOutgoingHit, critContest, staggerContest, type AttackDefinition, type AttributeId, type AttributeLevels, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
 import { Rng, getBlueprint, materialName, type DamageType, type ItemInstance, type ToolKind, type WeaponStats } from '@alloy/item-gen';
 import { FORGE_ANVIL, NPCS } from '@alloy/world';
 import { NODE_RESPAWN_SECONDS, nodeDef, nodeStateForGather, nodeTraits, nodeYield, regrowNodes } from './nodes';
@@ -28,7 +28,8 @@ export type CharAction =
   | { k: 'talk'; npc: 'orla' }
   | { k: 'event'; ev: 'open_merchant' }
   | { k: 'allocate'; attr: AttributeId; n: number }
-  | { k: 'respec' };
+  | { k: 'respec' }
+  | { k: 'skillbar'; slot: number; skill: string | null };
 
 export interface ActionContext {
   /** Where the player is, as the authority knows it. Null = unknown (range-checked actions fail). */
@@ -141,6 +142,10 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
       const { value: r, events } = captureEvents(s, () => s.allocate(a.attr, a.n));
       return r.ok ? { ok: true, events } : no(r.error, r.message, events);
     }
+    case 'skillbar': {
+      const { value: r, events } = captureEvents(s, () => s.setSkillBar(a.slot, a.skill));
+      return r.ok ? { ok: true, events } : no(r.error, r.message, events);
+    }
     case 'respec': {
       const { events } = captureEvents(s, () => {
         const n = s.respec();
@@ -183,6 +188,8 @@ export function playerHit(s: Session, attackId: string, rng: () => number, targe
   if (!atk) return null;
   const w = s.equipped();
   if (atk.id === 'storm_arc' && !w?.result.imbuements.includes('storm_arc')) return null;
+  // Skills: learned, and their weapon family in hand.
+  if (isSkill(atk.id) && !s.usableSkills().includes(atk.id)) return null;
   return { ...hitAgainst(s, atk, rng(), target), guardBreak: !!atk.guardBreak };
 }
 
@@ -248,8 +255,9 @@ export function weaponDamageType(s: Session): DamageType {
  * Damage that lands on an enemy: defense first (mitigate), then its resistance to the
  * weapon's damage type. The same function runs on the server and for guests.
  */
-export function damageAgainst(s: Session, rawDamage: number, enemy: { defense: number; resist?: Partial<Record<DamageType, number>> }): { damage: number; type: DamageType; multiplier: number } {
-  const type = weaponDamageType(s);
+export function damageAgainst(s: Session, rawDamage: number, enemy: { defense: number; resist?: Partial<Record<DamageType, number>> }, attackId?: string): { damage: number; type: DamageType; multiplier: number } {
+  // A skill may deal its own damage type (Lunging Thrust pierces).
+  const type = (attackId ? SKILLS[attackId]?.damageType : undefined) ?? weaponDamageType(s);
   const multiplier = resistanceMultiplier(enemy.resist, type);
   return { damage: mitigate(rawDamage, enemy.defense) * multiplier, type, multiplier };
 }

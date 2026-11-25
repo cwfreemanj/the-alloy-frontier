@@ -7,7 +7,7 @@
  * (computed from the server-side weapon). Client-owned: the player's own movement
  * (sanity-checked), and a guest's character (kept in their browser).
  */
-import { ATTACKS, checkMove, dist2, forwardPoint, inArc, inCircle, isNear, newMoveGuard, resetMoveGuard, type AttackId, type MoveGuard, type Vec2 } from '@alloy/game-rules';
+import { ATTACKS, checkMove, finisherMultiplier, dist2, forwardPoint, inArc, inCircle, isNear, newMoveGuard, resetMoveGuard, type AttackId, type MoveGuard, type Vec2 } from '@alloy/game-rules';
 import { WORLD_LIMITS, WORLD_PROTOCOL, parseWorldClientMsg, type AvatarState, type CharAction, type EnemyNetState, type WorldPlayerInfo, type WorldServerMsg } from '@alloy/protocol';
 import { GATHER_SECONDS, RANGE_SLACK, applyAction, damageAgainst, playerHit, rewardHit, rewardHitTaken, rewardKill } from '@alloy/session';
 import type { CharacterHost, LiveCharacter } from './characters';
@@ -41,7 +41,14 @@ interface Member {
   /** Speed check of reported positions (null until the first position). */
   move: MoveGuard | null;
   lastCorrectAt: number;
+  /** When each cooldown attack was last used (server time, ms). */
+  lastUse: Map<string, number>;
 }
+
+/** Hits of one use of a cooldown attack (e.g. a spin hitting several enemies) arrive within this window. */
+const USE_WINDOW_MS = 1200;
+/** Latency slack on cooldowns. */
+const COOLDOWN_SLACK_MS = 1000;
 
 export interface WorldStats {
   malformed: number;
@@ -249,7 +256,7 @@ export class WorldRoom {
       return null;
     }
     const id = `p${this.nextId++}`;
-    const m: Member = { id, name, accountId, close, state: null, send, windowStart: this.now(), msgs: 0, hits: 0, char, move: null, lastCorrectAt: 0 };
+    const m: Member = { id, name, accountId, close, state: null, send, windowStart: this.now(), msgs: 0, hits: 0, char, move: null, lastCorrectAt: 0, lastUse: new Map() };
     this.members.set(id, m);
     send({ t: 'welcome', id, players: this.infos(), enemies: this.enemies.map(netState), protocol: WORLD_PROTOCOL });
     if (char) this.sendChar(m);
@@ -278,14 +285,23 @@ export class WorldRoom {
       return reject();
     }
     if (dist2({ x: p.x, z: p.z }, e.pos2) > atk.range + e.def.radius + HIT_SLACK) return reject();
+    // Attacks with a cooldown (Guardbreaker, Storm Arc, skills): one use per cooldown. Hits of
+    // the same use land within a short window; a new use before the cooldown is refused.
+    if (atk.cooldown) {
+      const t = this.now();
+      const last = me.lastUse.get(atk.id);
+      if (last !== undefined && t - last > USE_WINDOW_MS && t - last < atk.cooldown * 1000 - COOLDOWN_SLACK_MS) return reject();
+      if (last === undefined || t - last > USE_WINDOW_MS) me.lastUse.set(atk.id, t);
+    }
     let dealtType: string | null = null;
     if (me.char) {
       // Signed in: the damage comes from the server's copy of the weapon, not the report.
       const out = playerHit(me.char.session, attackId, this.rng, e.def.attributes);
       if (!out) return reject();
       // Defense, then the enemy's resistance to the weapon's damage type.
-      const landed = damageAgainst(me.char.session, out.damage, e.def);
-      damage = landed.damage;
+      const landed = damageAgainst(me.char.session, out.damage, e.def, attackId);
+      // Finishers hit harder on staggered or badly wounded enemies.
+      damage = landed.damage * finisherMultiplier(attackId, { staggered: e.brain.state === 'stagger', healthFraction: e.brain.health / e.def.maxHealth });
       dealtType = landed.type;
       stagger = out.stagger;
       crit = out.crit;

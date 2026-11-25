@@ -41,11 +41,13 @@ if (process.env.CI) {
   });
 }
 
-async function newGame(page: Page) {
+async function newGame(page: Page, opts: { audio?: boolean } = {}) {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-  await page.goto('/?debug&world=off'); // single-player checks: never join a running world server
+  // Single-player checks: never join a running world server. Silent (audio costs CPU on slow
+  // test machines); the boot test checks audio on its own.
+  await page.goto(`/?debug&world=off${opts.audio ? '' : '&noaudio'}`);
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.getByTestId('new-game').click();
@@ -54,7 +56,7 @@ async function newGame(page: Page) {
 }
 
 test('boots the production build and renders the 3D scene without errors', async ({ page }) => {
-  const errors = await newGame(page);
+  const errors = await newGame(page, { audio: true });
   await expect(page.locator('canvas#game-canvas')).toBeVisible();
   await expect(page.getByTestId('objective')).toContainText("A Smith's Commission");
   // Audio starts with the first click (New game): the village plays the town theme.
@@ -195,7 +197,8 @@ test('full loop: gather, forge (quick + masterwork UI), equip, elite, report, sa
   await call(page, 'teleport', 2, 236);
   await page.waitForTimeout(1200);
   await page.keyboard.press('Tab');
-  for (let i = 0; i < 500; i++) {
+  // Generous budget: on slow machines the game runs behind real time.
+  for (let i = 0; i < 900; i++) {
     const s = await state(page);
     const w = s.enemies.find((e) => e.id === 'warden')!;
     if (w.state === 'dead') break;
@@ -321,6 +324,30 @@ test('character window: tabs, attributes that grow by use, derived stats', async
   await page.getByTestId('respec').click();
   await expect(page.getByTestId('unspent-points')).toHaveText('3');
   await expect(page.getByTestId('attr-strength')).toHaveText(String(str));
+  expect(errors).toEqual([]);
+});
+
+test('skills: learned at a mastery milestone, used from the skill bar, rearranged on the Skills screen', async ({ page }) => {
+  const errors = await newGame(page);
+  // A longsword in hand, then longsword mastery 3 (debug shortcut for the XP).
+  await page.evaluate(() => {
+    const s = (window as unknown as { __alloy: { session: () => { talk: (n: string) => void; gainWeaponXp: (x: number) => void; weaponLevel: number } } }).__alloy.session();
+    s.talk('orla');
+    while (s.weaponLevel < 3) s.gainWeaponXp(50);
+  });
+  await expect(page.getByTestId('skill-slot-1')).toContainText('Lunging');
+  await page.keyboard.press('Digit1');
+  await expect.poll(async () => ((await page.evaluate(() => (window as unknown as { __alloy: { state: () => { attack: string | null } } }).__alloy.state().attack)))).toBe('lunging_thrust');
+  // Move it to key 3 on the Skills screen.
+  await page.waitForTimeout(1200);
+  await page.keyboard.press('KeyI');
+  await page.getByTestId('tab-skills').click();
+  await expect(page.getByTestId('skill-status-lunging_thrust')).toContainText('Learned');
+  await expect(page.getByTestId('skill-status-final_slash')).toContainText('Longsword mastery 6');
+  await page.getByTestId('assign-lunging_thrust-3').click();
+  await page.keyboard.press('KeyI');
+  await expect(page.getByTestId('skill-slot-3')).toContainText('Lunging');
+  await expect(page.getByTestId('skill-slot-1')).not.toContainText('Lunging');
   expect(errors).toEqual([]);
 });
 

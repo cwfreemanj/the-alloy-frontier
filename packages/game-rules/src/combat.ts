@@ -16,8 +16,10 @@ import {
   type StaminaState,
 } from './stamina';
 
-export type AttackId = 'light1' | 'light2' | 'light3' | 'heavy' | 'guardbreaker' | 'storm_arc';
-export type ActionKind = 'light' | 'heavy' | 'guardbreaker' | 'dodge' | 'storm_arc';
+export type AttackId = 'light1' | 'light2' | 'light3' | 'heavy' | 'guardbreaker' | 'storm_arc' | 'lunging_thrust' | 'final_slash';
+/** Skill attacks (see skills.ts): learned at mastery milestones, used from the skill bar. */
+export type SkillAttackId = 'lunging_thrust' | 'final_slash';
+export type ActionKind = 'light' | 'heavy' | 'guardbreaker' | 'dodge' | 'storm_arc' | SkillAttackId;
 
 export interface AttackDefinition {
   id: AttackId;
@@ -47,6 +49,9 @@ export const ATTACKS: Record<AttackId, AttackDefinition> = {
   heavy: { id: 'heavy', name: 'Heavy Strike', stamina: 'heavy', windup: 0.42, active: 0.16, recovery: 0.5, damageMult: 2.0, staggerMult: 2.6, range: 2.9, arcDeg: 100, lunge: 1.0, guardBreak: false, heavy: true },
   guardbreaker: { id: 'guardbreaker', name: 'Guardbreaker', stamina: 'guardbreaker', windup: 0.48, active: 0.16, recovery: 0.55, damageMult: 1.5, staggerMult: 4.0, range: 2.9, arcDeg: 80, lunge: 1.8, guardBreak: true, cooldown: 8, heavy: true },
   storm_arc: { id: 'storm_arc', name: 'Storm Arc', stamina: 'storm_arc', windup: 0.25, active: 0.2, recovery: 0.4, damageMult: 1.3, staggerMult: 2.2, range: 4.5, arcDeg: 360, lunge: 0, guardBreak: false, cooldown: 12, heavy: true },
+  // Skills (skills.ts says who may use them)
+  lunging_thrust: { id: 'lunging_thrust', name: 'Lunging Thrust', stamina: 'lunging_thrust', windup: 0.22, active: 0.14, recovery: 0.4, damageMult: 1.6, staggerMult: 1.8, range: 3.0, arcDeg: 50, lunge: 4.0, guardBreak: false, cooldown: 6, heavy: false },
+  final_slash: { id: 'final_slash', name: 'Final Slash', stamina: 'final_slash', windup: 0.6, active: 0.18, recovery: 0.65, damageMult: 3.0, staggerMult: 3.5, range: 3.0, arcDeg: 110, lunge: 1.2, guardBreak: false, cooldown: 15, heavy: true },
 };
 
 export const DODGE = { duration: 0.45, iframeStart: 0.04, iframeEnd: 0.32, distance: 3.6 };
@@ -174,8 +179,9 @@ export class PlayerCombat {
   /** Request an action. Inputs during an attack are buffered so combos feel responsive. */
   request(kind: ActionKind, ctx: CombatContext): RequestResult {
     if (this.phase === 'dead' || this.phase === 'stagger') return this.reject(kind, 'busy');
-    if (kind === 'storm_arc' && !(ctx.abilities ?? []).includes('storm_arc')) return this.reject(kind, 'unavailable');
-    const cdKey = kind === 'guardbreaker' || kind === 'storm_arc' ? kind : null;
+    // Abilities and skills must be granted by the context (imbued weapon, learned skill in hand).
+    if ((kind === 'storm_arc' || kind === 'lunging_thrust' || kind === 'final_slash') && !(ctx.abilities ?? []).includes(kind)) return this.reject(kind, 'unavailable');
+    const cdKey = kind !== 'dodge' && kind !== 'light' && ATTACKS[kind].cooldown ? kind : null;
     if (cdKey && (this.cooldowns[cdKey] ?? 0) > 0) return this.reject(kind, 'cooldown');
 
     if (this.phase === 'idle') return this.start(kind, ctx);

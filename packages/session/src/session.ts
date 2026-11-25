@@ -26,6 +26,10 @@ import {
   ATTRIBUTE_XP,
   ALLOCATED_MAX,
   addAttributeXp,
+  SKILL_BAR_SIZE,
+  learnedSkills,
+  normalizeSkillBar,
+  type SkillDef,
   addProficiencyXp,
   type GatheringProficiency,
   isWeaponFamily,
@@ -61,6 +65,10 @@ export type SessionEvent =
   | { type: 'inventory' }
   /** Stat points were spent or refunded. */
   | { type: 'stats' }
+  /** A combat skill was learned (it was put on the skill bar if there was room). */
+  | { type: 'skill_learned'; skill: string }
+  /** The skill bar changed. */
+  | { type: 'skillbar' }
   | { type: 'progress'; kind: 'weapon' | 'smith' | 'adventurer' | 'attribute' | 'proficiency'; levels: number; attr?: AttributeId; family?: WeaponFamily; proficiency?: GatheringProficiency }
   | { type: 'quest_step'; title: string; next: string | null }
   | { type: 'quest_complete' }
@@ -395,9 +403,47 @@ export class Session {
   gainWeaponXp(xp: number): void {
     const family = this.weaponFamily;
     if (!(xp > 0) || !family) return;
+    const before = this.learnedSkills().map((x) => x.id);
     const g = addWeaponXp(this.data.progression, family, xp);
     this.data.progression = g.state;
     if (g.levelsGained > 0) this.emit({ type: 'progress', kind: 'weapon', levels: g.levelsGained, family });
+    // New skills from a mastery milestone go on the bar's first free slot.
+    for (const sk of this.learnedSkills()) {
+      if (before.includes(sk.id)) continue;
+      const bar = this.skillBar;
+      const free = bar.indexOf(null);
+      if (free >= 0) {
+        bar[free] = sk.id;
+        this.data.progression.skillBar = bar;
+      }
+      this.emit({ type: 'skill_learned', skill: sk.id });
+    }
+  }
+
+  /** Skills learned at weapon mastery milestones. */
+  learnedSkills(): SkillDef[] {
+    return learnedSkills(this.data.progression.weaponMastery);
+  }
+  /** Learned skills usable now (they need their weapon family in hand). */
+  usableSkills(): string[] {
+    const f = this.weaponFamily;
+    return this.learnedSkills()
+      .filter((x) => x.family === f)
+      .map((x) => x.id);
+  }
+  /** The skill bar (keys 1-4), cleaned against what is learned. */
+  get skillBar(): Array<string | null> {
+    return normalizeSkillBar(this.data.progression.skillBar, this.learnedSkills().map((x) => x.id));
+  }
+  /** Put a learned skill in a skill bar slot (or empty it); a skill moves if it was elsewhere. */
+  setSkillBar(slot: number, skill: string | null): { ok: true } | { ok: false; error: string; message: string } {
+    if (!Number.isInteger(slot) || slot < 0 || slot >= SKILL_BAR_SIZE) return { ok: false, error: 'invalid_slot', message: 'Invalid skill slot.' };
+    if (skill !== null && !this.learnedSkills().some((x) => x.id === skill)) return { ok: false, error: 'not_learned', message: 'You have not learned that skill.' };
+    const bar = this.skillBar.map((x) => (x === skill ? null : x));
+    bar[slot] = skill;
+    this.data.progression.skillBar = bar;
+    this.emit({ type: 'skillbar' });
+    return { ok: true };
   }
 
   /** Gathering proficiency XP (mining, woodcutting, herbalism). */

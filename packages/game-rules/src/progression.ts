@@ -16,6 +16,8 @@ export interface ProgressionState {
   attributes?: AttributeState;
   /** Stat points spent per attribute. Unspent points are derived from the adventurer rank. */
   allocated?: AttributeLevels;
+  /** Skill bar (keys 1-4): learned skill ids or null. Optional in older saves. */
+  skillBar?: Array<string | null>;
 }
 
 export const WEAPON_MASTERY_MAX = 30;

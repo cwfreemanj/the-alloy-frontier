@@ -336,3 +336,49 @@ describe('grove trees and node storage', () => {
     expect(Object.keys(s.data.world.nodes)).toEqual([ore.id]);
   });
 });
+
+describe('combat skills in the session', () => {
+  const toLevel = (s: Session, level: number) => {
+    while (s.weaponLevel < level) s.gainWeaponXp(50);
+  };
+
+  it('learns Lunging Thrust at longsword 3, announces it and puts it on key 1', () => {
+    const s = fresh();
+    s.talk('orla'); // longsword in hand
+    const learned: unknown[] = [];
+    s.on((e) => e.type === 'skill_learned' && learned.push(e));
+    toLevel(s, 3);
+    expect(learned).toEqual([{ type: 'skill_learned', skill: 'lunging_thrust' }]);
+    expect(s.skillBar).toEqual(['lunging_thrust', null, null, null]);
+    expect(s.usableSkills()).toEqual(['lunging_thrust']);
+  });
+
+  it('moves skills on the bar only through the action, and only learned ones', () => {
+    const s = fresh();
+    s.talk('orla');
+    expect(applyAction(s, { k: 'skillbar', slot: 0, skill: 'lunging_thrust' }, { pos: null })).toMatchObject({ ok: false, error: 'not_learned' });
+    toLevel(s, 6);
+    expect(applyAction(s, { k: 'skillbar', slot: 3, skill: 'lunging_thrust' }, { pos: null }).ok).toBe(true);
+    expect(s.skillBar).toEqual([null, 'final_slash', null, 'lunging_thrust']);
+    expect(applyAction(s, { k: 'skillbar', slot: 3, skill: null }, { pos: null }).ok).toBe(true);
+    expect(s.skillBar[3]).toBeNull();
+    expect(applyAction(s, { k: 'skillbar', slot: 9, skill: null }, { pos: null }).ok).toBe(false);
+  });
+
+  it('refuses a skill hit when it is not learned or its weapon is not in hand', () => {
+    const s = fresh();
+    s.talk('orla');
+    expect(playerHit(s, 'lunging_thrust', () => 0.5)).toBeNull();
+    toLevel(s, 3);
+    expect(playerHit(s, 'lunging_thrust', () => 0.5)).not.toBeNull();
+    s.unequip('weapon');
+    expect(playerHit(s, 'lunging_thrust', () => 0.5)).toBeNull();
+  });
+
+  it('Lunging Thrust deals piercing damage', () => {
+    const s = fresh();
+    s.talk('orla');
+    expect(damageAgainst(s, 100, ENEMIES.scavenger, 'lunging_thrust').type).toBe('pierce');
+    expect(damageAgainst(s, 100, ENEMIES.scavenger, 'light1').type).toBe('slash');
+  });
+});
