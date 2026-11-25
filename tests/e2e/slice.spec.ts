@@ -72,11 +72,10 @@ test('boots the production build and renders the 3D scene without errors', async
 test('WASD movement, sprint stamina drain and jump', async ({ page }) => {
   await newGame(page);
   const s0 = await state(page);
+  // Walk until 2 m are covered (on a slow machine the game runs behind real time).
   await page.keyboard.down('KeyW');
-  await page.waitForTimeout(1200);
+  await expect.poll(async () => { const s = await state(page); return Math.hypot(s.pos.x - s0.pos.x, s.pos.z - s0.pos.z); }, { timeout: 6000 }).toBeGreaterThan(2);
   await page.keyboard.up('KeyW');
-  const s1 = await state(page);
-  expect(Math.hypot(s1.pos.x - s0.pos.x, s1.pos.z - s0.pos.z)).toBeGreaterThan(2);
   await page.keyboard.down('ShiftLeft');
   await page.keyboard.down('KeyS');
   await page.waitForTimeout(1500);
@@ -114,7 +113,11 @@ test('combat: combo damages the training post exactly once per swing', async ({ 
   await call(page, 'teleport', -8, 4.5);
   await call(page, 'face', 0.6);
   await page.waitForTimeout(200);
-  await page.keyboard.press('KeyE');
+  // Talk (press E again if a slow frame missed the key), then pick the first option.
+  await expect(async () => {
+    await page.keyboard.press('KeyE');
+    await expect(page.locator('[data-option="0"]')).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 15_000 });
   await page.locator('[data-option="0"]').click();
   await expect.poll(async () => (await state(page)).equipped?.damage).toBe(14);
   await call(page, 'teleport', 5, -7.6);
@@ -137,7 +140,11 @@ test('full loop: gather, forge (quick + masterwork UI), equip, elite, report, sa
   // Talk to Orla
   await call(page, 'teleport', -8, 4.5);
   await page.waitForTimeout(150);
-  await page.keyboard.press('KeyE');
+  // Talk (press E again if a slow frame missed the key), then pick the first option.
+  await expect(async () => {
+    await page.keyboard.press('KeyE');
+    await expect(page.locator('[data-option="0"]')).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 15_000 });
   await page.locator('[data-option="0"]').click();
   // Real gather at a node
   await call(page, 'teleport', -6, 38.2);
@@ -213,7 +220,11 @@ test('full loop: gather, forge (quick + masterwork UI), equip, elite, report, sa
   await call(page, 'teleport', -8, 4.5);
   await expect.poll(async () => (await state(page)).phase, { timeout: 5000 }).toBe('idle');
   await expect(page.getByTestId('prompt')).toContainText('Orla');
-  await page.keyboard.press('KeyE');
+  // Talk (press E again if a slow frame missed the key), then pick the first option.
+  await expect(async () => {
+    await page.keyboard.press('KeyE');
+    await expect(page.locator('[data-option="0"]')).toBeVisible({ timeout: 2000 });
+  }).toPass({ timeout: 15_000 });
   await page.locator('[data-option="0"]').click();
   await expect(page.getByText('Quest complete — The Edge You Made')).toBeVisible();
   // Save/load

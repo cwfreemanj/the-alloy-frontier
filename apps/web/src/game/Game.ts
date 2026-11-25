@@ -128,6 +128,8 @@ export class Game {
   readonly audio = new GameAudio();
   /** Seconds left before combat music gives way to the area's music. */
   private combatHold = 0;
+  /** When the game last asked for the mouse (pointer lock). */
+  private lockRequestedAt = 0;
   private readonly ui: HTMLElement;
   /** Debug/cheat hooks: only with ?debug AND on a local machine, never on a hosted build. */
   readonly debug = new URLSearchParams(location.search).has('debug') && ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
@@ -219,12 +221,16 @@ export class Game {
     canvas.addEventListener('mousedown', () => {
       if (this.modal === null && !this.input.pointerLocked && !this.lockUnavailable) {
         this.input.consume('Mouse0');
+        this.lockRequestedAt = performance.now();
         this.input.requestPointerLock();
       }
     });
     document.addEventListener('pointerlockerror', () => (this.lockUnavailable = true));
     document.addEventListener('pointerlockchange', () => {
-      if (!document.pointerLockElement && this.modal === null && this.started) this.openPause();
+      // Losing the mouse while playing means the player pressed Esc: pause. But right after the
+      // game grabs the mouse (e.g. closing a menu with Esc), the browser's own Esc handling can
+      // release it again: that isn't a pause request.
+      if (!document.pointerLockElement && this.modal === null && this.started && performance.now() - this.lockRequestedAt > 600) this.openPause();
     });
     window.addEventListener('beforeunload', () => {
       if (this.started && this.session) this.save('exit');
@@ -617,7 +623,10 @@ export class Game {
 
   closeModal(): void {
     this.setModal(null, null);
-    if (!this.lockUnavailable) this.input.requestPointerLock();
+    if (!this.lockUnavailable) {
+      this.lockRequestedAt = performance.now();
+      this.input.requestPointerLock();
+    }
   }
 
   private showTitle(): void {
