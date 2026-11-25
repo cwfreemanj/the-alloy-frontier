@@ -51,7 +51,7 @@ import { EmberholdWorld } from '../world/EmberholdWorld';
 import { orlaDialogue } from './Dialogue';
 import type { RemotePlayer } from '../entities/RemotePlayer';
 import { findWorld } from '../net/WorldClient';
-import { AccountClient, type ApiError } from '../net/Accounts';
+import { AccountClient, type ApiError, type CharacterSlot, type CharacterSummary } from '../net/Accounts';
 import { deserialize as parseSave, serialize as encodeSave } from '@alloy/save';
 import type { AccountView } from '../ui/Panels';
 import { Online, type ActReply } from './Online';
@@ -160,7 +160,8 @@ export class Game {
   /** 'account' = character owned and saved by the server; 'guest' = saved in this browser. */
   mode: 'guest' | 'account' = 'guest';
   private accountView: AccountView = { state: 'checking' };
-  private cloudRaw: string | null = null;
+  /** Which of the account's two characters is being played. */
+  private slot: CharacterSlot = 1;
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     const t0 = performance.now();
@@ -283,7 +284,7 @@ export class Game {
   /** Join the shared world as the current account or guest. */
   private connectWorld(): void {
     if (!this.worldUrl) return;
-    if (this.mode === 'account' && this.accounts?.username) this.online.connect(this.worldUrl, this.accounts.username, this.accounts.token);
+    if (this.mode === 'account' && this.accounts?.username) this.online.connect(this.worldUrl, this.accounts.username, this.accounts.token, this.slot);
     else this.online.connect(this.worldUrl, this.playerName);
   }
 
@@ -292,15 +293,49 @@ export class Game {
     if (this.modal === 'title') this.showTitle();
   }
 
-  private async afterSignIn(): Promise<void> {
+  private async afterSignIn(notice?: string): Promise<void> {
+    let slots: CharacterSummary[];
     try {
-      this.cloudRaw = await this.accounts!.loadSave();
+      slots = await this.accounts!.listCharacters();
     } catch (e) {
       this.setAccountView({ state: 'signed_out', error: (e as ApiError).message });
       return;
     }
     const guestSave = this.saves.hasSave() && this.saves.load().ok;
-    this.setAccountView({ state: 'signed_in', username: this.accounts!.username!, hasCloudSave: !!this.cloudRaw, canImport: guestSave && !this.cloudRaw });
+    this.setAccountView({ state: 'signed_in', username: this.accounts!.username!, slots, canImport: guestSave && slots.some((s) => !s.exists), notice });
+  }
+
+  /** Play the character in a slot (title screen). */
+  private async playSlot(slot: CharacterSlot): Promise<void> {
+    if (!this.accounts || this.accountView.state !== 'signed_in') return;
+    const view = this.accountView;
+    this.setAccountView({ ...view, busy: true, error: undefined, notice: undefined });
+    try {
+      const raw = await this.accounts.loadSave(slot);
+      const r = raw ? parseSave(raw) : null;
+      if (!r || !r.ok) {
+        this.setAccountView({ ...view, busy: false, error: `Character ${slot} could not be loaded${r && !r.ok ? `: ${r.reason}` : ''}.` });
+        return;
+      }
+      this.slot = slot;
+      this.startPlaying(r.data, 'account', 'continue');
+    } catch (e) {
+      this.setAccountView({ ...view, busy: false, error: (e as ApiError).message });
+    }
+  }
+
+  /** Delete the character in a slot (after the title screen's typed confirmation). */
+  private async deleteSlot(slot: CharacterSlot): Promise<void> {
+    if (!this.accounts || this.accountView.state !== 'signed_in') return;
+    const view = this.accountView;
+    this.setAccountView({ ...view, busy: true, error: undefined, notice: undefined });
+    try {
+      await this.accounts.deleteCharacter(slot);
+    } catch (e) {
+      this.setAccountView({ ...view, busy: false, error: (e as ApiError).message });
+      return;
+    }
+    await this.afterSignIn(`Character ${slot} was deleted.`);
   }
 
   private async accountAction(kind: 'login' | 'register', username: string, password: string): Promise<void> {
@@ -317,7 +352,7 @@ export class Game {
 
   private async signOut(): Promise<void> {
     await this.accounts?.logout();
-    this.cloudRaw = null;
+    this.slot = 1;
     this.setAccountView({ state: 'signed_out' });
   }
 
@@ -371,7 +406,6 @@ export class Game {
     this.started = false;
     this.modal = null;
     if (this.accounts?.username) {
-      this.cloudRaw = null;
       void this.afterSignIn().then(() => {
         if (this.accountView.state === 'signed_in') this.setAccountView({ ...this.accountView, error: reason });
       });
@@ -686,36 +720,31 @@ export class Game {
         onSignIn: (u, p) => void this.accountAction('login', u, p),
         onRegister: (u, p) => void this.accountAction('register', u, p),
         onSignOut: () => void this.signOut(),
-        onAccountContinue: () => {
-          const r = this.cloudRaw ? parseSave(this.cloudRaw) : null;
-          if (!r || !r.ok) {
-            this.setAccountView({ ...(this.accountView as Extract<AccountView, { state: 'signed_in' }>), error: `Your saved character could not be loaded${r && !r.ok ? `: ${r.reason}` : ''}.` });
-            return;
-          }
-          this.startPlaying(r.data, 'account', 'continue');
-        },
-        onAccountNew: () => void this.accountCharacter('new'),
-        onImport: () => void this.accountCharacter('import'),
+        onPlaySlot: (slot) => void this.playSlot(slot),
+        onNewSlot: (slot) => void this.accountCharacter('new', slot),
+        onImportSlot: (slot) => void this.accountCharacter('import', slot),
+        onDeleteSlot: (slot) => void this.deleteSlot(slot),
       }),
     );
   }
 
-  /** Start a new account character, or bring this browser's guest character in (server-side). */
-  private async accountCharacter(kind: 'new' | 'import'): Promise<void> {
+  /** Start a new account character in an empty slot, or bring this browser's guest character into one. */
+  private async accountCharacter(kind: 'new' | 'import', slot: CharacterSlot): Promise<void> {
     if (!this.accounts || this.accountView.state !== 'signed_in') return;
     const view = this.accountView;
     const local = kind === 'import' ? this.saves.load() : null;
     if (local && !local.ok) return;
     this.setAccountView({ ...view, busy: true, error: undefined });
     try {
-      if (kind === 'new') await this.accounts.newCharacter();
-      else await this.accounts.importCharacter(encodeSave(local!.ok ? local!.data : newSessionData(Date.now()), Date.now()));
+      if (kind === 'new') await this.accounts.newCharacter(slot);
+      else await this.accounts.importCharacter(encodeSave(local!.ok ? local!.data : newSessionData(Date.now()), Date.now()), slot);
     } catch (e) {
       this.setAccountView({ ...view, busy: false, error: (e as ApiError).message });
       return;
     }
-    this.cloudRaw = await this.accounts.loadSave().catch(() => null);
-    const r = this.cloudRaw ? parseSave(this.cloudRaw) : null;
+    const raw = await this.accounts.loadSave(slot).catch(() => null);
+    const r = raw ? parseSave(raw) : null;
+    this.slot = slot;
     this.startPlaying(r?.ok ? r.data : newSessionData(Date.now()), 'account', kind === 'new' ? 'new' : 'continue');
     if (kind === 'import') this.hud.toast('Your browser character now lives in your account.', 'good');
   }
@@ -731,7 +760,7 @@ export class Game {
   continueGame(): void {
     if (this.mode === 'account' && this.started && this.accounts) {
       void this.accounts
-        .loadSave()
+        .loadSave(this.slot)
         .then((raw) => {
           const r = raw ? parseSave(raw) : null;
           if (r?.ok) this.startPlaying(r.data, 'account', 'continue');

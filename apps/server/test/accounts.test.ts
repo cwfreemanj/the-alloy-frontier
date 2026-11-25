@@ -133,10 +133,46 @@ describe('HTTP API and signed-in world', () => {
     // A browser can no longer write a character directly, even a valid one.
     const put = await fetch(`${base}/api/save`, { method: 'PUT', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ save: goodSave(9), revision: 1 }) });
     expect(put.status).toBe(410);
-    // Starting over: the server builds the new character itself.
-    const fresh = await post(base, '/api/character/new', {}, auth);
-    expect((await fresh.json()).revision).toBe(2);
-    expect(JSON.parse((await (await fetch(`${base}/api/save`, { headers: auth })).json()).save).data.player.x).toBe(0);
+    // Slot 1 is taken: "new" never overwrites a character.
+    const taken = await post(base, '/api/character/new', {}, auth);
+    expect(taken.status).toBe(409);
+    expect((await taken.json()).error).toBe('slot_taken');
+    // A second character goes into slot 2; slot 1 is kept.
+    const second = await post(base, '/api/character/new', { slot: 2 }, auth);
+    expect((await second.json()).revision).toBe(1);
+    expect(JSON.parse((await (await fetch(`${base}/api/save?slot=2`, { headers: auth })).json()).save).data.player.x).toBe(0);
+    expect(JSON.parse((await (await fetch(`${base}/api/save?slot=1`, { headers: auth })).json()).save).data.player.x).toBe(7);
+    expect((await fetch(`${base}/api/save?slot=3`, { headers: auth })).status).toBe(400);
+    const list = (await (await fetch(`${base}/api/characters`, { headers: auth })).json()).slots;
+    expect(list.map((x: { slot: number; exists: boolean }) => [x.slot, x.exists])).toEqual([[1, true], [2, true]]);
+    expect(list[0]).toMatchObject({ rank: 1, questStep: 0, questDone: false });
+    // Deleting needs the typed confirmation; then the slot is empty and can start over.
+    expect((await post(base, '/api/character/delete', { slot: 2 }, auth)).status).toBe(400);
+    expect((await post(base, '/api/character/delete', { slot: 2, confirm: 'delete' }, auth)).status).toBe(400);
+    expect((await post(base, '/api/character/delete', { slot: 2, confirm: 'DELETE' }, auth)).status).toBe(200);
+    expect((await (await fetch(`${base}/api/save?slot=2`, { headers: auth })).json()).save).toBeNull();
+    expect((await post(base, '/api/character/delete', { slot: 2, confirm: 'DELETE' }, auth)).status).toBe(404);
+    expect(JSON.parse((await (await fetch(`${base}/api/save?slot=1`, { headers: auth })).json()).save).data.player.x).toBe(7);
+    const again = await post(base, '/api/character/new', { slot: 2 }, auth);
+    expect(again.status).toBe(200);
+  });
+
+  it('deleting a character keeps it in a dated trash record (undo by hand)', async () => {
+    const kv = new MemoryKV();
+    let t = 5_000;
+    const svc = new AccountService(kv, () => t);
+    const reg = await svc.register('Trashy', 'password123', '1.1.1.1');
+    if (!reg.ok) throw new Error('register');
+    const id = (await svc.accountFor(reg.value.token))!.id;
+    expect((await svc.newCharacter(id, 2, goodSave(3))).ok).toBe(true);
+    t = 9_000;
+    const del = await svc.deleteCharacter(id, 2);
+    if (!del.ok) throw new Error('delete');
+    expect(del.value.trashKey).toBe(`trash:${id}~2:9000`);
+    const kept = await kv.get<{ raw: string; deletedAt: number }>(del.value.trashKey);
+    expect(kept?.deletedAt).toBe(9000);
+    expect(JSON.parse(kept!.raw).data.player.x).toBe(3);
+    expect(await svc.getSave(id, 2)).toBeNull();
   });
 
   it('allows the configured Vercel origin and refuses other websites', async () => {
@@ -216,9 +252,12 @@ describe('HTTP API and signed-in world', () => {
     c.send(JSON.stringify({ t: 'state', s: { x: -9, y: 0, z: 7.5, yaw: 0, spd: 0, ph: 'idle', atk: null, pr: 0, hp: 200, mhp: 200, wpn: null } }));
     c.send(JSON.stringify({ t: 'act', id: 1, a: { k: 'talk', npc: 'orla' } }));
     expect(await waitFor((m) => m.t === 'actResult' && m.id === 1)).toMatchObject({ ok: true });
-    // While the character is in the world, the title-screen endpoints can't replace it.
+    // While the character is in the world, the title-screen endpoints can't replace or delete it.
     const blocked = await post(base, '/api/character/new', {}, { authorization: `Bearer ${reg.token}` });
     expect(blocked.status).toBe(409);
+    const noDelete = await post(base, '/api/character/delete', { slot: 1, confirm: 'DELETE' }, { authorization: `Bearer ${reg.token}` });
+    expect(noDelete.status).toBe(409);
+    expect((await noDelete.json()).error).toBe('in_world');
     c.close();
     await server.close(); // writes changed characters before stopping
     server = null;
@@ -226,6 +265,41 @@ describe('HTTP API and signed-in world', () => {
     const saved = JSON.parse((await svc.getSave(id))!.raw).data;
     expect(saved.inventory.equipped.weapon).toBeTruthy();
     expect(saved.quest.stepIndex).toBe(1);
+  });
+
+  it('joining with slot 2 plays (and saves) the second character, leaving slot 1 alone', async () => {
+    const svc = new AccountService(new MemoryKV());
+    server = await startWorldServer({ port: 0, accounts: svc, allowTeleport: true });
+    const base = `http://127.0.0.1:${server.port}`;
+    const reg = await (await post(base, '/api/register', { username: 'TwoSlots', password: 'password1' })).json();
+    const auth = { authorization: `Bearer ${reg.token}` };
+    expect((await post(base, '/api/character/new', { slot: 1 }, auth)).status).toBe(200);
+    expect((await post(base, '/api/character/new', { slot: 2 }, auth)).status).toBe(200);
+    const c = new WebSocket(base.replace('http', 'ws') + '/world');
+    const box: WorldServerMsg[] = [];
+    c.on('message', (d) => box.push(JSON.parse(d.toString())));
+    await new Promise((r) => c.once('open', r));
+    const waitFor = async (pred: (m: WorldServerMsg) => boolean) => {
+      for (let i = 0; i < 200; i++) {
+        const m = box.find(pred);
+        if (m) return m;
+        await new Promise((r) => setTimeout(r, 15));
+      }
+      throw new Error('timeout');
+    };
+    c.send(JSON.stringify({ t: 'hello', name: 'x', protocol: WORLD_PROTOCOL, token: reg.token, slot: 2 }));
+    await waitFor((m) => m.t === 'char');
+    c.send(JSON.stringify({ t: 'state', s: { x: -9, y: 0, z: 7.5, yaw: 0, spd: 0, ph: 'idle', atk: null, pr: 0, hp: 200, mhp: 200, wpn: null } }));
+    c.send(JSON.stringify({ t: 'act', id: 1, a: { k: 'talk', npc: 'orla' } }));
+    expect(await waitFor((m) => m.t === 'actResult' && m.id === 1)).toMatchObject({ ok: true });
+    // Slot 2 is in the world (can't be deleted); slot 1 isn't (could be).
+    expect((await post(base, '/api/character/delete', { slot: 2, confirm: 'DELETE' }, auth)).status).toBe(409);
+    c.close();
+    await server.close();
+    server = null;
+    const id = (await svc.accountFor(reg.token))!.id;
+    expect(JSON.parse((await svc.getSave(id, 2))!.raw).data.quest.stepIndex).toBe(1);
+    expect(JSON.parse((await svc.getSave(id, 1))!.raw).data.quest.stepIndex).toBe(0);
   });
 });
 

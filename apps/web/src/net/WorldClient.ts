@@ -73,6 +73,8 @@ export class WorldClient {
     readonly name: string,
     private handlers: WorldHandlers,
     private token: string | null = null,
+    /** Which of the account's characters to play (sent with a signed-in hello). */
+    private slot: 1 | 2 = 1,
   ) {
     this.open();
   }
@@ -82,7 +84,7 @@ export class WorldClient {
     this.handlers.status('connecting');
     const ws = new WebSocket(this.url);
     this.ws = ws;
-    ws.onopen = () => this.send({ t: 'hello', name: this.name, protocol: WORLD_PROTOCOL, ...(this.token ? { token: this.token } : {}) });
+    ws.onopen = () => this.send({ t: 'hello', name: this.name, protocol: WORLD_PROTOCOL, ...(this.token ? { token: this.token, ...(this.slot === 2 ? { slot: 2 as const } : {}) } : {}) });
     ws.onmessage = (ev) => {
       let m: WorldServerMsg;
       try {

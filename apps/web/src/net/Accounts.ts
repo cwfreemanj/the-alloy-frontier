@@ -115,21 +115,50 @@ export class AccountClient {
     writeAuth(null);
   }
 
-  async loadSave(): Promise<string | null> {
-    const r = await this.call<{ save: string | null; revision: number }>('GET', '/api/save');
+  /** The character in a slot (1 or 2), or null if the slot is empty. */
+  async loadSave(slot: CharacterSlot = 1): Promise<string | null> {
+    const r = await this.call<{ save: string | null; revision: number }>('GET', `/api/save?slot=${slot}`);
     this.revision = r.revision;
     return r.save;
   }
 
-  /** Start a fresh character on the server (replaces any existing one). */
-  async newCharacter(): Promise<void> {
-    const r = await this.call<{ revision: number }>('POST', '/api/character/new', {});
+  /** Both character slots, summarised. */
+  async listCharacters(): Promise<CharacterSummary[]> {
+    const r = await this.call<{ slots: CharacterSummary[] }>('GET', '/api/characters');
+    return r.slots;
+  }
+
+  /** Start a fresh character on the server, in an empty slot. */
+  async newCharacter(slot: CharacterSlot): Promise<void> {
+    const r = await this.call<{ revision: number }>('POST', '/api/character/new', { slot });
     this.revision = r.revision;
   }
 
-  /** Bring this browser's guest character into the account (only when it has none). */
-  async importCharacter(raw: string): Promise<void> {
-    const r = await this.call<{ revision: number }>('POST', '/api/character/import', { save: raw });
+  /** Bring this browser's guest character into an empty slot. */
+  async importCharacter(raw: string, slot: CharacterSlot): Promise<void> {
+    const r = await this.call<{ revision: number }>('POST', '/api/character/import', { save: raw, slot });
     this.revision = r.revision;
   }
+
+  /** Delete the character in a slot (the server keeps it in its trash, out of reach of the game). */
+  async deleteCharacter(slot: CharacterSlot): Promise<void> {
+    await this.call<{ ok: boolean }>('POST', '/api/character/delete', { slot, confirm: 'DELETE' });
+  }
+}
+
+export type CharacterSlot = 1 | 2;
+
+/** What the title screen shows about a character slot (the server's summary). */
+export interface CharacterSummary {
+  slot: CharacterSlot;
+  exists: boolean;
+  rank?: number;
+  smithMastery?: number;
+  weaponLevel?: number;
+  coins?: number;
+  playTime?: number;
+  questStep?: number;
+  questDone?: boolean;
+  createdAt?: number;
+  savedAt?: number;
 }

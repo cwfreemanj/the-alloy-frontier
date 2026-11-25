@@ -11,24 +11,27 @@ import { deserialize, serialize, type SessionData } from '@alloy/save';
 import { Session, ensureNodes, newSessionData, type SessionEvent } from '@alloy/session';
 import type { AccountService } from './accounts/service';
 
-/** Where characters are loaded from and saved to. */
+/**
+ * Where characters are loaded from and saved to, by character key: the account id for slot 1,
+ * `<accountId>~<slot>` for the others (see accounts/service.ts charKey).
+ */
 export interface CharacterStore {
-  load(accountId: string): Promise<SessionData | null>;
-  save(accountId: string, data: SessionData): Promise<void>;
+  load(key: string): Promise<SessionData | null>;
+  save(key: string, data: SessionData): Promise<void>;
 }
 
 export function accountCharacterStore(svc: AccountService, now: () => number = Date.now): CharacterStore {
   return {
-    async load(accountId) {
-      const rec = await svc.getSave(accountId);
+    async load(key) {
+      const rec = await svc.getSaveByKey(key);
       if (!rec) return null;
       const r = deserialize(rec.raw);
-      if (!r.ok) throw new Error(`Stored character for ${accountId} is invalid: ${r.reason}`);
+      if (!r.ok) throw new Error(`Stored character ${key} is invalid: ${r.reason}`);
       return r.data;
     },
-    async save(accountId, data) {
+    async save(key, data) {
       const t = now();
-      await svc.serverPutSave(accountId, serialize(data, t), t);
+      await svc.serverPutSave(key, serialize(data, t), t);
     },
   };
 }
