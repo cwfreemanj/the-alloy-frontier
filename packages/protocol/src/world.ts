@@ -136,6 +136,10 @@ function charAction(v: unknown): CharAction | null {
       return (ATTRIBUTE_IDS as readonly unknown[]).includes(v.attr) && int(v.n, 1, 100) ? { k: 'allocate', attr: v.attr as (typeof ATTRIBUTE_IDS)[number], n: v.n } : null;
     case 'respec':
       return { k: 'respec' };
+    case 'brew':
+      return str(v.recipe, 32) && int(v.qty, 1, 20) ? { k: 'brew', recipe: v.recipe, qty: v.qty } : null;
+    case 'consume':
+      return str(v.item, 32) ? { k: 'consume', item: v.item } : null;
     case 'skillbar':
       return int(v.slot, 0, 3) && (v.skill === null || str(v.skill, 32)) ? { k: 'skillbar', slot: v.slot, skill: v.skill as string | null } : null;
     case 'forge': {

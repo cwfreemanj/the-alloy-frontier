@@ -113,8 +113,8 @@ test('a signed-in character cannot be changed from the browser', async ({ browse
   const node = { x: -6, z: 40 }; // ore-t1
   await page.evaluate(({ x, z }) => (window as unknown as { __alloy: Hooks }).__alloy.teleport(x + 1, z), node);
   await actWhenThere(page, { k: 'gather', node: 'ore-t1' });
-  const after = await state(page);
-  expect(after.coins).toBe(start.coins);
+  // The server's character update follows its reply to the action: wait for it.
+  await expect.poll(async () => (await state(page)).coins).toBe(start.coins);
   // Uploading a save is no longer possible.
   const status = await page.evaluate(async () => {
     const auth = JSON.parse(localStorage.getItem('alloy-frontier.auth.v1')!);

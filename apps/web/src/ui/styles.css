@@ -70,6 +70,9 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .slot-gap { width: 10px; }
 .slot.skill-slot { border-color: rgba(201, 151, 79, 0.45); }
 .slot.skill-slot .key { color: #ffd27a; }
+.slot.potion-slot.healing_salve { border-color: rgba(127, 210, 138, 0.55); }
+.slot.potion-slot.stamina_tonic { border-color: rgba(217, 180, 74, 0.55); }
+.slot.potion-slot .key { color: #bff0c4; }
 
 .prompt { position: absolute; bottom: 140px; left: 50%; transform: translateX(-50%); background: rgba(16,17,20,0.85); border: 1px solid var(--steel); padding: 6px 12px; border-radius: 3px; font-size: 13px; display: none; white-space: nowrap; }
 .prompt kbd, kbd { font-family: var(--mono); background: var(--panel-3); border: 1px solid var(--steel-light); border-bottom-width: 2px; padding: 0 5px; border-radius: 3px; color: var(--ember); font-size: 12px; }
@@ -295,6 +298,7 @@ button.btn.small { padding: 4px 9px; font-size: 12px; }
 .cs-skill-dmg { font-family: var(--mono); font-size: 13px; color: #efe4d2; }
 .cs-skill-tag { width: 70px; text-align: right; font-size: 11px; color: var(--muted); }
 .cs-skill.locked { opacity: 0.5; }
+.cs-brew { padding: 8px 10px; border: 1px solid rgba(201, 151, 79, 0.2); background: rgba(0, 0, 0, 0.22); }
 .cs-assign { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
 .cs-key { width: 28px; height: 26px; font: inherit; font-family: var(--mono); font-size: 12px; color: var(--muted); background: rgba(0, 0, 0, 0.35); border: 1px solid var(--gold-dim); cursor: pointer; }
 .cs-key:hover { border-color: var(--ember); color: var(--text); }

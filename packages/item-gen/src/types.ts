@@ -6,8 +6,8 @@
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
 export const RARITY_ORDER: readonly Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
 
-export type MaterialId = 'iron_ore' | 'ironwood' | 'ironglass' | 'binding_flux';
-export type MaterialKind = 'primary' | 'secondary' | 'catalyst' | 'buffer';
+export type MaterialId = 'iron_ore' | 'ironwood' | 'ironglass' | 'binding_flux' | 'emberleaf' | 'healing_salve' | 'stamina_tonic';
+export type MaterialKind = 'primary' | 'secondary' | 'catalyst' | 'buffer' | 'herb' | 'consumable';
 
 export interface MaterialDefinition {
   id: MaterialId;

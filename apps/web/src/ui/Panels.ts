@@ -282,7 +282,9 @@ export function titleScreen(opts: TitleOptions): HTMLElement {
 
   // ---- Guest section ----
   const nameInput = h('input', { type: 'text', value: opts.name, maxlength: 20, 'aria-label': 'Guest name', 'data-testid': 'player-name', class: 'name-input', spellcheck: 'false' }) as HTMLInputElement;
-  const commitName = () => opts.onName(nameInput.value);
+  // The live name box (a redraw may have moved the previous one in place of this one).
+  const liveName = () => (nameInput.isConnected ? nameInput : ((document.querySelector('[data-testid="player-name"]') as HTMLInputElement | null) ?? nameInput));
+  const commitName = () => opts.onName(liveName().value);
   nameInput.addEventListener('change', commitName);
   // Keep the name as it's typed: the title redraws when the account check finishes.
   nameInput.addEventListener('input', () => nameInput.value.trim() && commitName());

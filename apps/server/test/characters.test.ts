@@ -205,6 +205,19 @@ describe('server-owned characters', () => {
     expect(ctx.room.stats.malformed).toBe(before + 2);
   });
 
+  it('brews and uses potions on the server, with the cooldown on the server clock', async () => {
+    const ctx = setup();
+    const p = await signedIn(ctx, 'acct-potion');
+    p.char.session.gather('test', 'emberleaf', 4, 0.5, {});
+    expect(p.act({ k: 'brew', recipe: 'healing_salve', qty: 2 }).ok).toBe(true);
+    expect(p.act({ k: 'consume', item: 'healing_salve' }).ok).toBe(true);
+    expect(p.lastChar()!.events.some((e) => e.type === 'consumed')).toBe(true);
+    expect(p.act({ k: 'consume', item: 'healing_salve' })).toMatchObject({ ok: false, error: 'cooldown' });
+    const before = ctx.room.stats.malformed;
+    p.act({ k: 'brew', recipe: 'healing_salve', qty: 500 });
+    expect(ctx.room.stats.malformed).toBe(before + 1);
+  });
+
   it('grows Vitality from the enemy attacks the server aims at a signed-in player', async () => {
     const ctx = setup();
     const p = await signedIn(ctx, 'acct-vit');

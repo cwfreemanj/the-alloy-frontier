@@ -6,7 +6,7 @@
  * - Skills: combat abilities (attacks and weapon abilities).
  * Everything shown comes from the session and the shared rules (no numbers of its own).
  */
-import { averageQuality, equipInfo, materialTotal, slotOf, slotsFor, type EquipSlot } from '@alloy/crafting';
+import { BREWS, averageQuality, consumableEffect, equipInfo, materialTotal, slotOf, slotsFor, type EquipSlot } from '@alloy/crafting';
 import {
   ADVENTURER_RANK_MAX,
   ALLOCATED_MAX,
@@ -144,6 +144,8 @@ export class CharacterWindow {
     private onAllocate: (attr: AttributeId, n: number) => Promise<unknown>,
     private onRespec: () => Promise<unknown>,
     private onSkillBar: (slot: number, skill: string | null) => Promise<unknown>,
+    private onBrew: (recipe: string, qty: number) => Promise<unknown>,
+    private onConsume: (item: string) => Promise<unknown>,
   ) {
     this.selected = session.inventory.equipped.weapon ?? session.inventory.itemOrder[0] ?? null;
     window.addEventListener('keydown', this.onKey);
@@ -383,10 +385,10 @@ export class CharacterWindow {
     for (let i = sorted.length; i < Math.max(MIN_GRID_CELLS, Math.ceil(sorted.length / 6) * 6); i++) grid.append(h('div', { class: 'cs-tile empty', 'aria-hidden': 'true' }));
 
     const mats = h('div', { class: 'cs-stats' });
-    for (const id of ['iron_ore', 'ironwood', 'ironglass', 'binding_flux'] as const) {
+    for (const id of ['iron_ore', 'ironwood', 'ironglass', 'binding_flux', 'emberleaf'] as const) {
       const q = averageQuality(inv, id);
       mats.append(
-        h('div', { class: 'cs-stat' }, icon(id === 'ironwood' ? 'woodcutting' : id === 'binding_flux' ? 'storm' : 'mining'), h('span', { class: 'cs-stat-label' }, materialName(id)), h('span', { class: 'cs-stat-val' }, String(materialTotal(inv, id))), h('span', { class: 'cs-stat-q' }, q === null ? '—' : `q ${Math.round(q * 100)}%`)),
+        h('div', { class: 'cs-stat' }, icon(id === 'ironwood' ? 'woodcutting' : id === 'binding_flux' ? 'storm' : id === 'emberleaf' ? 'herbalism' : 'mining'), h('span', { class: 'cs-stat-label' }, materialName(id)), h('span', { class: 'cs-stat-val' }, String(materialTotal(inv, id))), h('span', { class: 'cs-stat-q' }, q === null ? '—' : `q ${Math.round(q * 100)}%`)),
       );
     }
     const lots = inv.lots.map((l) => h('div', { class: 'cs-note' }, `${l.quantity}× ${materialName(l.materialId)} · quality ${Math.round(l.quality * 100)}% · from ${l.origin}`));
@@ -401,10 +403,43 @@ export class CharacterWindow {
         grid,
         sub('Materials'),
         mats,
+        sub('Alchemy'),
+        this.alchemy(),
         h('details', { class: 'cs-lots' }, h('summary', null, `Material lots (${inv.lots.length})`), ...lots),
       ),
       this.detail(),
     );
+  }
+
+  /** Potions on hand (use them here or with keys 5 / 6) and brewing from Emberleaf. */
+  private alchemy(): HTMLElement {
+    const inv = this.session.inventory;
+    const herbs = materialTotal(inv, 'emberleaf');
+    const cd = this.session.potionCooldown;
+    const rows = h('div', { class: 'cs-list' });
+    for (const r of Object.values(BREWS)) {
+      const have = materialTotal(inv, r.output);
+      const q = averageQuality(inv, r.output);
+      const need = r.inputs.emberleaf ?? 0;
+      const eff = consumableEffect(r.id, q ?? 0.5);
+      rows.append(
+        h(
+          'div',
+          { class: 'cs-brew', 'data-brew': r.id },
+          h('div', { class: 'row' }, h('b', null, r.name), h('span', { class: 'cs-note' }, ` · key ${r.id === 'healing_salve' ? 5 : 6}`), h('span', { class: 'spacer' }), h('span', { class: 'cs-stat-val', 'data-testid': `have-${r.id}` }, `×${have}`), h('span', { class: 'cs-stat-q' }, q === null ? '' : `q ${Math.round(q * 100)}%`)),
+          h('div', { class: 'cs-note' }, `${need} Emberleaf each · ${eff.heal ? `restores ${eff.heal} health` : `restores ${eff.stamina} stamina`}${q === null ? ' (at 50% quality)' : ''}`),
+          h(
+            'div',
+            { class: 'row', style: 'gap:6px;margin-top:4px' },
+            h('button', { class: 'cs-btn small', 'data-testid': `brew-${r.id}-1`, disabled: herbs < need, onclick: () => void this.onBrew(r.id, 1).then(() => this.render()) }, 'Brew 1'),
+            h('button', { class: 'cs-btn small', disabled: herbs < need * 5, onclick: () => void this.onBrew(r.id, 5).then(() => this.render()) }, 'Brew 5'),
+            h('span', { class: 'spacer' }),
+            h('button', { class: 'cs-btn small primary', 'data-testid': `use-${r.id}`, disabled: have <= 0 || cd > 0, title: cd > 0 ? `Ready in ${Math.ceil(cd)}s` : '', onclick: () => void this.onConsume(r.id).then(() => this.render()) }, 'Use'),
+          ),
+        ),
+      );
+    }
+    return h('div', null, h('div', { class: 'cs-note', style: 'margin-bottom:6px' }, `Emberleaf grows along the trail; pick it by hand. You have ${herbs}. Better leaves make stronger potions.`), rows);
   }
 
   private tile(it: ItemInstance): HTMLElement {

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { grantItem } from '@alloy/crafting';
 import { BLUEPRINTS, type BlueprintDefinition } from '@alloy/item-gen';
-import { FORGE_ANVIL, GROVE_NODES, NPCS, RESOURCE_NODES } from '@alloy/world';
+import { FORGE_ANVIL, GROVE_NODES, HERB_NODES, NPCS, RESOURCE_NODES } from '@alloy/world';
 import { NODE_MAX_CHARGES, NODE_RESPAWN_SECONDS, RANGE_SLACK, Session, applyAction, ensureNodes, nodeState, characterStats, damageAgainst, hitAgainst, newSessionData, playerHit, rewardHit, rewardHitTaken, rewardKill } from '../src';
 import { ATTACKS, BASE_MAX_HEALTH, ENEMIES, adventurerXpToNext, attributeXpToNext, mitigate, GATHER_PROFICIENCY_XP, PROFICIENCY_MAX, proficiencyXpToNext } from '@alloy/game-rules';
 
@@ -380,5 +380,31 @@ describe('combat skills in the session', () => {
     s.talk('orla');
     expect(damageAgainst(s, 100, ENEMIES.scavenger, 'lunging_thrust').type).toBe('pierce');
     expect(damageAgainst(s, 100, ENEMIES.scavenger, 'light1').type).toBe('slash');
+  });
+});
+
+describe('herbs and potions', () => {
+  it('picks Emberleaf by hand (no tool) and trains Herbalism', () => {
+    const s = fresh();
+    s.unequip('tool');
+    const herb = HERB_NODES[0];
+    expect(applyAction(s, { k: 'gather', node: herb.id }, at(herb.pos)).ok).toBe(true);
+    expect(s.totals().emberleaf).toBeGreaterThan(0);
+    expect(s.data.progression.professions.herbalism?.xp).toBeGreaterThan(0);
+  });
+
+  it('brews and uses potions through actions, one potion per cooldown', () => {
+    const s = fresh();
+    s.gather('test', 'emberleaf', 6, 0.7, {});
+    expect(applyAction(s, { k: 'brew', recipe: 'healing_salve', qty: 2 }, { pos: null }).ok).toBe(true);
+    expect(s.totals().healing_salve).toBe(2);
+    const used: unknown[] = [];
+    s.on((e) => e.type === 'consumed' && used.push(e));
+    expect(applyAction(s, { k: 'consume', item: 'healing_salve' }, { pos: null }).ok).toBe(true);
+    expect(used).toEqual([{ type: 'consumed', item: 'healing_salve', heal: 102, stamina: 0 }]);
+    expect(applyAction(s, { k: 'consume', item: 'healing_salve' }, { pos: null })).toMatchObject({ ok: false, error: 'cooldown' });
+    s.data.playTime += 9;
+    expect(applyAction(s, { k: 'consume', item: 'healing_salve' }, { pos: null }).ok).toBe(true);
+    expect(s.totals().healing_salve).toBe(0);
   });
 });

@@ -3,6 +3,10 @@
  * methods that change it. No Three.js / DOM dependencies, so the server can run it too.
  */
 import {
+  BREWS,
+  POTION_COOLDOWN,
+  brew as brewInventory,
+  consume as consumeInventory,
   addMaterial,
   buy,
   createInventory,
@@ -55,6 +59,8 @@ import {
 } from '@alloy/game-rules';
 import { getBlueprint, materialName, type ItemInstance, type MaterialId, type ToolKind, type WeaponFamily } from '@alloy/item-gen';
 
+/** Herbalism XP per potion brewed. */
+export const BREW_XP = 3;
 export const PLAYER_ID = 'player-01';
 export const PLAYER_NAME = 'You';
 
@@ -69,6 +75,8 @@ export type SessionEvent =
   | { type: 'skill_learned'; skill: string }
   /** The skill bar changed. */
   | { type: 'skillbar' }
+  /** A potion was used: the browser applies the heal / stamina (health is client-owned). */
+  | { type: 'consumed'; item: string; heal: number; stamina: number }
   | { type: 'progress'; kind: 'weapon' | 'smith' | 'adventurer' | 'attribute' | 'proficiency'; levels: number; attr?: AttributeId; family?: WeaponFamily; proficiency?: GatheringProficiency }
   | { type: 'quest_step'; title: string; next: string | null }
   | { type: 'quest_complete' }
@@ -443,6 +451,32 @@ export class Session {
     bar[slot] = skill;
     this.data.progression.skillBar = bar;
     this.emit({ type: 'skillbar' });
+    return { ok: true };
+  }
+
+  /** Brew herbs into potions (trains Herbalism). */
+  brew(recipe: string, qty: number): { ok: true } | { ok: false; error: string; message: string } {
+    const r = brewInventory(this.data.inventory, recipe, qty);
+    if (!r.ok) return r;
+    this.setInventory(r.inventory);
+    this.gainProficiency('herbalism', BREW_XP * qty);
+    this.emit({ type: 'toast', text: `Brewed ${qty} ${BREWS[recipe as keyof typeof BREWS].name}${qty > 1 ? 's' : ''} (quality ${Math.round(r.quality * 100)}%)`, tone: 'good' });
+    return { ok: true };
+  }
+
+  /** Seconds until the next potion may be used (0 = ready). */
+  get potionCooldown(): number {
+    return Math.max(0, (this.data.player.potionReadyAt ?? 0) - this.data.playTime);
+  }
+
+  /** Use a potion: one at a time, POTION_COOLDOWN seconds apart. */
+  consume(id: string): { ok: true } | { ok: false; error: string; message: string } {
+    if (this.potionCooldown > 0) return { ok: false, error: 'cooldown', message: `Wait ${Math.ceil(this.potionCooldown)}s before the next potion.` };
+    const r = consumeInventory(this.data.inventory, id);
+    if (!r.ok) return r;
+    this.setInventory(r.inventory);
+    this.data.player.potionReadyAt = this.data.playTime + POTION_COOLDOWN;
+    this.emit({ type: 'consumed', item: id, heal: r.effect.heal, stamina: r.effect.stamina });
     return { ok: true };
   }
 
