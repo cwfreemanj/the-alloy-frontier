@@ -4,8 +4,10 @@
  * - Usernames: 3-20 letters, digits, _ or -, unique ignoring case; shown to other players.
  * - Passwords: 8-128 characters, stored only as scrypt(salt, password).
  * - Sessions: random 256-bit bearer tokens; only their SHA-256 is stored; 30-day expiry.
- * - Characters: owned and saved by the world server while the player is in the world
- *   (see ../characters.ts). Browsers can only start a new character or import a guest one.
+ * - Characters: two slots per account, owned and saved by the world server while the player
+ *   is in the world (see ../characters.ts). Browsers can start a character in an empty slot,
+ *   import a guest one into an empty slot, or delete one (it moves to a dated trash record
+ *   so a mistake can still be undone by hand).
  * - Abuse limits: attempts per IP per window, and a short lock after repeated failures.
  */
 import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual, type ScryptOptions } from 'node:crypto';
@@ -35,6 +37,28 @@ interface SessionRec {
   createdAt: number;
   expiresAt: number;
 }
+/** Character slots per account. Slot 1 is the account's original character record. */
+export const CHARACTER_SLOTS = 2;
+export type Slot = 1 | 2;
+export const isSlot = (s: unknown): s is Slot => s === 1 || s === 2;
+/** The store key of an account's character in a slot (slot 1 keeps the pre-slot key). */
+export const charKey = (accountId: string, slot: Slot): string => (slot === 1 ? accountId : `${accountId}~${slot}`);
+
+/** What the title screen shows about a character, without loading it. */
+export interface CharacterSummary {
+  slot: Slot;
+  exists: boolean;
+  rank?: number;
+  smithMastery?: number;
+  weaponLevel?: number;
+  coins?: number;
+  playTime?: number;
+  questStep?: number;
+  questDone?: boolean;
+  createdAt?: number;
+  savedAt?: number;
+}
+
 export interface SaveRec {
   raw: string;
   revision: number;
@@ -177,8 +201,68 @@ export class AccountService {
     return this.kv.get<Account>(`acct:${s.accountId}`);
   }
 
-  async getSave(accountId: string): Promise<SaveRec | null> {
-    return this.kv.get<SaveRec>(`save:${accountId}`);
+  async getSave(accountId: string, slot: Slot = 1): Promise<SaveRec | null> {
+    return this.kv.get<SaveRec>(`save:${charKey(accountId, slot)}`);
+  }
+
+  /** A character record by its store key (charKey). */
+  async getSaveByKey(key: string): Promise<SaveRec | null> {
+    return this.kv.get<SaveRec>(`save:${key}`);
+  }
+
+  /** Both slots, summarised for the title screen. */
+  async listCharacters(accountId: string): Promise<CharacterSummary[]> {
+    const out: CharacterSummary[] = [];
+    for (const slot of [1, 2] as Slot[]) {
+      const rec = await this.getSave(accountId, slot);
+      const r = rec ? deserialize(rec.raw) : null;
+      if (!rec || !r?.ok) {
+        out.push({ slot, exists: !!rec });
+        continue;
+      }
+      const d = r.data;
+      out.push({
+        slot,
+        exists: true,
+        rank: d.progression.adventurer.rank,
+        smithMastery: d.progression.professions.blacksmithing.mastery,
+        weaponLevel: Math.max(...Object.values(d.progression.weaponMastery).map((w) => w?.level ?? 1)),
+        coins: d.inventory.coins,
+        playTime: Math.round(d.playTime),
+        questStep: d.quest.stepIndex,
+        questDone: d.quest.completed,
+        createdAt: d.createdAt,
+        savedAt: rec.savedAt,
+      });
+    }
+    return out;
+  }
+
+  /** Start a character the server builds itself, in an empty slot only. */
+  async newCharacter(accountId: string, slot: Slot, raw: string): Promise<Result<{ revision: number }>> {
+    return this.withLock(accountId, async () => {
+      const key = `save:${charKey(accountId, slot)}`;
+      if (await this.kv.get<SaveRec>(key)) return err(409, 'slot_taken', 'That slot already has a character. Delete it first to start over.');
+      const t = this.now();
+      await this.kv.put(key, { raw, revision: 1, savedAt: t, updatedAt: t } satisfies SaveRec);
+      return { ok: true as const, value: { revision: 1 } };
+    });
+  }
+
+  /**
+   * Delete the character in a slot. It isn't erased: it moves to `trash:<key>:<time>`, so a
+   * mistake can be undone by hand from the database.
+   */
+  async deleteCharacter(accountId: string, slot: Slot): Promise<Result<{ trashKey: string }>> {
+    return this.withLock(accountId, async () => {
+      const key = charKey(accountId, slot);
+      const rec = await this.kv.get<SaveRec>(`save:${key}`);
+      if (!rec) return err(404, 'no_character', 'There is no character in that slot.');
+      const trashKey = `trash:${key}:${this.now()}`;
+      await this.kv.put(trashKey, { ...rec, deletedAt: this.now() });
+      await this.kv.delete(`save:${key}`);
+      return { ok: true as const, value: { trashKey } };
+    });
   }
 
   /**
@@ -187,17 +271,17 @@ export class AccountService {
    * are capped. Accepted risk: a guest save can be edited before import (see
    * docs/server-authority.md); after import, the server owns the character.
    */
-  async importCharacter(accountId: string, raw: unknown): Promise<Result<{ revision: number }>> {
+  async importCharacter(accountId: string, raw: unknown, slot: Slot = 1): Promise<Result<{ revision: number }>> {
     if (typeof raw !== 'string' || raw.length > MAX_SAVE_BYTES) return err(413, 'too_large', 'Save is too large.');
     const check = deserialize(raw);
     if (!check.ok) return err(422, 'invalid_save', `Save rejected: ${check.reason}`);
     const data = check.data;
     data.inventory.coins = Math.min(data.inventory.coins, MAX_IMPORT_COINS);
     return this.withLock(accountId, async () => {
-      if (await this.kv.get<SaveRec>(`save:${accountId}`)) return err(409, 'has_character', 'This account already has a character.');
+      if (await this.kv.get<SaveRec>(`save:${charKey(accountId, slot)}`)) return err(409, 'has_character', 'That slot already has a character.');
       const t = this.now();
       const rec: SaveRec = { raw: serialize(data, t), revision: 1, savedAt: t, updatedAt: t };
-      await this.kv.put(`save:${accountId}`, rec);
+      await this.kv.put(`save:${charKey(accountId, slot)}`, rec);
       return { ok: true as const, value: { revision: 1 } };
     });
   }
@@ -205,12 +289,13 @@ export class AccountService {
   /**
    * Store a character the server itself produced (the world's authoritative copy). No base
    * revision: the server is the only writer while the player is in the world.
+   * `key` is the character's store key (charKey).
    */
-  async serverPutSave(accountId: string, raw: string, savedAt: number): Promise<{ revision: number }> {
-    return this.withLock(accountId, async () => {
-      const cur = await this.kv.get<SaveRec>(`save:${accountId}`);
+  async serverPutSave(key: string, raw: string, savedAt: number): Promise<{ revision: number }> {
+    return this.withLock(key.split('~')[0], async () => {
+      const cur = await this.kv.get<SaveRec>(`save:${key}`);
       const rec: SaveRec = { raw, revision: (cur?.revision ?? 0) + 1, savedAt, updatedAt: this.now() };
-      await this.kv.put(`save:${accountId}`, rec);
+      await this.kv.put(`save:${key}`, rec);
       return { revision: rec.revision };
     });
   }

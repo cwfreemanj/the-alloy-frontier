@@ -44,7 +44,7 @@ test('the same character on a different browser; one device at a time', async ({
   // Browser 1: create an account and make progress.
   const a = await freshBrowser(browser);
   await signIn(a, user, pw, true);
-  await a.getByTestId('acct-new').click();
+  await a.getByTestId('slot-1-new').click();
   await expect.poll(async () => (await state(a)).world.status, { timeout: 15_000 }).toBe('online');
   expect((await state(a)).world.name).toBe(user);
   // Talk to Orla through the server (it checks we're next to her, then grants the sword).
@@ -59,7 +59,7 @@ test('the same character on a different browser; one device at a time', async ({
   // Browser 2: a completely separate browser signs in and continues the same character.
   const b = await freshBrowser(browser);
   await signIn(b, user, pw, false);
-  await b.getByTestId('acct-continue').click();
+  await b.getByTestId('slot-1-play').click();
   await expect.poll(async () => (await state(b)).started).toBe(true);
   const after = await state(b);
   expect(after.quest.step).toBe(before.quest.step);
@@ -75,11 +75,11 @@ test('signing in on a second device signs the first out of the world', async ({ 
   const user = uniq();
   const a = await freshBrowser(browser);
   await signIn(a, user, 'forge-and-anvil', true);
-  await a.getByTestId('acct-new').click();
+  await a.getByTestId('slot-1-new').click();
   await expect.poll(async () => (await state(a)).world.status, { timeout: 15_000 }).toBe('online');
   const b = await freshBrowser(browser);
   await signIn(b, user, 'forge-and-anvil', false);
-  await b.getByTestId('acct-continue').click();
+  await b.getByTestId('slot-1-play').click();
   await expect.poll(async () => (await state(b)).world.status, { timeout: 15_000 }).toBe('online');
   // Browser 1 is sent back to the title screen with an explanation.
   await expect(a.getByTestId('acct-error')).toContainText('another device', { timeout: 15_000 });
@@ -93,7 +93,7 @@ test('a signed-in character cannot be changed from the browser', async ({ browse
   const page = await freshBrowser(browser);
   const user = uniq();
   await signIn(page, user, 'no-cheating-here', true);
-  await page.getByTestId('acct-new').click();
+  await page.getByTestId('slot-1-new').click();
   await expect.poll(async () => (await state(page)).world.status, { timeout: 15_000 }).toBe('online');
   const start = await state(page);
 
@@ -135,16 +135,16 @@ test('a guest character can be brought into a new account', async ({ browser }) 
   await page.reload();
 
   await signIn(page, uniq(), 'guest-to-account', true);
-  await page.getByTestId('acct-import').click();
+  await page.getByTestId('slot-1-import').click();
   await expect.poll(async () => (await state(page)).started).toBe(true);
   expect((await state(page)).quest.step).toBe('first_blood');
   expect((await state(page)).world.mode).toBe('account');
   await page.waitForTimeout(800);
 
-  // Reload: the account now has the character (Continue appears, no import offer).
+  // Reload: the account now has the character in slot 1 (Play appears there, no import offer).
   await page.reload();
-  await expect(page.getByTestId('acct-continue')).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId('acct-import')).toHaveCount(0);
+  await expect(page.getByTestId('slot-1-play')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('slot-1-import')).toHaveCount(0);
   await page.context().close();
 });
 
@@ -161,5 +161,50 @@ test('wrong password and taken usernames show clear messages', async ({ browser 
   await page.getByTestId('acct-password').fill('another-password');
   await page.getByTestId('acct-register').click();
   await expect(page.getByTestId('acct-error')).toContainText('taken');
+  await page.context().close();
+});
+
+test('two character slots: a second character, and a deliberate, confirmed delete', async ({ browser }) => {
+  test.setTimeout(150_000);
+  const page = await freshBrowser(browser);
+  await signIn(page, uniq(), 'two-slots-please', true);
+  // Slot 1: play a character and make some progress.
+  await page.getByTestId('slot-1-new').click();
+  await expect.poll(async () => (await state(page)).world.status, { timeout: 15_000 }).toBe('online');
+  await page.evaluate(({ x, z }) => (window as unknown as { __alloy: Hooks }).__alloy.teleport(x, z), ORLA);
+  await actWhenThere(page, { k: 'talk', npc: 'orla' });
+  await page.waitForTimeout(800);
+  // Back to the title: slot 1 shows its progress, slot 2 is empty.
+  await page.reload();
+  await expect(page.getByTestId('slot-1')).toContainText('Quest step 2/', { timeout: 15_000 });
+  await expect(page.getByTestId('slot-2')).toContainText('Empty slot');
+  // Slot 2: a brand-new character, while slot 1 is kept.
+  await page.getByTestId('slot-2-new').click();
+  await expect.poll(async () => (await state(page)).world.status, { timeout: 15_000 }).toBe('online');
+  expect((await state(page)).quest.step).toBe('commission');
+  await page.waitForTimeout(800);
+  await page.reload();
+  await expect(page.getByTestId('slot-2-play')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('slot-1')).toContainText('Quest step 2/');
+  // Delete slot 2: the card turns red and lists what is lost; the button needs DELETE typed.
+  await page.getByTestId('slot-2-delete').click();
+  await expect(page.getByTestId('slot-2')).toHaveClass(/deleting/);
+  await expect(page.getByTestId('slot-2')).toContainText('Delete Character 2?');
+  const confirm = page.getByTestId('slot-2-confirm-delete');
+  await expect(confirm).toBeDisabled();
+  await page.getByTestId('slot-2-confirm-text').fill('delete');
+  await expect(confirm).toBeDisabled();
+  // Cancel keeps it.
+  await page.getByTestId('slot-2-cancel-delete').click();
+  await expect(page.getByTestId('slot-2-play')).toBeVisible();
+  await page.getByTestId('slot-2-delete').click();
+  await page.getByTestId('slot-2-confirm-text').fill('DELETE');
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect(page.getByTestId('acct-notice')).toContainText('Character 2 was deleted', { timeout: 15_000 });
+  await expect(page.getByTestId('slot-2')).toContainText('Empty slot');
+  // Slot 1 is untouched and still plays.
+  await page.getByTestId('slot-1-play').click();
+  await expect.poll(async () => (await state(page)).quest.step, { timeout: 15_000 }).toBe('first_blood');
   await page.context().close();
 });

@@ -62,7 +62,7 @@ export class Online {
     return this.client?.myId ?? null;
   }
 
-  connect(url: string, name: string, token: string | null = null): void {
+  connect(url: string, name: string, token: string | null = null, slot: 1 | 2 = 1): void {
     this.client?.stop();
     this.announced = false;
     this.client = new WorldClient(
@@ -73,6 +73,7 @@ export class Online {
         status: (s, reason) => this.onStatus(s, reason),
       },
       token,
+      slot,
     );
   }
 

@@ -76,7 +76,8 @@ export interface HitVerdict {
 }
 
 export type WorldClientMsg =
-  | { t: 'hello'; name: string; protocol: number; token?: string }
+  /** slot: which of the account's characters (1 or 2; older clients send none = 1). */
+  | { t: 'hello'; name: string; protocol: number; token?: string; slot?: 1 | 2 }
   | { t: 'state'; s: AvatarState }
   | { t: 'hit'; enemyId: string; attackId: string; damage: number; stagger: number; guardBreak: boolean; crit: boolean }
   | { t: 'act'; id: number; a: CharAction };
@@ -228,8 +229,8 @@ export function parseWorldClientMsg(raw: unknown): WorldClientMsg | null {
   switch (o.t) {
     case 'hello':
       // Any protocol number parses, so the server can tell an outdated client to reload.
-      return str(o.name, 64) && int(o.protocol, 0, 1e6) && (o.token === undefined || str(o.token, 100))
-        ? { t: 'hello', name: cleanName(o.name), protocol: o.protocol, ...(o.token ? { token: o.token as string } : {}) }
+      return str(o.name, 64) && int(o.protocol, 0, 1e6) && (o.token === undefined || str(o.token, 100)) && (o.slot === undefined || o.slot === 1 || o.slot === 2)
+        ? { t: 'hello', name: cleanName(o.name), protocol: o.protocol, ...(o.token ? { token: o.token as string } : {}), ...(o.slot === 2 ? { slot: 2 as const } : {}) }
         : null;
     case 'state':
       return avatar(o.s) ? { t: 'state', s: o.s } : null;

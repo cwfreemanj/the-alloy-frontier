@@ -4,6 +4,7 @@ import { MERCHANT_STOCK, materialTotal, merchantPreview } from '@alloy/crafting'
 import { itemDisplayName, type ItemInstance } from '@alloy/item-gen';
 import { QUEST_EDGE_YOU_MAKE, smithXpToNext, weaponXpToNext } from '@alloy/game-rules';
 import type { Session } from '../state/Session';
+import type { CharacterSlot, CharacterSummary } from '../net/Accounts';
 import { clear, h } from './dom';
 import { drawSword, itemHeader, provenanceText, statTable, traitsBlock } from './ItemView';
 
@@ -198,7 +199,8 @@ export type AccountView =
   | { state: 'checking' }
   | { state: 'unavailable' }
   | { state: 'signed_out'; busy?: boolean; error?: string }
-  | { state: 'signed_in'; username: string; hasCloudSave: boolean; canImport: boolean; busy?: boolean; error?: string };
+  /** slots: both character slots (null while loading); canImport: this browser has a guest character. */
+  | { state: 'signed_in'; username: string; slots: CharacterSummary[] | null; canImport: boolean; busy?: boolean; error?: string; notice?: string };
 
 export interface TitleOptions {
   /** Guest play (saves only in this browser). */
@@ -213,13 +215,93 @@ export interface TitleOptions {
   onSignIn: (username: string, password: string) => void;
   onRegister: (username: string, password: string) => void;
   onSignOut: () => void;
-  onAccountContinue: () => void;
-  onAccountNew: () => void;
-  onImport: () => void;
+  /** Character slots (signed in): play, start one in an empty slot, import the guest one, delete. */
+  onPlaySlot: (slot: CharacterSlot) => void;
+  onNewSlot: (slot: CharacterSlot) => void;
+  onImportSlot: (slot: CharacterSlot) => void;
+  onDeleteSlot: (slot: CharacterSlot) => void;
   /** Character model (chosen per browser; others see it online). */
   characters?: Array<{ id: string; name: string; blurb: string }>;
   character?: string;
   onCharacter?: (id: string) => void;
+}
+
+const playTimeText = (s = 0) => {
+  const m = Math.floor(s / 60);
+  return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} m` : `${m} m`;
+};
+
+/**
+ * One character slot on the title screen. Deleting is deliberately slow: the card turns red,
+ * lists exactly what will be lost, and the delete button only works once DELETE is typed.
+ */
+function slotCard(s: CharacterSummary, a: Extract<AccountView, { state: 'signed_in' }>, opts: TitleOptions): HTMLElement {
+  const label = `Character ${s.slot}`;
+  const card = h('div', { class: `slot-card ${s.exists ? '' : 'empty'}`, 'data-testid': `slot-${s.slot}` });
+  if (!s.exists) {
+    card.append(
+      h('div', { class: 'slot-head' }, h('b', null, label), h('span', { class: 'small muted' }, 'Empty slot')),
+      h(
+        'div',
+        { class: 'btns' },
+        h('button', { class: 'btn primary', 'data-testid': `slot-${s.slot}-new`, disabled: !!a.busy, onclick: () => opts.onNewSlot(s.slot) }, 'Create new character'),
+        a.canImport ? h('button', { class: 'btn', 'data-testid': `slot-${s.slot}-import`, disabled: !!a.busy, onclick: () => opts.onImportSlot(s.slot) }, 'Bring this browser’s character here') : null,
+      ),
+    );
+    return card;
+  }
+  const total = QUEST_EDGE_YOU_MAKE.steps.length;
+  const quest = s.questDone ? 'Quest complete' : `Quest step ${(s.questStep ?? 0) + 1}/${total}`;
+  const facts: Array<[string, string]> = [
+    ['Rank', String(s.rank ?? 1)],
+    ['Blacksmith', String(s.smithMastery ?? 1)],
+    ['Weapon mastery', String(s.weaponLevel ?? 1)],
+    ['Coins', String(s.coins ?? 0)],
+    ['Played', playTimeText(s.playTime)],
+  ];
+  const summary = h('div', { class: 'slot-facts' }, ...facts.map(([k, v]) => h('span', null, h('span', { class: 'k' }, k), ' ', h('b', null, v))), h('span', { class: 'small muted' }, quest));
+  const deleteBtn = h('button', { class: 'linkish danger-link', 'data-testid': `slot-${s.slot}-delete`, disabled: !!a.busy }, 'Delete…');
+  const main = h(
+    'div',
+    null,
+    h('div', { class: 'slot-head' }, h('b', null, label), h('span', { class: 'spacer' }), deleteBtn),
+    summary,
+    h('div', { class: 'btns' }, h('button', { class: 'btn primary', 'data-testid': `slot-${s.slot}-play`, disabled: !!a.busy, onclick: () => opts.onPlaySlot(s.slot) }, 'Play')),
+  );
+  card.append(main);
+  deleteBtn.addEventListener('click', () => {
+    // Confirmation: red card, what will be lost, typed DELETE, a separate red button.
+    const typed = h('input', { type: 'text', class: 'name-input danger-input', placeholder: 'Type DELETE', autocomplete: 'off', spellcheck: 'false', 'aria-label': `Type DELETE to delete ${label}`, 'data-testid': `slot-${s.slot}-confirm-text` }) as HTMLInputElement;
+    const confirm = h('button', { class: 'btn danger', disabled: true, 'data-testid': `slot-${s.slot}-confirm-delete` }, `Delete ${label} forever`) as HTMLButtonElement;
+    typed.addEventListener('input', () => (confirm.disabled = typed.value.trim() !== 'DELETE'));
+    confirm.addEventListener('click', () => {
+      if (typed.value.trim() !== 'DELETE') return;
+      confirm.disabled = true;
+      confirm.textContent = 'Deleting…';
+      opts.onDeleteSlot(s.slot);
+    });
+    const cancel = h('button', { class: 'btn', 'data-testid': `slot-${s.slot}-cancel-delete` }, 'Cancel, keep it');
+    const danger = h(
+      'div',
+      { class: 'slot-danger', role: 'alertdialog', 'aria-label': `Delete ${label}?` },
+      h('div', { class: 'danger-title' }, `⚠ Delete ${label}?`),
+      h('div', { class: 'small' }, 'You will lose this character for good:'),
+      h('div', { class: 'slot-facts lost' }, ...facts.map(([k, v]) => h('span', null, h('span', { class: 'k' }, k), ' ', h('b', null, v))), h('span', null, h('b', null, quest))),
+      h('div', { class: 'small' }, 'All of its items, materials, equipment and progress go with it. The game can’t bring it back.'),
+      typed,
+      h('div', { class: 'btns' }, cancel, confirm),
+    );
+    cancel.addEventListener('click', () => {
+      danger.remove();
+      card.classList.remove('deleting');
+      main.style.display = '';
+    });
+    card.classList.add('deleting');
+    main.style.display = 'none';
+    card.append(danger);
+    typed.focus();
+  });
+  return card;
 }
 
 export function titleScreen(opts: TitleOptions): HTMLElement {
@@ -250,28 +332,14 @@ export function titleScreen(opts: TitleOptions): HTMLElement {
   // ---- Account section ----
   let accountBlock: HTMLElement;
   if (a.state === 'signed_in') {
-    let confirmNew = false;
-    const newBtn = h('button', { class: `btn ${a.hasCloudSave || a.canImport ? '' : 'primary'}`, 'data-testid': 'acct-new', disabled: !!a.busy }, a.hasCloudSave ? 'New character…' : 'New character');
-    newBtn.addEventListener('click', () => {
-      if (a.hasCloudSave && !confirmNew) {
-        confirmNew = true;
-        newBtn.textContent = 'Click again: replace your saved character';
-        return;
-      }
-      opts.onAccountNew();
-    });
     accountBlock = h(
       'div',
       { class: 'acct' },
       h('div', { class: 'acct-who' }, h('span', { class: 'small muted' }, 'Signed in as '), h('b', { 'data-testid': 'acct-name' }, a.username), h('button', { class: 'linkish', 'data-testid': 'acct-signout', onclick: opts.onSignOut }, 'Sign out')),
-      h(
-        'div',
-        { class: 'btns' },
-        a.hasCloudSave ? h('button', { class: 'btn primary', 'data-testid': 'acct-continue', disabled: !!a.busy, onclick: opts.onAccountContinue }, 'Continue') : null,
-        a.canImport ? h('button', { class: `btn ${a.hasCloudSave ? '' : 'primary'}`, 'data-testid': 'acct-import', disabled: !!a.busy, onclick: opts.onImport }, 'Bring this browser’s character into my account') : null,
-        newBtn,
-      ),
-      a.canImport ? h('div', { class: 'small dim' }, 'This browser has a guest character. You can move it into your account.') : null,
+      a.slots === null
+        ? h('div', { class: 'small muted' }, 'Loading your characters…')
+        : h('div', { class: 'slots', 'data-testid': 'char-slots' }, ...a.slots.map((s) => slotCard(s, a, opts))),
+      a.notice ? h('div', { class: 'small good', 'data-testid': 'acct-notice' }, a.notice) : null,
       a.error ? h('div', { class: 'small bad', 'data-testid': 'acct-error' }, a.error) : null,
     );
   } else if (a.state === 'signed_out') {

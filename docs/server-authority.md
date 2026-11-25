@@ -99,6 +99,15 @@ type CharAction =
       not fixed. Removing import is the full fix, if the owner decides to.
 - `GET /api/save` stays (read-only) so the title screen knows whether there's a character to continue.
 
+**Update: two character slots per account.**
+- **Storage:** slot 1 keeps the original record (`save:<accountId>`); slot 2 is `save:<accountId>~2`.
+- **Joining:** the world `hello` carries `slot` (missing = 1). Only one character of an account is in the world at a time.
+- **New and import:** `POST /api/character/new {slot}` and `POST /api/character/import {save, slot}` only fill an **empty** slot (409 `slot_taken`). Nothing overwrites a character any more.
+- **Delete:** `POST /api/character/delete {slot, confirm: "DELETE"}` requires the typed confirmation (400 `not_confirmed` without it) and is refused while that character is in the world (409 `in_world`).
+  - The record isn't erased: it moves to `trash:<key>:<time>` with `deletedAt`, so a mistake can be undone by hand from the database.
+  - On the title screen, deleting turns the card red, lists what will be lost, and the delete button only enables once DELETE is typed.
+- **Listing:** `GET /api/characters` summarises both slots (rank, masteries, coins, play time, quest step).
+
 ### 5. Client (account mode)
 
 - Add `apps/web/src/net/CharacterLink.ts`. In account mode, Game, ForgePanel, MerchantPanel and

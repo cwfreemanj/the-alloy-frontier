@@ -535,3 +535,20 @@ select, input[type=number] { background: var(--panel-2); color: var(--text); bor
 .fx h3.fx-h { margin: 12px 0 6px; }
 .fx .bp-card .sub { margin-top: 1px; }
 .perf-report { width: 100%; font-family: var(--mono); font-size: 11px; background: #0e0f11; color: var(--text); border: 1px solid var(--steel); border-radius: 3px; padding: 6px; resize: vertical; }
+/* Character slots on the title screen */
+.slots { display: grid; gap: 8px; }
+.slot-card { text-align: left; padding: 10px 12px; border-radius: 8px; background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.15); display: grid; gap: 6px; }
+.slot-card.empty { border-style: dashed; }
+.slot-head { display: flex; align-items: baseline; gap: 8px; }
+.slot-facts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+.slot-facts .k { color: var(--muted); }
+.slot-card .btns { display: flex; gap: 8px; width: auto; margin: 0; }
+.danger-link { color: #ff8a7a; }
+.slot-card.deleting { border: 2px solid #ff5a4a; background: rgba(120, 20, 12, 0.35); box-shadow: 0 0 0 3px rgba(255, 90, 74, 0.25), 0 0 22px rgba(255, 60, 40, 0.25); }
+.slot-danger { display: grid; gap: 8px; }
+.slot-danger .danger-title { color: #ffb0a6; font-weight: 800; font-size: 15px; letter-spacing: 0.02em; }
+.slot-facts.lost b { color: #fff; background: rgba(255, 90, 74, 0.28); border: 1px solid rgba(255, 120, 100, 0.6); border-radius: 4px; padding: 0 5px; }
+.danger-input { border-color: rgba(255, 90, 74, 0.7) !important; }
+.btn.danger { background: linear-gradient(180deg, #c0392b, #8e1f14); border: 1px solid #ff7a6a; color: #fff; font-weight: 700; }
+.btn.danger:disabled { filter: grayscale(0.85); opacity: 0.55; cursor: not-allowed; }
+.small.good { color: var(--good); }

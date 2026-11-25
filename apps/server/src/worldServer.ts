@@ -3,6 +3,7 @@
  * /world on the same port. Players who open the page join the world automatically.
  * No secrets, no paid services; runs the same on a PC or a free cloud host.
  */
+import { charKey } from './accounts/service';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { extname, join, normalize, resolve, sep } from 'node:path';
@@ -167,7 +168,8 @@ export function startWorldServer(opts: WorldServerOptions = {}): Promise<Running
               return;
             }
             // The server loads and owns the character while the player is in the world.
-            const char = characters ? await characters.open(acct.id) : null;
+            // One character of an account in the world at a time; the slot picks which.
+            const char = characters ? await characters.open(charKey(acct.id, hello.slot ?? 1)) : null;
             if (ws.readyState !== ws.OPEN) {
               if (char) characters?.release(char);
               return;
