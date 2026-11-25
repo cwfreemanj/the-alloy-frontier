@@ -5,6 +5,8 @@
  * is untouched: positions come from @alloy/world's Layout, colliders from the same baked scene.
  */
 import { ContainerProps } from './ContainerProps';
+import { authoredModels } from './AuthoredModels';
+import { AUTHORED_SCENERY_IDS, SWAPS, cliffSpots, hiddenScenery, variantFor } from './AuthoredScenery';
 import type { InstanceHandle } from '../entities/WorldObjects';
 import { ForgeBuilding } from './ForgeBuilding';
 import * as THREE from 'three';
@@ -88,6 +90,24 @@ const UP = new THREE.Vector3(0, 1, 0);
 /** Scenery models that gatherable nodes animate (falling trees). */
 const ANIMATED = new Set(['ironwood_tree']);
 
+/** A workshop model's bounding size (metres at scale 1). */
+const sizeCache = new Map<string, THREE.Vector3 | null>();
+function workshopSize(id: string): THREE.Vector3 | null {
+  if (sizeCache.has(id)) return sizeCache.get(id)!;
+  const m = gameModel(id);
+  let out: THREE.Vector3 | null = null;
+  if (m) {
+    const box = new THREE.Box3();
+    for (const p of m.parts) {
+      p.geometry.computeBoundingBox();
+      box.union(p.geometry.boundingBox!);
+    }
+    out = box.getSize(new THREE.Vector3());
+  }
+  sizeCache.set(id, out);
+  return out;
+}
+
 function itemMatrix(it: WorldItem, out: THREE.Matrix4): THREE.Matrix4 {
   const q = new THREE.Quaternion().setFromAxisAngle(UP, THREE.MathUtils.degToRad(it.yaw));
   return out.compose(new THREE.Vector3(it.x, terrainHeight(it.x, it.z) + it.y, it.z), q, new THREE.Vector3().setScalar(it.scale));
@@ -112,6 +132,8 @@ export class EmberholdWorld {
   private lights: HotLight[] = [];
   private grass: THREE.InstancedMesh | null = null;
   private handles = new Map<string, InstanceHandle>();
+  /** Instanced scenery per model and chunk (swapped for authored models once they load). */
+  private instGroups: Array<{ id: string; items: WorldItem[]; meshes: THREE.InstancedMesh[] }> = [];
   private forge: ForgeBuilding | null = null;
   /** Chests and trail caches (searchable). */
   readonly containers = new ContainerProps();
@@ -137,6 +159,11 @@ export class EmberholdWorld {
     this.time = (EMBERHOLD_TIME in TIMES ? EMBERHOLD_TIME : 'golden') as TimeKey;
     const t = this.light();
     this.colliders = buildWorldColliders();
+    // The cliff faces on the valley edge block like rock (browser-side: the server doesn't check walls).
+    for (const c of cliffSpots()) {
+      const depth = c.width * (c.model === 'cliff' ? 0.5 : 0.4);
+      this.colliders.add({ type: 'obb', x: c.x, z: c.z, hw: c.width / 2, hd: depth / 2, cos: Math.cos(c.yaw), sin: Math.sin(c.yaw), top: c.y + c.width * 1.1 });
+    }
     this.group.name = 'emberhold';
 
     // Sky, light, fog.
@@ -172,6 +199,86 @@ export class EmberholdWorld {
     this.buildFx();
     this.applyQuality();
     scene.add(this.group);
+    // Authored models replace the workshop scenery as they arrive (the game doesn't wait).
+    void this.upgradeScenery();
+  }
+
+  /**
+   * Swap Model Workshop scenery for the authored (Meshy) models, matched to the original
+   * model's height or width, and line the steep valley edges with cliff faces.
+   */
+  private async upgradeScenery(): Promise<void> {
+    const models = await authoredModels(AUTHORED_SCENERY_IDS);
+    if (models.size === 0) return;
+    const m4 = new THREE.Matrix4();
+    const base = new THREE.Matrix4();
+    const shadowsOn = this.quality !== 'low';
+    for (const g of this.instGroups) {
+      const swap = SWAPS[g.id];
+      const orig = workshopSize(g.id);
+      if (!swap || !orig) continue;
+      const byVariant = new Map<string, WorldItem[]>();
+      for (const it of g.items) {
+        const v = variantFor(swap, it);
+        let list = byVariant.get(v);
+        if (!list) byVariant.set(v, (list = []));
+        list.push(it);
+      }
+      if ([...byVariant.keys()].some((v) => !models.has(v))) continue; // keep the original if any variant failed
+      for (const m of g.meshes) this.group.remove(m);
+      g.meshes = [];
+      const animated = ANIMATED.has(g.id);
+      if (animated)
+        for (const it of g.items) {
+          const h = this.handles.get(`${g.id}|${it.x},${it.z}`);
+          if (h) h.parts.length = 0;
+        }
+      for (const [v, items] of byVariant) {
+        const am = models.get(v)!;
+        const s = orig[swap.fit] / Math.max(1e-6, am.size[swap.fit]);
+        const local = new THREE.Matrix4().makeScale(s, s, s);
+        for (const p of am.parts) {
+          const im = new THREE.InstancedMesh(p.geometry, p.material, items.length);
+          items.forEach((it, i) => {
+            im.setMatrixAt(i, m4.multiplyMatrices(itemMatrix(it, base), local));
+            if (animated) {
+              const h = this.handles.get(`${g.id}|${it.x},${it.z}`);
+              if (h) {
+                h.parts.push({ mesh: im, index: i, local });
+                h.version = (h.version ?? 0) + 1;
+              }
+            }
+          });
+          im.instanceMatrix.needsUpdate = true;
+          im.castShadow = shadowsOn && !NO_SHADOW.has(g.id);
+          im.receiveShadow = true;
+          im.computeBoundingSphere();
+          im.name = `${g.id}:${v}`;
+          this.group.add(im);
+          g.meshes.push(im);
+        }
+      }
+    }
+    // Cliff faces on the steep valley edges.
+    const spots = cliffSpots();
+    for (const id of ['cliff', 'rockwall'] as const) {
+      const am = models.get(id);
+      const list = spots.filter((c) => c.model === id);
+      if (!am || list.length === 0) continue;
+      for (const p of am.parts) {
+        const im = new THREE.InstancedMesh(p.geometry, p.material, list.length);
+        list.forEach((c, i) => {
+          const s = c.width / Math.max(1e-6, am.size.x);
+          im.setMatrixAt(i, m4.compose(new THREE.Vector3(c.x, c.y, c.z), new THREE.Quaternion().setFromAxisAngle(UP, c.yaw), new THREE.Vector3(s, s * 1.15, s)));
+        });
+        im.instanceMatrix.needsUpdate = true;
+        im.castShadow = shadowsOn;
+        im.receiveShadow = true;
+        im.computeBoundingSphere();
+        im.name = `edge:${id}`;
+        this.group.add(im);
+      }
+    }
   }
 
   /**
@@ -202,6 +309,8 @@ export class EmberholdWorld {
         this.group.add(this.containers.group);
         continue;
       }
+      // Clutter on the steep hill walls outside the playable area isn't drawn (cliffs line the edge instead).
+      if (hiddenScenery(it.model, it.x, it.z)) continue;
       const k = BACKDROP.has(it.model) ? `${it.model}|bd` : `${it.model}|${Math.floor(it.x / CHUNK)},${Math.floor(it.z / CHUNK)}`;
       let list = byKey.get(k);
       if (!list) byKey.set(k, (list = []));
@@ -212,6 +321,8 @@ export class EmberholdWorld {
       const id = k.split('|')[0];
       const model = gameModel(id);
       if (!model) continue;
+      const group = { id, items, meshes: [] as THREE.InstancedMesh[] };
+      this.instGroups.push(group);
       for (const p of model.parts) {
         const im = new THREE.InstancedMesh(p.geometry, p.material, items.length);
         items.forEach((it, i) => {
@@ -230,6 +341,7 @@ export class EmberholdWorld {
         im.computeBoundingSphere();
         im.name = id;
         this.group.add(im);
+        group.meshes.push(im);
       }
     }
   }

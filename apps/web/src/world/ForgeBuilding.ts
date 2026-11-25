@@ -9,6 +9,8 @@
 import * as THREE from 'three';
 import { FORGE_PLAN } from '@alloy/world';
 import { buildShield, buildSword } from '../entities/Weapons';
+import { authoredModels, authoredObject, emberMask, fitScale, hotSpot } from './AuthoredModels';
+import { buildFire } from './Fire';
 
 // ---------------- Procedural textures ----------------
 function canvasTex(w: number, h: number, draw: (g: CanvasRenderingContext2D, w: number, h: number) => void): THREE.CanvasTexture {
@@ -209,7 +211,24 @@ export class ForgeBuilding {
   private coals: THREE.MeshStandardMaterial;
   private lanterns: THREE.MeshStandardMaterial;
   private ember: THREE.MeshStandardMaterial;
-  private flames: THREE.Mesh[] = [];
+  /** Code-built pieces that authored models replace, by name. */
+  private parts = new Map<string, THREE.Object3D>();
+  private plaque: THREE.Object3D | null = null;
+  private fire = new THREE.Group();
+  private flameUniforms = { uTime: { value: 0 } };
+  /** Emissive maps of authored glowing parts (hearth coals, Emberwake's ember line) that pulse. */
+  private glows: THREE.MeshStandardMaterial[] = [];
+
+  private part(name: string): THREE.Object3D {
+    let g = this.parts.get(name);
+    if (!g) {
+      g = new THREE.Group();
+      g.name = name;
+      this.group.add(g);
+      this.parts.set(name, g);
+    }
+    return g;
+  }
 
   constructor() {
     seed = 1234;
@@ -230,7 +249,9 @@ export class ForgeBuilding {
     this.coals = new THREE.MeshStandardMaterial({ color: '#2a0e05', emissive: new THREE.Color('#ff5a14'), emissiveIntensity: 2.4, roughness: 1 });
     this.lanterns = new THREE.MeshStandardMaterial({ color: '#ffcf87', emissive: new THREE.Color('#ffae4a'), emissiveIntensity: 2.2 });
 
-    const add = (geo: THREE.BufferGeometry, m: THREE.Material | THREE.Material[], x: number, y: number, z: number, rot?: [number, number, number], parent: THREE.Object3D = this.group) => {
+    // Pieces that an authored model replaces are built into their own group (see upgrade()).
+    let into: THREE.Object3D = this.group;
+    const add = (geo: THREE.BufferGeometry, m: THREE.Material | THREE.Material[], x: number, y: number, z: number, rot?: [number, number, number], parent: THREE.Object3D = into) => {
       const mesh = new THREE.Mesh(geo, m);
       mesh.position.set(x, y, z);
       if (rot) mesh.rotation.set(...rot);
@@ -326,6 +347,7 @@ export class ForgeBuilding {
     // Flashing where the chimney passes through the back roof slope.
     const roofYAt = (z: number) => ridgeY - (Math.abs(z + 0.05) / run) * rise;
     add(box(C.half * 2 + 0.24, 0.12, C.half * 2 + 0.3), new THREE.MeshStandardMaterial({ color: '#4a4440', metalness: 0.4, roughness: 0.6 }), C.x, roofYAt(C.z) + 0.2, C.z, [-slope, 0, 0]);
+    into = this.part('hearth');
     const Hh = P.hearth;
     add(box(Hh.hw * 2, Hh.h, Hh.hd * 2), stone(1.2, 0.5), Hh.x, Hh.h / 2, Hh.z);
     add(box(Hh.hw * 2 + 0.1, 0.12, Hh.hd * 2 + 0.1), mat(tex.stone, 1, 0.2, { color: '#5c5046' }), Hh.x, Hh.h + 0.02, Hh.z);
@@ -335,18 +357,15 @@ export class ForgeBuilding {
       const c = add(new THREE.DodecahedronGeometry(0.08 + rnd() * 0.07), this.coals, Hh.x - 0.8 + rnd() * 1.6, Hh.h + 0.17, Hh.z - 0.35 + rnd() * 0.7);
       c.castShadow = false;
     }
-    // Flames: soft additive cones that flicker in update().
-    const flameMat = new THREE.MeshBasicMaterial({ color: '#ffa03a', transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false });
-    for (let i = 0; i < 7; i++) {
-      const f = add(new THREE.ConeGeometry(0.1 + rnd() * 0.08, 0.45 + rnd() * 0.3, 6, 1, true), flameMat, Hh.x - 0.6 + i * 0.2, Hh.h + 0.4, Hh.z - 0.1 + (rnd() - 0.5) * 0.3);
-      f.castShadow = false;
-      f.receiveShadow = false;
-      this.flames.push(f);
-    }
+    // Fire: shader flames over the coal bed (moved onto the authored hearth's bed when it loads).
+    this.fire.position.set(Hh.x, Hh.h + 0.12, Hh.z);
+    this.group.add(this.fire);
+    buildFire(this.fire, this.flameUniforms);
     const hood = add(new THREE.CylinderGeometry(0.62, 1.45, 1.3, 4, 1, true), iron, Hh.x, Hh.h + 1.75, Hh.z - 0.15, [0, Math.PI / 4, 0]);
     (hood.material as THREE.Material).side = THREE.DoubleSide;
     add(box(1.0, 1.4, 0.9), stone(0.6, 0.8), Hh.x, Hh.h + 3.05, Hh.z - 0.45); // flue into the chimney breast
 
+    into = this.part('bellows');
     // Bellows beside the hearth, pointing at the fire
     const leather = new THREE.MeshStandardMaterial({ color: '#5a3a22', roughness: 0.8 });
     const B = P.bellows;
@@ -356,12 +375,14 @@ export class ForgeBuilding {
     add(box(0.12, 0.7, 0.12), darkWood, B.x - 0.25, 0.35, B.z + 0.4);
     add(new THREE.CylinderGeometry(0.06, 0.06, 0.8), iron, B.x + 0.6, 1.0, B.z, [0, 0, Math.PI / 2]);
 
+    into = this.part('trough');
     // Quench trough along the left wall
     const T = P.trough;
     add(box(0.7, 0.75, 1.4), wood, T.x, 0.38, T.z);
     const water = add(box(0.55, 0.04, 1.25), new THREE.MeshStandardMaterial({ color: '#1d3b48', metalness: 0.3, roughness: 0.15, emissive: new THREE.Color('#0b2a36'), emissiveIntensity: 0.5 }), T.x, 0.74, T.z);
     water.castShadow = false;
 
+    into = this.group;
     // ---- Loft over the back right, on a corner post, with railings ----
     const L = P.loft;
     const lw = L.maxX - L.minX;
@@ -395,6 +416,7 @@ export class ForgeBuilding {
     add(box(0.09, 1.0, 0.09), wood, S.minX - 0.02, 0.5 + stepRise, S.zBottom - tread / 2);
 
     // ---- The watch's sword rack under the loft: three iron longswords and a shield ----
+    into = this.part('rack');
     const R = P.rack;
     add(box(1.8, 0.1, 0.3), darkWood, R.x, 0.35, R.z);
     add(box(1.8, 0.1, 0.12), darkWood, R.x, 1.25, R.z - 0.08);
@@ -403,11 +425,12 @@ export class ForgeBuilding {
       const s = buildSword(null).group;
       s.position.set(R.x + dx, 1.45, R.z + 0.04);
       s.rotation.set(Math.PI, 0, 0.04 * (i - 1)); // point down, resting in the rack
-      this.group.add(s);
+      into.add(s);
     }
     const shield = buildShield();
     shield.position.set(R.x + 0.05, 1.75, R.z - 0.25);
-    this.group.add(shield);
+    into.add(shield);
+    into = this.group;
 
     // ---- Orla's masterwork, mounted on the left wall near the door ----
     const M = P.masterwork;
@@ -423,6 +446,8 @@ export class ForgeBuilding {
     ew.group.position.set(0.12, -0.04, 0.5);
     plaque.add(ew.group);
     this.ember = ew.ember;
+    this.parts.set('emberwake', ew.group);
+    this.plaque = plaque;
     // Two candles on a little shelf beneath it.
     add(box(0.22, 0.05, 0.6), darkWood, 0.11, -0.52, 0, undefined, plaque);
     for (const z of [-0.18, 0.18]) {
@@ -435,11 +460,14 @@ export class ForgeBuilding {
     add(box(0.2, 0.28, 0.2), this.lanterns, 0.35, 2.3, -2.93).castShadow = false;
 
     // ---- Outside, under the awning: coal heap, grindstone, tongs and hammer, lanterns, sign ----
+    into = this.part('coal');
     const coalHeap = new THREE.MeshStandardMaterial({ color: '#16120f', roughness: 1 });
     for (let i = 0; i < 18; i++) add(new THREE.DodecahedronGeometry(0.16 + rnd() * 0.12), coalHeap, -3.0 + rnd() * 0.8, 0.15 + rnd() * 0.35, 4.0 + rnd() * 0.9);
+    into = this.part('grindstone');
     add(new THREE.CylinderGeometry(0.55, 0.55, 0.16, 20), new THREE.MeshStandardMaterial({ color: '#8d8275', roughness: 0.95 }), 2.0, 0.75, 4.3, [0, 0, Math.PI / 2]);
     add(box(0.9, 0.5, 0.18), wood, 2.0, 0.25, 4.0);
     add(box(0.9, 0.5, 0.18), wood, 2.0, 0.25, 4.6);
+    into = this.group;
     add(box(0.05, 0.7, 0.05), iron, -3.55, 2.4, 2.9, [0, 0, 0.15]);
     add(box(0.05, 0.7, 0.05), iron, -3.45, 2.4, 2.9, [0, 0, -0.15]);
     add(box(0.08, 0.55, 0.08), darkWood, -3.55, 2.3, 2.55);
@@ -454,6 +482,69 @@ export class ForgeBuilding {
     const sign = add(box(2.6, 0.8, 0.08), [signEdge, signEdge, signEdge, signEdge, signMat, signMat], 0, 2.55, 5.55);
     sign.castShadow = false;
     for (const x of [-1.1, 1.1]) add(new THREE.CylinderGeometry(0.02, 0.02, 0.55), iron, x, 3.2, 5.5);
+    void this.upgrade();
+  }
+
+  /**
+   * Swap the code-built hearth, bellows, trough, rack, grindstone, coal and Emberwake for the
+   * authored models as they load (each piece keeps its code-built version if its model fails).
+   */
+  private async upgrade(): Promise<void> {
+    const P = FORGE_PLAN;
+    const models = await authoredModels(['forge_hearth', 'forge_bellows', 'forge_trough', 'forge_rack', 'forge_workbench', 'forge_grindstone', 'forge_coalbin', 'emberwake']);
+    const place = (id: string, replaces: string | null, x: number, z: number, yaw: number, metres: number, axis: 'x' | 'y' | 'z' = 'x', y = 0, parent: THREE.Object3D = this.group) => {
+      const m = models.get(id);
+      if (!m) return null;
+      const o = authoredObject(m);
+      o.scale.setScalar(fitScale(m, metres, axis));
+      o.position.set(x, y, z);
+      o.rotation.y = yaw;
+      parent.add(o);
+      if (replaces) this.parts.get(replaces)?.removeFromParent();
+      return { o, m };
+    };
+    // Hearth against the back wall: 2 m wide, its back on the wall.
+    const hm = models.get('forge_hearth');
+    if (hm) {
+      const s = fitScale(hm, P.hearth.hw * 2, 'x');
+      const d = hm.size.z * s;
+      const hz = -3.12 + d / 2;
+      place('forge_hearth', 'hearth', P.hearth.x, hz, 0, P.hearth.hw * 2, 'x');
+      let bed: THREE.Vector3 | null = null;
+      for (const p of hm.parts) {
+        const mask = this.addGlow(p.material, 'coals');
+        bed ??= mask ? hotSpot(hm, mask) : null;
+      }
+      // The fire sits on the model's own glowing coal bed (found from its texture), else under the hood.
+      if (bed) this.fire.position.set(P.hearth.x + bed.x * s, bed.y * s + 0.02, hz + bed.z * s);
+      else this.fire.position.set(P.hearth.x, hm.size.y * s * 0.3, hz + d * 0.1);
+      this.fire.scale.setScalar(0.7);
+    }
+    place('forge_bellows', 'bellows', P.bellows.x, P.bellows.z, Math.PI, 1.0, 'x');
+    place('forge_trough', 'trough', P.trough.x, P.trough.z, Math.PI / 2, 1.4, 'x');
+    place('forge_rack', 'rack', P.rack.x, -3.12 + 0.62, 0, 1.7, 'x');
+    place('forge_workbench', null, P.workbench.x, P.workbench.z, -Math.PI / 2, 1.4, 'x');
+    place('forge_grindstone', 'grindstone', 2.1, 4.3, -Math.PI / 2, 1.3, 'x');
+    place('forge_coalbin', 'coal', -2.9, 4.35, Math.PI / 6, 1.1, 'x');
+    // Emberwake on Orla's plaque: lying along the wall, its flat facing the room.
+    const em = models.get('emberwake');
+    if (em && this.plaque) {
+      const s = fitScale(em, 1.55, 'x');
+      const r = place('emberwake', 'emberwake', 0.11, 0, Math.PI / 2, 1.55, 'x', -(em.size.y * s) / 2 + 0.02, this.plaque);
+      if (r) for (const p of em.parts) this.addGlow(p.material, 'ember');
+    }
+  }
+
+  /** Make the glowing parts of an authored texture (orange-hot pixels) emissive. */
+  private addGlow(mat: THREE.MeshStandardMaterial, kind: 'coals' | 'ember'): THREE.CanvasTexture | null {
+    const mask = emberMask(mat.map, kind === 'coals' ? 0.32 : 0.25);
+    if (!mask) return null;
+    mat.emissiveMap = mask;
+    mat.emissive = new THREE.Color(kind === 'coals' ? '#ff6a1a' : '#ff7a2a');
+    mat.emissiveIntensity = 2;
+    mat.needsUpdate = true;
+    this.glows.push(mat);
+    return mask;
   }
 
   /**
@@ -474,9 +565,7 @@ export class ForgeBuilding {
     this.coals.emissiveIntensity = 2.1 + Math.sin(time * 2.1) * 0.35 + Math.sin(time * 7.7) * 0.15;
     this.lanterns.emissiveIntensity = 2.0 + Math.sin(time * 9.1) * 0.12;
     this.ember.emissiveIntensity = 1.9 + Math.sin(time * 1.3) * 0.5;
-    this.flames.forEach((f, i) => {
-      const k = 0.75 + 0.3 * Math.sin(time * (8 + i * 1.7) + i) + 0.12 * Math.sin(time * 23 + i * 3);
-      f.scale.set(1, k, 1);
-    });
+    this.flameUniforms.uTime.value = time;
+    for (const g of this.glows) g.emissiveIntensity = 1.8 + Math.sin(time * 1.3) * 0.45 + Math.sin(time * 6.1) * 0.12;
   }
 }

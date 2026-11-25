@@ -62,3 +62,25 @@ shrub and ore seam). The browser renders it (`apps/web/src/world/EmberholdWorld.
 browser and the world server build their colliders from it (`packages/world/src/Emberhold.ts`), so
 they always agree. Gameplay positions (NPCs, quest nodes, enemy spawns and patrols, the anvil) stay
 in `packages/world/src/Layout.ts`; the generator keeps scatter clear of them.
+
+## Authored models (Meshy)
+
+`meshy.mjs` turns raw Meshy downloads into what the game loads from
+`apps/web/public/models/authored/`:
+
+- **Input:** put the raw GLBs in `source-assets/meshy/<id>.glb` (git-ignored).
+  `ASSET_PROVENANCE.md` lists the Meshy task for each model.
+- **Run:** `cd tools/asset-pipeline && npm install && node meshy.mjs`.
+- **What it does to each model:**
+  - welds it and joins it into one mesh per material;
+  - **repairs zero-length normals**: Meshy exports some, and they turn into NaN in the
+    lighting shader, which the bloom pass spreads over the whole screen;
+  - puts the footprint centre at the origin and the lowest point at y = 0;
+  - converts textures to WebP: 1024 px for close-up props, 512 px for scenery;
+  - meshopt-compresses the geometry.
+- **Output:** `manifest.json` with each model's size and a content hash (the game requests
+  `id.glb?v=<hash>`).
+- **In the game:** `apps/web/src/world/AuthoredModels.ts` loads the models after the world is built.
+  `ForgeBuilding.ts`, `ContainerProps.ts` and `AuthoredScenery.ts` say what each model replaces;
+  until a model loads, the code-built or Model Workshop version stays.
+
