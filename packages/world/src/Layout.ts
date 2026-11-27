@@ -86,11 +86,29 @@ export const RESOURCE_NODES: NodeDef[] = [
 
 export interface EnemySpawn {
   id: string;
-  type: 'scavenger' | 'sentinel' | 'warden' | 'dummy';
+  type: 'scavenger' | 'sentinel' | 'warden' | 'dummy' | 'raider' | 'raider_captain';
   pos: Vec2;
   yaw: number;
   patrol?: Vec2[];
 }
+
+/**
+ * Raids on Emberhold (AF-011, docs/raids.md). Raiders appear on the trail just north of the
+ * village, walk in, and patrol the village (their home, so they never leave it). After a lost
+ * raid the Captain camps on the Ironwood Trail. All points are clear of colliders (tested).
+ */
+export const RAID_POINTS = {
+  /** Where raiders appear, at the mouth of the trail (they spread out to the sides). */
+  entry: { x: 3, z: 42 } as Vec2,
+  /** The raiders' home: the village square. */
+  home: { x: 0, z: 4 } as Vec2,
+  /** The route they walk through the village. */
+  patrol: [{ x: 2, z: 24 }, { x: -6, z: 14 }, { x: 7, z: 2 }, { x: -5, z: -3 }, { x: 8, z: 14 }] as Vec2[],
+  /** The Captain's camp after a lost raid. */
+  camp: { x: 12, z: 68 } as Vec2,
+  /** The watchtower whose lookout sounds the horn. */
+  watchtower: { x: 19, z: 22 } as Vec2,
+};
 
 export const ENEMY_SPAWNS: EnemySpawn[] = [
   { id: 'dummy-1', type: 'dummy', pos: TRAINING_POST, yaw: Math.PI },

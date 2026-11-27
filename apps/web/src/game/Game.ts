@@ -45,7 +45,7 @@ import { ForgePanel } from '../ui/ForgePanel';
 import { Hud } from '../ui/Hud';
 import { MerchantPanel, dialogPanel, pausePanel, summaryPanel, titleScreen, type Settings } from '../ui/Panels';
 import { h } from '../ui/dom';
-import { ALL_RESOURCE_NODES, CONTAINERS, ENEMY_SPAWNS, FORGE_ANVIL, SEARCH_HEIGHT, SEARCH_RANGE, NPCS, RESPAWN_POINT, ZONES, zoneAt, type Zone } from '@alloy/world';
+import { ALL_RESOURCE_NODES, CONTAINERS, ENEMY_SPAWNS, FORGE_ANVIL, SEARCH_HEIGHT, SEARCH_RANGE, NPCS, RESPAWN_POINT, ZONES, zoneAt, type EnemySpawn, type Zone } from '@alloy/world';
 import { terrainHeight } from '@alloy/world';
 import { EmberholdWorld } from '../world/EmberholdWorld';
 import { orlaDialogue } from './Dialogue';
@@ -214,6 +214,15 @@ export class Game {
       },
       kicked: (reason) => this.endSession(reason),
       character: (data, events) => this.characterUpdate(data, events),
+      // Raiders (AF-011): the server adds and removes them.
+      spawnEnemy: (s) => this.enemies.push(new Enemy({ id: s.id, type: s.type as EnemySpawn['type'], pos: { x: s.x, z: s.z }, yaw: s.yaw }, this.world.colliders, this.scene)),
+      despawnEnemy: (id) => {
+        const i = this.enemies.findIndex((e) => e.id === id);
+        if (i < 0) return;
+        if (this.lockTarget === this.enemies[i]) this.lockTarget = null;
+        this.enemies.splice(i, 1)[0].dispose(this.scene);
+      },
+      raid: (r) => this.hud.raid(r),
       correctPosition: (x, z) => {
         this.player.spawn(x, z, this.player.yaw);
         this.gatherTarget = null;
@@ -1278,10 +1287,8 @@ export class Game {
       this.hud.toast(`${d.name} defeated · +${r.coins} coins`, 'good');
     }
     if (this.lockTarget === e) this.lockTarget = null;
-    if (d.kind === 'elite') {
-      this.effects.ring(e.position, '#ff8a3d', 10, 1.2);
-      this.hud.toast('The Foundry Warden falls silent. Return to Orla.', 'good');
-    }
+    if (d.kind === 'elite') this.effects.ring(e.position, '#ff8a3d', 10, 1.2);
+    if (e.spawn.type === 'warden') this.hud.toast('The Foundry Warden falls silent. Return to Orla.', 'good');
   }
 
   private resolveEnemyHits(): void {
@@ -1726,6 +1733,8 @@ export class Game {
       coins: (n: number) => (this.mode !== 'account' ? (this.session.addCoins(n), true) : false),
       act: (a: CharAction) => this.act(a),
       heal: () => this.player.combat.revive(),
+      // Start a raid now, with a short warning (local test servers only).
+      raid: (warn = 3) => this.online.client?.send({ t: 'debugRaid', warn }),
       hurt: (n: number) => (this.player.combat.health = Math.max(1, this.player.combat.health - n)),
       face: (yaw: number) => {
         this.player.yaw = yaw;

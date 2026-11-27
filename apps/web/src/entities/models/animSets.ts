@@ -72,6 +72,33 @@ export const ENEMY_ANIMS: Partial<Record<string, RoleAnims>> = {
     death: 'sc_death',
     guard: 'sc_guard',
   },
+  // Raiders (AF-011) reuse the Scavenger's model and moves until they get their own; the
+  // browser tints them ember-red. The Captain is the same model, larger.
+  raider: {
+    model: 'heraklios',
+    heightM: 1.9,
+    loco: { idle: 'sc_idle', walk: 'sc_walk', run: 'sc_run' },
+    attacks: {
+      slash: { clip: 'sc_slash', shape: { lead: 0.8, after: 0.12, tail: 0.9 } },
+      overhead: { clip: 'chop', shape: { lead: 0.8, after: 0.12, tail: 0.9 } },
+    },
+    stagger: 'sc_stagger',
+    death: 'sc_death',
+    guard: 'sc_guard',
+  },
+  raider_captain: {
+    model: 'heraklios',
+    heightM: 2.45,
+    loco: { idle: 'sc_idle', walk: 'sc_walk', run: 'sc_run' },
+    attacks: {
+      slash: { clip: 'sc_slash', shape: { lead: 0.8, after: 0.12, tail: 0.9 } },
+      overhead: { clip: 'chop', shape: { lead: 0.8, after: 0.12, tail: 0.9 } },
+      torch_sweep: { clip: 'sc_slash', shape: { lead: 0.8, after: 0.15, tail: 0.9 } },
+    },
+    stagger: 'sc_stagger',
+    death: 'sc_death',
+    guard: 'sc_guard',
+  },
   warden: {
     model: 'maw',
     heightM: 3.3,

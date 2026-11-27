@@ -47,18 +47,18 @@ Rules in `packages/game-rules/src/adaptive.ts`, shared by the server and the bro
   "Word of a seasoned fighter spreads through the Ironwood Trail. Its foes grow bolder (level 3)."
   Older clients ignore the message.
 
-## Next: events (design notes, not built)
+## Events
 
 The observer's tallies are meant to drive world events:
 
-- **Raids on Emberhold:**
+- **Raids on Emberhold** (AF-011, **built**; see [raids.md](raids.md)):
   - A lookout on the watchtower raises the alarm.
   - 5 to 10 raiders and an elite Raider Captain attack the village, scaled to how many players
     are in it and where they are.
-- **If the village loses:**
-  - It pays a protection fee every in-game day, in coins or in forged equipment, until someone
-    defeats the Captain.
-  - The forged gear goes to the raiders, making their next attacks stronger.
+- **If the village loses** (the camp is built; the fee is AF-012, not built yet):
+  - The Raider Captain camps on the Ironwood Trail until someone defeats him there.
+  - Next, AF-012: the village pays a protection fee every in-game day, in coins or in forged
+    equipment, until someone defeats the Captain, and the forged gear makes the raiders stronger.
 - **Saving the tallies (built, AF-013):** the free server restarts when it sleeps or redeploys, so the
   tallies and area levels are kept in the accounts storage (Postgres on the live server), in one
   row, `world:observer` (`apps/server/src/worldState.ts`).

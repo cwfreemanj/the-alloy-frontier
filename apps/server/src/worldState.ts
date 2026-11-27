@@ -1,5 +1,6 @@
 /**
- * Saved world state (AF-013): the world observer's tallies and area levels, kept in the same
+ * Saved world state (AF-013): the world observer's tallies and area levels, and the raid state
+ * (AF-011: readiness, the last raid, the Captain's camp), kept in the same
  * key-value storage as accounts (Postgres on the live server), so a restart, a deploy or the free
  * host's sleep doesn't reset how hard players have pushed each area.
  *
@@ -30,6 +31,7 @@ export class WorldStateStore {
       const ok = this.room.observer.restore(raw);
       if (ok) this.room.applyAreaLevels();
       else console.warn('Saved world state was unreadable; starting the world fresh.');
+      this.room.raids.restore((raw as { raid?: unknown } | null)?.raid);
       return ok;
     } catch (e) {
       console.error(`Could not load the world state; starting fresh: ${(e as Error).message.split('\n')[0]}`);
@@ -40,9 +42,11 @@ export class WorldStateStore {
   /** Write the state if something changed since the last write (or always, with force). Never throws. */
   save(force = false): Promise<void> {
     const o = this.room.observer;
-    if (!force && !o.dirty) return this.writing;
+    const raids = this.room.raids;
+    if (!force && !o.dirty && !raids.dirty) return this.writing;
     o.dirty = false;
-    const state = o.save();
+    raids.dirty = false;
+    const state = { ...o.save(), raid: raids.save() };
     this.writing = this.writing.then(() =>
       this.kv.put(WORLD_STATE_KEY, state).catch((e: unknown) => {
         o.dirty = true; // try again next time

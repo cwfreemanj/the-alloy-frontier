@@ -205,6 +205,18 @@ export function rewardKill(s: Session, enemyType: string, enemyId: string, rng: 
 }
 
 /**
+ * Raid rewards (AF-011, docs/raids.md): the bonus for a won raid, and the Raider Captain's
+ * guaranteed Binding Flux (`dropId` names the drop, so the flux has an origin like other drops).
+ */
+export function rewardRaid(s: Session, r: { coins?: number; xp?: number; flux?: number; dropId?: string }): SessionEvent[] {
+  return captureEvents(s, () => {
+    if (r.coins) s.addCoins(r.coins);
+    if (r.xp) s.gainAdventurer(r.xp);
+    if (r.flux) s.gather(`drop:${r.dropId ?? 'raid'}`, 'binding_flux', r.flux, 0.6, {});
+  }).events;
+}
+
+/**
  * Outgoing damage of one of the player's hits, from the character's own equipped weapon
  * and mastery (before the target's defense). Null if the attack isn't allowed.
  */

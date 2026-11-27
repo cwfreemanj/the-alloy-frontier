@@ -16,8 +16,16 @@ const STYLES: Record<string, RigStyle> = {
   scavenger: { kind: 'organic', skin: '#a77d62', body: '#5a3b2a', armor: '#4a4038', legs: '#3a2e24', boots: '#2a1e16', accent: '#c06030', scale: 1 },
   sentinel: { kind: 'construct', skin: '#5c646c', body: '#4a525a', armor: '#6c747c', legs: '#3c4249', boots: '#30353b', accent: '#45e0ff', core: '#45e0ff', scale: 1.35, bulk: 1.2 },
   warden: { kind: 'construct', skin: '#4e4a48', body: '#3e3a38', armor: '#6e5a4a', legs: '#33302e', boots: '#2a2726', accent: '#ff7a2e', core: '#ff7a2e', scale: 1.8, bulk: 1.45 },
+  raider: { kind: 'organic', skin: '#a77d62', body: '#6a2a1a', armor: '#4a3028', legs: '#3a2420', boots: '#2a1610', accent: '#ff5a1a', scale: 1 },
+  raider_captain: { kind: 'organic', skin: '#a77d62', body: '#7a2414', armor: '#5a3a2a', legs: '#3a2420', boots: '#2a1610', accent: '#ff7a2e', scale: 1.3 },
   dummy: { kind: 'organic', skin: '#8a6a4a', body: '#6a5038', armor: '#5a4632', legs: '#5a4632', boots: '#3a2a1e', accent: '#000000', scale: 1 },
 };
+
+/** Enemies that carry the Scavenger's hatchet. */
+const HATCHET = new Set(['scavenger', 'raider', 'raider_captain']);
+/** Raiders (AF-011) wear an ember-red tint until they get their own models. */
+const EMBER = new Set(['raider', 'raider_captain']);
+const EMBER_TINT = new THREE.Color('#c0280a');
 
 function poseFor(a: EnemyAttackDef): [Pose, Pose] {
   if (a.shape === 'circle') return ENEMY_POSES.overhead;
@@ -54,7 +62,7 @@ export class Enemy {
     this.anims = model ? roleAnims : null;
     if (model) {
       this.body = model;
-      if (spawn.type === 'scavenger') this.body.rHand.add(buildHatchet());
+      if (HATCHET.has(spawn.type)) this.body.rHand.add(buildHatchet());
       if (spawn.type === 'warden') {
         // A furnace-forged great blade sized to the Warden.
         const blade = buildSword({ blueprintId: 'ironglass_longsword', forge: { specialization: 'heavy' }, result: { imbuements: [], rarity: 'common' } } as unknown as Parameters<typeof buildSword>[0]);
@@ -65,7 +73,7 @@ export class Enemy {
       const rig = new Rig(STYLES[spawn.type]);
       rig.snapshotEmissive();
       this.body = rig;
-      if (spawn.type === 'scavenger') rig.rHand.add(buildHatchet());
+      if (HATCHET.has(spawn.type)) rig.rHand.add(buildHatchet());
       if (spawn.type === 'sentinel') {
         rig.rHand.add(buildConstructArm('#6c747c', 1));
         this.shield = buildShield();
@@ -99,6 +107,16 @@ export class Enemy {
 
   get brain() {
     return this.sim.brain;
+  }
+
+  /** Take this enemy out of the scene (raiders the server removed). */
+  dispose(scene: THREE.Scene): void {
+    scene.remove(this.object);
+    for (const t of this.telegraphs.values()) {
+      scene.remove(t.group);
+      t.dispose();
+    }
+    this.telegraphs.clear();
   }
   get def() {
     return this.sim.brain.def;
@@ -297,7 +315,7 @@ export class Enemy {
     } else if (b.phase2 && this.body instanceof CharacterBody) {
       this.body.setTint(new THREE.Color('#ff5a1a'), 0.12 + Math.sin(b.stateTime * 4) * 0.05);
     } else {
-      this.body.setTint(null);
+      this.body.setTint(EMBER.has(this.spawn.type) ? EMBER_TINT : null, EMBER.has(this.spawn.type) ? 0.1 : 0);
     }
     if (this.body.coreMaterial) this.body.coreMaterial.emissiveIntensity = 1.2 + glow * 2.5 + (b.phase2 ? 0.8 : 0);
   }
