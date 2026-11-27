@@ -3,6 +3,12 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-27 07:09 — Recorded the technical director's M4 sign-off
+- **Asked for:** Put Neal's name and date on his M4 sign-off row.
+- **Done:** docs/M4.md: technical director row signed (Neal, 2026-11-27), status row now Partly. docs/NEEDED.md: Neal's sign-off item removed; the v0.1.0 tag now waits only on the creative director's sign-off. Entry in neal.md.
+- **Not done / deferred:** Creative director's sign-off, performance report and the playthroughs are still open.
+- **Verified:** Docs only; the earlier checks on this branch (typecheck, 242/242 tests, build) still apply.
+
 ## 2026-11-27 06:53 — A to-do list for people that every agent brings up first
 - **Asked for:** Make sure the creative director's AI tells him, before any other work, what's needed from him (above all the performance report from his machine), and asks whether to do it now or continue.
 - **Done:**

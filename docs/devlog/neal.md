@@ -6,6 +6,9 @@ Newest first. Times are US Eastern. How to write entries: [README.md](README.md)
 The code written under Neal's git name was written by Claude, at Neal's direction; that work is logged
 in detail in [claude-code.md](claude-code.md). This log is for Neal's own work: playtests, decisions, approvals and reviews.
 
+## 2026-11-27 07:09 — Signed off builds and measured performance (M4)
+- **Notes:** Signed the technical director's M4 row: builds and run commands are reproducible and performance passes on my laptop. Still waiting on the creative director's performance report, playthroughs and sign-off.
+
 ## 2026-11-25 14:47 — Asked for dev logs
 - **Notes:** Asked for a detailed, timestamped dev log for each contributor, human and AI, alongside the PRs (#30).
 

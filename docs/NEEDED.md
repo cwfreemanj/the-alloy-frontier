@@ -32,6 +32,4 @@ Most important first. When an item is done, remove it here in the same pull requ
 
 1. **Play the game through once, from a new character**, and fill in a row in section 1 of
    [M4.md](M4.md). Three playthroughs are needed in all.
-2. **Sign off builds and measured performance**, after the creative director's performance report:
-   section 3 of [M4.md](M4.md).
-3. **Tag the `v0.1.0` release** once both sign-offs are in: section 4 of [M4.md](M4.md).
+2. **Tag the `v0.1.0` release** once the creative director has signed off (yours is done): section 4 of [M4.md](M4.md).
