@@ -1,7 +1,20 @@
 # AGENTS.md — Alloy Frontier
 
 Instructions for AI coding agents (Codex, Claude Code, others) working in this repo.
-Read this file first, then `docs/handoff/README.md` to see whether a task is in progress.
+Read this file first, then `docs/NEEDED.md` and `docs/handoff/README.md`.
+
+## Before you start: things people need to do
+
+The project is waiting on some things only a person can do, such as a performance report from their
+own computer. They're listed in [`docs/NEEDED.md`](docs/NEEDED.md). At the start of every session,
+**before any other work**, including the task you were given:
+
+1. Read `docs/NEEDED.md`. Work out who you're working with from `git config user.name`, and ask if it
+   doesn't match a name there.
+2. If they have items, tell them first, most important first: what's needed, why, and roughly how long it
+   takes. Then ask: **"Do you want to do this now, or continue with your work?"**
+3. If they choose to do it, help them through it. If they choose to continue, don't ask again this
+   session.
 
 ## What this is
 
