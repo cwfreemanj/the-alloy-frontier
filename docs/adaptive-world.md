@@ -51,7 +51,7 @@ Rules in `packages/game-rules/src/adaptive.ts`, shared by the server and the bro
 
 The observer's tallies are meant to drive world events:
 
-- **Raids on Emberhold:**
+- **Raids on Emberhold** (AF-011; full proposal in [raids.md](raids.md)):
   - A lookout on the watchtower raises the alarm.
   - 5 to 10 raiders and an elite Raider Captain attack the village, scaled to how many players
     are in it and where they are.

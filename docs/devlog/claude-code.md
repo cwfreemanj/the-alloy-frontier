@@ -3,6 +3,15 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-27 07:18 — Raid proposal for approval (AF-011)
+- **PR:** 34
+- **Asked for:** Start AF-011 with the raid proposal: the trigger, size and outcomes need design approval before building.
+- **Done:**
+  - docs/raids.md: how a raid plays (watchtower horn, 60 s warning, two waves, the Raider Captain, a 5-minute limit) and recommended rules for the three things needing approval. Trigger: readiness from play time and village activity, at 30 with a signed-in rank-2+ player in the village, 45 min apart. Size: 3 + 2 per defender (5 to 10) plus the Captain, level from the defenders' ranks. Outcomes: win rewards; a loss puts the Captain in a camp on the trail and sets up AF-012's tribute.
+  - Smaller defaults (reuse the Scavenger model tinted, raids off by default behind a server setting), the build plan, and open questions. Linked from adaptive-world.md and the GDD AF-011 row.
+- **Not done / deferred:** No code: building waits for approval. The rule numbers are first guesses to tune in play.
+- **Verified:** Docs only. Numbers checked against the code: watchtower at (19, 22), Scavenger stats, the respawn point in the village square. npm run typecheck, npm test (242/242) and npm run build pass.
+
 ## 2026-11-27 07:09 — Recorded the technical director's M4 sign-off
 - **Asked for:** Put Neal's name and date on his M4 sign-off row.
 - **Done:** docs/M4.md: technical director row signed (Neal, 2026-11-27), status row now Partly. docs/NEEDED.md: Neal's sign-off item removed; the v0.1.0 tag now waits only on the creative director's sign-off. Entry in neal.md.

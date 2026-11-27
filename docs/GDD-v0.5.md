@@ -161,7 +161,7 @@ Continuing v0.4's numbering. Ordered by the recommended sequence; each lands as 
 | ID | Ticket | Pass criterion | Needs |
 | --- | --- | --- | --- |
 | AF-010 | **M4 close-out**: 3 human playthroughs, a report from each partner's machine, sign-offs, `v0.1.0` tag | Every row in `docs/M4.md` filled; release published | Both partners |
-| AF-011 | **Raid on Emberhold**, adaptive world part 2: watchtower lookout, 5–10 raiders and a Raider Captain, scaled to players in town; win or lose outcomes | A raid triggers, plays out and resolves on the live server; tested in the world room | Design approval of the trigger, size and outcomes |
+| AF-011 | **Raid on Emberhold**, adaptive world part 2: watchtower lookout, 5–10 raiders and a Raider Captain, scaled to players in town; win or lose outcomes | A raid triggers, plays out and resolves on the live server; tested in the world room | Design approval of the trigger, size and outcomes: **proposal in [raids.md](raids.md)**, waiting for approval |
 | AF-012 | **Protection fee**: after a lost raid, a daily tribute in coins or forged items until the Captain is defeated; tribute gear strengthens the raiders | Fee charged and stopped correctly; raiders' gear visible; persists across restarts | AF-011; tallies saved to Postgres |
 | AF-013 | **Saved world state**: observer tallies and area levels kept in Postgres | They survive a server restart; free-plan limits respected | **BUILT** (#31): one row, written at most once a minute while players are on ([adaptive-world.md](adaptive-world.md)) |
 | AF-014 | **Performance pass**: lower-detail trees and cliffs, shadows from distant scenery off on medium | Target machines hold 60 FPS average with steady 1% lows on medium | Target-machine reports (AF-010) |
