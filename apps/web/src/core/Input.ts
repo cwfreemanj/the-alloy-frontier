@@ -85,6 +85,8 @@ export class Input {
   wheel = 0;
   enabled = true;
   pointerLocked = false;
+  /** True between requestPointerLock and exitPointerLock: whether a granted lock is still wanted. */
+  private wantLock = false;
 
   constructor(private canvas: HTMLCanvasElement, bindings = DEFAULT_BINDINGS) {
     this.bindings = structuredClone(bindings);
@@ -122,6 +124,10 @@ export class Input {
     );
     document.addEventListener('pointerlockchange', () => {
       this.pointerLocked = document.pointerLockElement === this.canvas;
+      // The browser grants a lock asynchronously. If a menu opened (exitPointerLock) before the
+      // grant arrived, the late lock would capture the mouse over that menu: every click would
+      // go to the game canvas instead. Release it.
+      if (this.pointerLocked && !this.wantLock) document.exitPointerLock();
     });
   }
 
@@ -130,6 +136,7 @@ export class Input {
   }
 
   requestPointerLock(): void {
+    this.wantLock = true;
     try {
       const p = this.canvas.requestPointerLock() as unknown as Promise<void> | undefined;
       if (p && typeof p.catch === 'function') p.catch(() => undefined);
@@ -138,7 +145,9 @@ export class Input {
     }
   }
 
+  /** Releases the mouse, and cancels a lock request the browser hasn't granted yet. */
   exitPointerLock(): void {
+    this.wantLock = false;
     if (document.pointerLockElement) document.exitPointerLock();
   }
 
