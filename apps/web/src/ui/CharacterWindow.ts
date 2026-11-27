@@ -30,7 +30,7 @@ import {
   type AttributeId,
   type GatheringProficiency,
 } from '@alloy/game-rules';
-import { RARITY_ORDER, getBlueprint, itemDisplayName, materialName, type ItemInstance, type WeaponFamily } from '@alloy/item-gen';
+import { RARITY_LABEL, RARITY_ORDER, blueprintOf, itemDisplayName, materialName, type ItemInstance, type WeaponFamily } from '@alloy/item-gen';
 import { characterStats, weaponDamageType, type Session } from '../state/Session';
 import { RARITY_COLORS } from '../entities/Weapons';
 import type { PlayerCharacterId } from '../entities/models/Characters';
@@ -146,6 +146,9 @@ export class CharacterWindow {
     private onSkillBar: (slot: number, skill: string | null) => Promise<unknown>,
     private onBrew: (recipe: string, qty: number) => Promise<unknown>,
     private onConsume: (item: string) => Promise<unknown>,
+    /** Found blueprints: learn a scroll (it stays), or throw it away. */
+    private onLearn: (scroll: string) => Promise<unknown> = async () => {},
+    private onScrap: (scroll: string) => Promise<unknown> = async () => {},
   ) {
     this.selected = session.inventory.equipped.weapon ?? session.inventory.itemOrder[0] ?? null;
     window.addEventListener('keydown', this.onKey);
@@ -403,12 +406,50 @@ export class CharacterWindow {
         grid,
         sub('Materials'),
         mats,
+        sub('Blueprints'),
+        this.blueprints(),
         sub('Alchemy'),
         this.alchemy(),
         h('details', { class: 'cs-lots' }, h('summary', null, `Material lots (${inv.lots.length})`), ...lots),
       ),
       this.detail(),
     );
+  }
+
+  /**
+   * Found blueprints (docs/blueprint-contract.md): the scrolls carried, with Learn and Discard. Learning keeps
+   * the scroll, so it can still be sold, traded or given away later.
+   */
+  private blueprints(): HTMLElement {
+    const inv = this.session.inventory;
+    const scrolls = Object.entries(inv.scrolls ?? {});
+    const learned = Object.keys(inv.learned ?? {}).length;
+    const rows = h('div', { class: 'cs-list' });
+    for (const [id, bp] of scrolls) {
+      const known = !!inv.learned?.[bp.id];
+      const p = bp.piece;
+      const what = p.baseDefense !== undefined ? `${p.baseDefense} base defense` : `${p.baseDamage} base damage`;
+      rows.append(
+        h(
+          'div',
+          { class: 'cs-brew cs-scroll', 'data-scroll': id },
+          h('div', { class: 'row' }, h('b', { style: `color:${RARITY_COLORS[bp.rarity]}` }, bp.name), h('span', { class: 'spacer' }), h('span', { class: 'cs-note' }, `${RARITY_LABEL[bp.rarity]} · worth ${bp.worth} c`)),
+          h('div', { class: 'cs-note' }, `${what} · needs Smithing ${bp.requirement.level}${bp.set ? ` · ${bp.set.name} set (1 of ${bp.set.pieces})` : ''}`),
+          h('div', { class: 'cs-note', style: 'font-style:italic' }, bp.lore),
+          h(
+            'div',
+            { class: 'row', style: 'gap:6px;margin-top:4px' },
+            h('button', { class: 'cs-btn small primary', 'data-testid': `learn-${id}`, disabled: known, title: known ? "You've already learned this blueprint." : '', onclick: () => void this.onLearn(id).then(() => this.render()) }, known ? 'Learned' : 'Learn'),
+            h('span', { class: 'spacer' }),
+            h('button', { class: 'cs-btn small', 'data-testid': `scrap-${id}`, onclick: () => void this.onScrap(id).then(() => this.render()) }, 'Discard'),
+          ),
+        ),
+      );
+    }
+    const note = scrolls.length
+      ? `${scrolls.length} carried · ${learned} learned. Learned blueprints appear in the forge.`
+      : `None carried${learned ? ` · ${learned} learned` : ''}. Enemies sometimes drop blueprints; chests and trail caches hide them more often.`;
+    return h('div', null, h('div', { class: 'cs-note', style: 'margin-bottom:6px' }, note), rows);
   }
 
   /** Potions on hand (use them here or with keys 5 / 6) and brewing from Emberleaf. */
@@ -513,7 +554,7 @@ export class CharacterWindow {
         { class: 'cs-panel-body' },
         h('span', { class: 'cs-rarity' }, sel.result.rarity.toUpperCase()),
         h('div', { class: 'cs-item-name' }, itemDisplayName(sel)),
-        h('div', { class: 'cs-note' }, `${fam} · ${sourceLabel(sel)} · ${getBlueprint(sel.blueprintId)?.tier ?? ''}${made}`),
+        h('div', { class: 'cs-note' }, `${fam} · ${sourceLabel(sel)} · ${blueprintOf(sel)?.tier ?? ''}${made}`),
         h('div', { class: 'cs-item-stage' }, canvas),
         traitsBlock(sel),
         gearLine(sel),

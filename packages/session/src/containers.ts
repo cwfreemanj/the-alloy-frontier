@@ -4,8 +4,8 @@
  * The loot roll is seeded by the character, the container and how often it was searched, so
  * the server and a guest's browser roll the same way and a retry can't re-roll.
  */
-import { Rng, type MaterialId } from '@alloy/item-gen';
-import { containerDef, type ContainerKind } from '@alloy/world';
+import { BLUEPRINT_DROP, Rng, generateBlueprint, type BlueprintArea, type MaterialId } from '@alloy/item-gen';
+import { containerDef, zoneAt, type ContainerKind } from '@alloy/world';
 import type { Session } from './session';
 
 export interface ContainerState {
@@ -73,6 +73,12 @@ export function searchContainer(s: Session, id: string): { ok: true; loot: Loot 
   const n = map[id]?.n ?? 0;
   const loot = rollLoot(def.kind, String(s.data.createdAt), id, n);
   for (const it of loot.items) s.gather(`search:${id}`, it.material, it.qty, it.quality, {});
+  // Sometimes a blueprint (STAND-IN chances), seeded like the rest of the roll so a retry can't re-roll.
+  const r = new Rng(`search-blueprint:${String(s.data.createdAt)}:${id}:${n}`);
+  if (r.next() < BLUEPRINT_DROP[def.kind]) {
+    const area = zoneAt(def.pos).id as BlueprintArea;
+    s.addBlueprint(generateBlueprint(`search:${String(s.data.createdAt)}:${id}:${n}`, { area, source: 'chest', sourceId: id, level: 1 }));
+  }
   if (loot.coins > 0) s.addCoins(loot.coins);
   map[id] = { readyAt: s.data.playTime + def.refill, n: n + 1 };
   const names: Record<string, string> = { iron_ore: 'Iron Ore', ironglass: 'Ironglass Shard', emberleaf: 'Emberleaf', binding_flux: 'Binding Flux', healing_salve: 'Healing Salve', stamina_tonic: 'Stamina Tonic' };

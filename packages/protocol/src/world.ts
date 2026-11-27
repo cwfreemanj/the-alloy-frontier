@@ -37,14 +37,15 @@ export interface AvatarState {
   hp: number;
   mhp: number;
   /** Equipped weapon look. */
-  wpn: { bp: string; spec: string; imb: boolean; rar: string } | null;
+  /** lk: a found weapon's look ("type:shape:blend"), optional. */
+  wpn: { bp: string; spec: string; imb: boolean; rar: string; lk?: string } | null;
   /** Chosen character model (e.g. 'maria', 'exo'). Optional: older clients omit it. */
   mdl?: string;
   /**
    * Worn gear that shows (forge expansion): off-hand and head blueprint ids, with their rarities.
    * Optional: older clients omit it and ignore it.
    */
-  gr?: { o?: string; or?: string; h?: string; hr?: string };
+  gr?: { o?: string; or?: string; ol?: string; h?: string; hr?: string; hl?: string };
 }
 
 export interface EnemyNetState {
@@ -168,6 +169,9 @@ function charAction(v: unknown): CharAction | null {
       return (EQUIP_SLOTS as readonly unknown[]).includes(v.slot) ? { k: 'unequip', slot: v.slot as (typeof EQUIP_SLOTS)[number] } : null;
     case 'discard':
       return str(v.item, 128) ? { k: 'discard', item: v.item } : null;
+    case 'learn':
+    case 'scrap':
+      return str(v.scroll, 64) ? { k: v.k, scroll: v.scroll } : null;
     case 'talk':
       return v.npc === 'orla' ? { k: 'talk', npc: 'orla' } : null;
     case 'event':
@@ -233,7 +237,7 @@ function avatar(v: unknown): v is AvatarState {
     num(s.pr, 10) &&
     num(s.hp, 1e4) &&
     num(s.mhp, 1e4) &&
-    (w === null || (!!w && str(w.bp, 64) && str(w.spec, 32) && bool(w.imb) && str(w.rar, 16))) &&
+    (w === null || (!!w && str(w.bp, 64) && str(w.spec, 32) && bool(w.imb) && str(w.rar, 16) && (w.lk === undefined || look(w.lk)))) &&
     (s.mdl === undefined || (str(s.mdl, 16) && /^[a-z]+$/.test(s.mdl))) &&
     gear(s.gr)
   );
@@ -244,8 +248,13 @@ function gear(v: unknown): boolean {
   if (v === undefined) return true;
   if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
   const g = v as Record<string, unknown>;
-  if (Object.keys(g).some((k) => !['o', 'or', 'h', 'hr'].includes(k))) return false;
-  return ['o', 'or', 'h', 'hr'].every((k) => g[k] === undefined || (str(g[k], 48) && /^[a-z0-9_]+$/.test(g[k] as string)));
+  if (Object.keys(g).some((k) => !['o', 'or', 'ol', 'h', 'hr', 'hl'].includes(k))) return false;
+  return ['o', 'or', 'h', 'hr'].every((k) => g[k] === undefined || (str(g[k], 48) && /^[a-z0-9_]+$/.test(g[k] as string))) && ['ol', 'hl'].every((k) => g[k] === undefined || look(g[k]));
+}
+
+/** A look in the short form "type:shape:blend" (plain ids only). */
+function look(v: unknown): boolean {
+  return str(v, 80) && /^[a-z0-9_]+(:[a-z0-9_]*){0,2}$/.test(v as string);
 }
 
 /** Player-chosen display names: letters, digits, spaces, - _ ' only. */

@@ -13,7 +13,6 @@ import {
   SPECIALIZATIONS,
   TEMPERS,
   generateItem,
-  getBlueprint,
   hashHex,
   seedFrom,
   stableStringify,
@@ -35,6 +34,7 @@ import {
   planConsumption,
   type Fail,
   type InventoryState,
+  resolveBlueprint,
 } from './inventory';
 import { HEAT_LEVELS, createHammerBoard, evaluateHammerEvidence, type HammerBoard, type HammerEvaluation, type Strike } from './puzzle';
 
@@ -81,7 +81,7 @@ export function requestHash(req: ForgeRequest): string {
 /** Validate and compute a forge result WITHOUT mutating anything (used for previews too). */
 export function planForge(inv: InventoryState, req: ForgeRequest, opts: { previewScore?: number } = {}): PlanResult {
   if (!req || typeof req !== 'object') return fail('invalid_request', 'Malformed request');
-  const bp = getBlueprint(req.blueprintId);
+  const bp = resolveBlueprint(inv, req.blueprintId);
   if (!bp) return fail('unknown_blueprint', `Unknown blueprint "${String(req.blueprintId)}"`);
   if (!bp.craftable) return fail('not_craftable', `${bp.name} cannot be forged`);
   if (req.mode !== 'quick' && req.mode !== 'masterwork') return fail('invalid_mode', 'Unknown forge mode');
@@ -149,6 +149,8 @@ export function planForge(inv: InventoryState, req: ForgeRequest, opts: { previe
       itemId: nextItemId(inv, seed),
       seed,
       blueprintId: bp.id,
+      // A learned found blueprint isn't in the standard table: hand its definition over.
+      blueprint: bp,
       source: req.mode === 'quick' ? 'quick_forge' : 'masterwork_forge',
       mode: req.mode,
       materials: consumed,
@@ -198,7 +200,7 @@ export function executeForge(inv: InventoryState, req: ForgeRequest): ForgeResul
  * adding one more standard batch (GDD 4.12, 7.3).
  */
 export function forecastBuffer(inv: InventoryState, req: ForgeRequest, previewScore?: number) {
-  const bp = getBlueprint(req.blueprintId);
+  const bp = resolveBlueprint(inv, req.blueprintId);
   if (!bp) return null;
   const opts = req.mode === 'masterwork' ? { previewScore: previewScore ?? 0.5 } : {};
   const at = (q: number) => {

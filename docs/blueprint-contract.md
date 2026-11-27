@@ -1,7 +1,8 @@
 # Blueprint contract: generated blueprints
 
 **Status: the four open decisions were made by the technical director on 2026-11-27 (section 3); the creative
-director reviews the whole contract.** This is the interface between the blueprint
+director reviews the whole contract. The game side (section 2) is built (2026-11-27) against a stand-in
+generator (section 5).** This is the interface between the blueprint
 **generator** (the creative director's side, in `packages/item-gen`) and everything around it (the technical
 director's side: storage, drops, the server, forging, the screens). It works like
 [equipment-contract.md](equipment-contract.md): change it here first, then tell the other side.
@@ -142,3 +143,37 @@ Rules for the generator:
    a stand-in generator right away, then switch to the real one.
 4. **Then:** selling scrolls, quest rewards, the proficiency requirement (after the tree), set bonuses,
    trading and giving between players.
+
+## 5. Built: the game side, with a stand-in generator (2026-11-27)
+
+Everything in section 2 except trading, giving and selling scrolls is built, against a **stand-in** generator, so
+the creative director can drop in the real one without touching the rest.
+
+**Where to plug in the real generator:** `packages/item-gen/src/found.ts`.
+- Replace the body of `generateBlueprint(seed, ctx)` (same signature and return type).
+- Replace `BLUEPRINT_DROP` (the chances per source).
+- `sealBlueprint` and `validateBlueprint` stay: the game seals what the generator returns and checks it everywhere.
+- The stand-in makes variations of the standard patterns found in each area, with rarity rising with the area's
+  level, materials and level requirements rising with rarity, and one stand-in set per area.
+
+**What the game does now:**
+- **Drops:** about 5% of enemies (50% of elites, such as the Warden and the Raider Captain) drop a blueprint;
+  chests 30%, trail caches 20%, barrels 2%.
+  - The server rolls them for signed-in players; a guest's browser rolls them for guests.
+  - Searches are seeded, so a retry finds the same thing.
+- **Scrolls and learning:** found blueprints are scrolls in the bag (`inventory.scrolls`, at most 200). The
+  inventory's Blueprints section shows each one's rarity, worth, base stat, requirement, set and lore, with
+  **Learn** and **Discard**.
+  - Learning keeps the scroll.
+  - Learning one already learned says "You've already learned this blueprint."
+  - Discarding a scroll keeps the blueprint learned.
+- **Forging:** learned blueprints appear in the forge under their category, marked **Found**, with the rarity
+  colour. The forge checks the level requirement against blacksmithing mastery.
+- **Items:** an item forged from a found blueprint keeps a sealed copy of it (`item.blueprint`). Equipping,
+  damage type, looks and validation use that copy (`blueprintOf(item)`), so the item works after the scroll is
+  gone or the blueprint is traded.
+- **Other players** see found weapons and shields: the avatar message carries their look (`wpn.lk`, `gr.ol`,
+  `gr.hl`, optional and checked by the server).
+
+**Not built yet:** selling, trading and giving scrolls; quest rewards; the proficiency branches (Crafting and
+Alchemy blueprints wait for the tree); set bonuses.
