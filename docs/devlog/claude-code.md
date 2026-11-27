@@ -3,6 +3,15 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-27 11:46 — Proficiency tree proposal for approval
+- **PR:** 37
+- **Asked for:** Neal, after the creative director asked whether a proficiency tree was proposed (his vote: Smithing, Crafting, Alchemy): write the proposal.
+- **Done:**
+  - docs/proficiency-tree.md: three branches with gathering as their roots; levels by doing plus a choice of two perks every 10 levels; a starter perk table (levels 10-30 and the roots); respec at Orla's; titles at the top; where it shows; how blueprints name a branch and level; a build order aimed at the 18th.
+  - Added review items for both directors to docs/NEEDED.md; linked from the design backlog's perks-and-titles item.
+- **Not done / deferred:** No code: building waits for approval. Generated blueprints need their own contract next.
+- **Verified:** Docs only. Facts checked against the code: gathering proficiencies 1-100, blacksmithing open-ended from 10, brewing gives no XP, the workbench exists in the forge building. npm run typecheck, npm test (262/262) and npm run build pass.
+
 ## 2026-11-27 11:22 — Forge expansion, phase 1: a mace, shields and armor
 - **PR:** 36
 - **Asked for:** Neal: analyze the creative director's Model Workshop, then expand the forge with helmets, chest armor, legs, shields and a second weapon; he approved phase 1 of the plan.

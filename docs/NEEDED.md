@@ -31,9 +31,13 @@ Most important first. When an item is done, remove it here in the same pull requ
    helmets, chestplates and platelegs with starter stats, and uses your workshop generator for their looks.
    Check or change the numbers and looks: [forge-expansion.md](forge-expansion.md) lists what to look at.
    About 15 minutes.
+5. **Approve or change the proficiency tree proposal:** [proficiency-tree.md](proficiency-tree.md). It builds on
+   your three branches (Smithing, Crafting, Alchemy); the perk list is your call. About 10 minutes.
 
 ## Technical director (git name `Neal`)
 
 1. **Play the game through once, from a new character**, and fill in a row in section 1 of
    [M4.md](M4.md). Three playthroughs are needed in all.
-2. **Tag the `v0.1.0` release** once the creative director has signed off (yours is done): section 4 of [M4.md](M4.md).
+2. **Approve or change the proficiency tree proposal** with the creative director:
+   [proficiency-tree.md](proficiency-tree.md). About 10 minutes.
+3. **Tag the `v0.1.0` release** once the creative director has signed off (yours is done): section 4 of [M4.md](M4.md).

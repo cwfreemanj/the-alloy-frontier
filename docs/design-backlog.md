@@ -6,6 +6,9 @@ is started, it gets a design pass with the owner and, if it spans sessions, a ha
 
 ## 1. Training perks and titles ("separate effects")
 
+**Update 2026-11-27:** perks and titles are part of the proficiency tree proposal,
+[proficiency-tree.md](proficiency-tree.md) (perk choices at branch milestones, titles at the top).
+
 **Owner's intent (2026-11-24):** reward players for doing more than the normal path. Today,
 trained levels and allocated stat points add up to one total (decided for now). Later, trained
 growth should also unlock things points can't buy.
