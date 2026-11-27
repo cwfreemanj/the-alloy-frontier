@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { ENEMIES, mitigate } from '@alloy/game-rules';
 import { WORLD_PROTOCOL, type AvatarState, type WorldServerMsg } from '@alloy/protocol';
-import { Session, newSessionData, playerHit } from '@alloy/session';
+import { Session, characterStats, newSessionData, playerHit } from '@alloy/session';
 import { ENEMY_SPAWNS, FORGE_ANVIL, FORGE_PLAN, NPCS, RESOURCE_NODES, RESPAWN_POINT, containerDef, terrainHeight } from '@alloy/world';
 import { CharacterHost, MemoryCharacterStore, SAVE_DELAY_MS } from '../src/characters';
 import { WorldRoom } from '../src/worldRoom';
@@ -136,6 +136,53 @@ describe('server-owned characters', () => {
     expect(r.ok).toBe(true);
     expect(r.item?.blueprintId).toBe('iron_longsword');
     expect(p.lastChar()!.data.inventory.items[r.item!.itemId]).toBeTruthy();
+  });
+
+  it('forges and equips armor and a mace on the server: defense counts, the quest only counts weapons (forge expansion)', async () => {
+    const ctx = setup();
+    const p = await signedIn(ctx, 'acct-armor');
+    for (const m of ['iron_ore', 'ironwood', 'binding_flux'] as const) p.char.session.gather('test', m, 30, 0.6, {});
+    p.char.session.data.progression.professions.blacksmithing.mastery = 5;
+    p.at(NPCS.orla.pos.x, NPCS.orla.pos.z);
+    expect(p.act({ k: 'talk', npc: 'orla' }).ok).toBe(true);
+    const step = p.char.session.data.quest.stepIndex;
+    p.at(FORGE_ANVIL.x, FORGE_ANVIL.z);
+    const made: Record<string, string> = {};
+    for (const bp of ['iron_helmet', 'iron_shield', 'iron_chestplate', 'iron_platelegs', 'iron_mace']) {
+      const r = p.act({ k: 'forge', req: { txId: `tx-${bp}`, blueprintId: bp, mode: 'quick', bufferQuantity: 3 } });
+      expect(r, bp).toMatchObject({ ok: true });
+      made[bp] = r.item!.itemId;
+      if (bp !== 'iron_mace') {
+        // Armor isn't the quest's blade: forging it doesn't move the quest.
+        expect(p.char.session.data.quest.stepIndex).toBe(step);
+        expect(r.item!.result.defense).toBeGreaterThan(0);
+      }
+    }
+    const before = characterStats(p.char.session).defense;
+    for (const bp of ['iron_helmet', 'iron_shield', 'iron_chestplate', 'iron_platelegs']) expect(p.act({ k: 'equip', item: made[bp] }).ok).toBe(true);
+    const eq = p.lastChar()!.data.inventory.equipped;
+    expect(eq).toMatchObject({ head: made.iron_helmet, offhand: made.iron_shield, chest: made.iron_chestplate, legs: made.iron_platelegs });
+    const items = p.char.session.inventory.items;
+    const sum = ['iron_helmet', 'iron_shield', 'iron_chestplate', 'iron_platelegs'].reduce((a, bp) => a + items[made[bp]].result.defense!, 0);
+    expect(characterStats(p.char.session).defense).toBe(before + sum);
+    // The mace goes in the main hand and hits blunt.
+    expect(p.act({ k: 'equip', item: made.iron_mace }).ok).toBe(true);
+    expect(p.char.session.weaponFamily).toBe('mace');
+  });
+
+  it('relays worn gear (shield, helmet) to other players, and refuses anything else in it', async () => {
+    const ctx = setup();
+    const a = await signedIn(ctx, 'acct-gear-a');
+    const b = await signedIn(ctx, 'acct-gear-b');
+    a.at(0, 0, { gr: { o: 'iron_shield', or: 'rare', h: 'iron_helmet', hr: 'common' } });
+    b.at(1, 0);
+    ctx.room.publish();
+    const seen = b.inbox.filter((m) => m.t === 'players').flatMap((m) => (m as Extract<WorldServerMsg, { t: 'players' }>).list).find((x) => x.id === a.id);
+    expect(seen?.s.gr).toEqual({ o: 'iron_shield', or: 'rare', h: 'iron_helmet', hr: 'common' });
+    const bad = ctx.room.stats.malformed;
+    a.at(0, 0, { gr: { o: '<script>' } } as never);
+    a.at(0, 0, { gr: { o: 'iron_shield', extra: 'x' } } as never);
+    expect(ctx.room.stats.malformed).toBe(bad + 2);
   });
 
   it('rejects malformed or invented actions at the protocol boundary', async () => {

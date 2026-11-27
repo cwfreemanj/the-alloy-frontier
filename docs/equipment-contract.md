@@ -89,3 +89,21 @@ These exist only so the mechanics can be built and tested before the algorithm l
 rebalance them freely:
 - `worn_pickaxe` and `worn_hatchet` blueprints (power 1). Every character gets them in a starter
   kit, because gathering now needs the right tool. The last tool of a kind can't be discarded.
+
+## Armor, shields and looks (forge expansion, phase 1, 2026-11-27)
+
+Added on Neal's side with **starter values the item-generation owner may change freely**: they exist so
+the forge, equipping and the looks could be built and tested.
+
+- **Families:** `ArmorFamily` = `shield`, `helmet`, `chest`, `legs` (`types.ts`). `mace` was already a weapon family.
+- **Blueprints:** `iron_` and `ironglass_` versions of `mace`, `shield`, `helmet`, `chestplate` and `platelegs`
+  (10 in `blueprints.ts`). Armor allows only the Balanced pattern.
+- **`baseDefense`** (blueprint): armor and shields. `generateItem` scales it exactly as a weapon's damage
+  (smith × material × flux × forge) into `result.defense`, keeps the weapon stats neutral
+  (damage 1, stagger 0), rolls **`ARMOR_AFFIXES`** (more defense, max health, max stamina, Vitality, Endurance)
+  into `result.defense` / `result.bonuses`, and rates it with `armorRating`. Weapons are generated
+  exactly as before (existing items and tests unchanged).
+- **`look`** (blueprint): `{ type, shape, blend }` for the Model Workshop generator (`equipment.js`). Looks only;
+  stats never come from the generator. The seed is the blueprint id, so a blueprint looks the same for
+  everyone at a given rarity.
+- **The quest** counts only weapons for its forging and equipping steps.

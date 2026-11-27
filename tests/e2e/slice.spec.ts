@@ -499,3 +499,39 @@ test('performance capture (1920x1080, medium preset)', async ({ page }) => {
   writeFileSync('docs/perf-latest.json', JSON.stringify(results, null, 2));
   console.log(JSON.stringify(results, null, 2));
 });
+
+test('forge expansion: forge a shield, helmet and mace from their tabs; they show on the character', async ({ page }) => {
+  const errors = await newGame(page);
+  // A smith past the forge introduction, with materials, at the anvil.
+  await page.evaluate(() => {
+    const a = (window as unknown as { __alloy: Record<string, (...x: unknown[]) => unknown> }).__alloy;
+    const s = a.session() as { data: { quest: { stepIndex: number }; progression: { professions: { blacksmithing: { mastery: number } } } } };
+    s.data.quest.stepIndex = 8;
+    s.data.progression.professions.blacksmithing.mastery = 5;
+    for (const m of ['iron_ore', 'ironwood', 'binding_flux']) a.give(m, 30, 0.6);
+    a.teleport(-14, 13.5);
+    (a.game as unknown as { openForge: () => void }).openForge();
+  });
+  await expect(page.locator('[data-category]')).toHaveCount(5);
+  for (const [tab, bp] of [['shields', 'iron_shield'], ['helmets', 'iron_helmet'], ['maces', 'iron_mace']] as const) {
+    await page.locator(`[data-category="${tab}"]`).click();
+    await page.locator(`[data-blueprint="${bp}"]`).click();
+    // Armor shows defense; the mace shows damage.
+    await expect(page.locator('.stat-table').filter({ hasText: 'Equipment rating' }).first()).toContainText(bp === 'iron_mace' ? 'Damage' : 'Defense');
+    await page.getByTestId('quick-forge-confirm').click();
+    await page.getByTestId('equip-result').click();
+    await expect(page.getByTestId('equip-result')).toHaveText('Equipped');
+    await page.getByRole('button', { name: 'Forge another' }).click();
+  }
+  // The shield rides the left forearm and the helmet the head (built by the workshop generator).
+  await expect
+    .poll(() => page.evaluate(() => ((window as unknown as { __alloy: { game: { player: { gearRack: { pieces: Array<{ parent: { name: string } | null }> } } } } }).__alloy.game.player.gearRack.pieces.map((p) => p.parent?.name).sort())), { timeout: 15_000 })
+    .toEqual(['Head', 'LeftForeArm']);
+  const eq = await page.evaluate(() => {
+    const s = (window as unknown as { __alloy: { session: () => { data: { inventory: { equipped: Record<string, string | null>; items: Record<string, { blueprintId: string }> } } } } }).__alloy.session();
+    const inv = s.data.inventory;
+    return Object.fromEntries(['weapon', 'offhand', 'head'].map((k) => [k, inv.items[inv.equipped[k] ?? '']?.blueprintId ?? null]));
+  });
+  expect(eq).toEqual({ weapon: 'iron_mace', offhand: 'iron_shield', head: 'iron_helmet' });
+  expect(errors).toEqual([]);
+});

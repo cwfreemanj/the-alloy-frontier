@@ -71,3 +71,9 @@ export function themeMaterial(key: string): THREE.MeshStandardMaterial {
   init();
   return bank!.get(key);
 }
+
+/** The shared workshop material bank (forged gear looks use it too: entities/Gear.ts). */
+export function workshopBank(): MaterialBank {
+  init();
+  return bank!;
+}

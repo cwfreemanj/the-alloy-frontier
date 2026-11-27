@@ -7,6 +7,7 @@ import type { AvatarState } from '@alloy/protocol';
 import type { ItemInstance } from '@alloy/item-gen';
 import { ATTACK_POSES, POSE_BLOCK, POSE_DEAD, POSE_DODGE, POSE_GATHER, POSE_GUARD, POSE_STAGGER, Rig, easeIn, easeOut, locomotionPose, mixPose, type Pose } from './Rig';
 import { buildSword, type SwordVisual } from './Weapons';
+import { GearRack, wornFromNet } from './Gear';
 import { makePlayerBody, playerAnimRequest } from './Player';
 import { CharacterBody, DEFAULT_PLAYER_CHARACTER, isPlayerCharacter, type PlayerCharacterId } from './models/Characters';
 
@@ -69,7 +70,11 @@ export class RemotePlayer {
     this.body = makePlayerBody(id, this.palette);
     this.object.add(this.body.root);
     this.body.rHand.add(this.sword.group);
+    this.gearRack.refresh();
   }
+
+  /** Their shield and helmet (forge expansion). */
+  private readonly gearRack = new GearRack(() => this.body);
 
   get pos2() {
     return { x: this.position.x, z: this.position.z };
@@ -131,6 +136,7 @@ export class RemotePlayer {
     this.lastPhase = s.ph;
     this.lastAtk = s.atk;
     this.updateSword(s);
+    this.gearRack.set(wornFromNet(s.gr));
     this.animate(dt, s, target.spd);
   }
 

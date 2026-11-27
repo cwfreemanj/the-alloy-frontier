@@ -541,6 +541,11 @@ select, input[type=number] { background: var(--panel-2); color: var(--text); bor
 .fx .stat-table td { padding: 4px 4px; }
 .fx h3.fx-h { margin: 12px 0 6px; }
 .fx .bp-card .sub { margin-top: 1px; }
+/* Forge categories (forge expansion) */
+.fx .fx-cats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; margin: 2px 0 6px; }
+.fx .fx-cat { display: grid; justify-items: center; gap: 2px; padding: 5px 2px; font-size: 11px; border: 1px solid #3a3128; border-radius: 4px; background: #16130f; color: var(--muted); cursor: pointer; }
+.fx .fx-cat:hover { border-color: var(--gold-dim); color: var(--text); }
+.fx .fx-cat.on { border-color: var(--gold); color: var(--gold); background: #2a1f15; }
 .perf-report { width: 100%; font-family: var(--mono); font-size: 11px; background: #0e0f11; color: var(--text); border: 1px solid var(--steel); border-radius: 3px; padding: 6px; resize: vertical; }
 /* Character slots on the title screen */
 .slots { display: grid; gap: 8px; }

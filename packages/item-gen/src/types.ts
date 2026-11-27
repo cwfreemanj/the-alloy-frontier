@@ -41,8 +41,10 @@ export interface ConsumedMaterial {
 export type WeaponFamily = 'longsword' | 'shortsword' | 'greatsword' | 'axe' | 'mace' | 'dagger' | 'staff' | 'bow';
 /** What kind of damage a weapon deals (see packages/game-rules/src/damage.ts). */
 export type DamageType = 'slash' | 'pierce' | 'blunt' | 'magic';
-/** Every kind of item. Gathering tools are not weapons (no weapon mastery). */
-export type ItemFamily = WeaponFamily | 'tool';
+/** Armor and shields: they give defense, not damage (docs/equipment-contract.md). */
+export type ArmorFamily = 'shield' | 'helmet' | 'chest' | 'legs';
+/** Every kind of item. Gathering tools and armor are not weapons (no weapon mastery). */
+export type ItemFamily = WeaponFamily | ArmorFamily | 'tool';
 
 /** Equipment slots on the character (see docs/equipment-contract.md). 'ring' fits either ring slot. */
 export type EquipSlotKind = 'weapon' | 'offhand' | 'head' | 'shoulders' | 'neck' | 'cape' | 'chest' | 'belt' | 'hands' | 'legs' | 'feet' | 'ring' | 'tool';

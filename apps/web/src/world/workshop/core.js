@@ -84,12 +84,35 @@ export const DEFAULT_MATERIALS = {
   rock: { label: 'Rock face', group: 'Ground', color: '#6a6660', rough: 0.95, metal: 0, tex: 'rock', tile: 2.5, flat: true },
   iron_ore: { label: 'Iron ore', group: 'Ground', color: '#6b5f57', rough: 0.9, metal: 0.2, tex: 'rock', tile: 1.5, flat: true },
   water: { label: 'Water', group: 'Ground', color: '#2f6878', rough: 0.1, metal: 0.2, opacity: 0.78, tex: null, tile: 1 },
+  // Equipment: small-scale tiling, plus gems whose glow follows their tint.
+  dark_iron: { label: 'Blackened iron', group: 'Gear', color: '#474b50', rough: 0.45, metal: 0.75, tex: 'hammered', tile: 0.35 },
+  blued_steel: { label: 'Blued steel', group: 'Gear', color: '#46566a', rough: 0.3, metal: 0.85, tex: null, tile: 1 },
+  ironglass: { label: 'Ironglass', group: 'Gear', color: '#8fe6ff', rough: 0.12, metal: 0.3, emissive: '#1fb4e6', glow: 0.55, tex: null, tile: 1, flat: true },
+  gem: { label: 'Gemstone (tint)', group: 'Gear', color: '#ffffff', rough: 0.1, metal: 0.2, emissive: '#ffffff', emissiveTint: true, glow: 0.8, tex: null, tile: 1, flat: true },
+  leather: { label: 'Leather', group: 'Gear', color: '#6b4630', rough: 0.8, metal: 0, tex: 'leather', tile: 0.3 },
+  leather_dark: { label: 'Dark leather', group: 'Gear', color: '#3a2a20', rough: 0.8, metal: 0, tex: 'leather', tile: 0.3 },
+  cloth: { label: 'Woven cloth (tint)', group: 'Gear', color: '#8a2f2a', rough: 0.95, metal: 0, tex: 'weave', tile: 0.25, double: true },
+  mail: { label: 'Chainmail (tint)', group: 'Gear', color: '#a3abb3', rough: 0.36, metal: 0.82, tex: 'mail', tile: 0.14, bump: 2.2, double: true },
+  ironwood: { label: 'Ironwood haft', group: 'Gear', color: '#4a3626', rough: 0.75, metal: 0, tex: 'bark', tile: 0.35 },
+  ivory: { label: 'Bone ivory', group: 'Gear', color: '#d8ccb0', rough: 0.55, metal: 0, tex: 'plaster', tile: 0.3 },
+  // Smithing stock: neutral bases meant to be tinted by a resource compound's colours.
+  forged: { label: 'Forged stock (tint)', group: 'Gear', color: '#c9ccd0', rough: 0.36, metal: 0.86, tex: 'hammered', tile: 0.3 },
+  forged_rough: { label: 'Rough-forged stock (tint)', group: 'Gear', color: '#b8bbbf', rough: 0.62, metal: 0.72, tex: 'hammered', tile: 0.22 },
+  polished: { label: 'Polished edge (tint)', group: 'Gear', color: '#e4e8ec', rough: 0.18, metal: 0.95, tex: null, tile: 1 },
+  crystal: { label: 'Grown crystal (tint)', group: 'Gear', color: '#ffffff', rough: 0.12, metal: 0.15, emissive: '#ffffff', emissiveTint: true, glow: 0.35, tex: null, tile: 1, flat: true },
+  glowline: { label: 'Light channel (tint)', group: 'Gear', color: '#ffffff', rough: 0.3, metal: 0, emissive: '#ffffff', emissiveTint: true, glow: 1.6, tex: null, tile: 1 },
+  timber_stock: { label: 'Timber stock (tint)', group: 'Gear', color: '#a88a68', rough: 0.78, metal: 0, tex: 'bark', tile: 0.3 },
+  glass: { label: 'Bottle glass (tint)', group: 'Gear', color: '#b9cdd6', rough: 0.08, metal: 0, opacity: 0.22, double: true, tex: null, tile: 1 },
+  draught: { label: 'Potion liquid (tint)', group: 'Gear', color: '#ffffff', rough: 0.35, metal: 0, emissive: '#ffffff', emissiveTint: true, glow: 0.3, tex: null, tile: 1 },
+  cork: { label: 'Cork', group: 'Gear', color: '#a57d52', rough: 0.95, metal: 0, tex: 'plaster', tile: 0.15 },
+  wax: { label: 'Sealing wax (tint)', group: 'Gear', color: '#9b2a2a', rough: 0.55, metal: 0, tex: null, tile: 1 },
+  parchment: { label: 'Parchment label', group: 'Gear', color: '#e3d4ae', rough: 0.9, metal: 0, tex: 'plaster', tile: 0.12, double: true },
 };
 
 // ---------------------------------------------------------------------------------------------
 // Procedural textures (256px, neutral detail; decals in colour). Browser only.
 // ---------------------------------------------------------------------------------------------
-export const TEXTURES = ['ashlar', 'brick', 'cobble', 'plaster', 'planks', 'bark', 'shingles', 'hammered', 'plate', 'leaf', 'grass', 'dirt', 'rock', 'stripes', 'sigil', 'clock'];
+export const TEXTURES = ['ashlar', 'brick', 'cobble', 'plaster', 'planks', 'bark', 'shingles', 'hammered', 'plate', 'leaf', 'grass', 'dirt', 'rock', 'stripes', 'sigil', 'clock', 'leather', 'weave', 'mail'];
 const TEX_SIZE = 256;
 
 function px(ctx, r) {
@@ -347,6 +370,76 @@ export function drawTexture(ctx, key, seed = 7) {
       }
       break;
     }
+    case 'leather': {
+      noiseFill(ctx, seed + 5, 9, 175, 225, 4);
+      // Pebbled grain and a few soft creases.
+      for (let i = 0; i < 2600; i++) {
+        ctx.fillStyle = `rgba(0,0,0,${0.04 + r() * 0.06})`;
+        ctx.fillRect(r() * S, r() * S, 1.5, 1.5);
+      }
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 9; i++) {
+        const x = r() * S;
+        const y = r() * S;
+        const a = r() * Math.PI;
+        const l = 20 + r() * 50;
+        ctx.strokeStyle = `rgba(30,20,12,${0.12 + r() * 0.12})`;
+        ctx.lineWidth = 1 + r() * 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.quadraticCurveTo(x + Math.cos(a + 0.6) * l * 0.5, y + Math.sin(a + 0.6) * l * 0.5, x + Math.cos(a) * l, y + Math.sin(a) * l);
+        ctx.stroke();
+      }
+      break;
+    }
+    case 'weave': {
+      // Fine twill: thin diagonal threads, low contrast, so cloth reads as fabric rather than dots.
+      noiseFill(ctx, seed + 11, 4, 198, 228, 3);
+      const n = 64;
+      const c = S / n;
+      for (let y = 0; y < n; y++)
+        for (let x = 0; x < n; x++) {
+          const over = (x + 2 * y) % 4 < 2;
+          ctx.fillStyle = over ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.07)';
+          ctx.fillRect(x * c, y * c + (over ? 0.5 : 0), c, c - 0.5);
+        }
+      break;
+    }
+    case 'mail': {
+      // Riveted chainmail: staggered rows of thick interlocking rings, each shaded like a raised wire
+      // (light upper-left, dark lower-right) over dark gaps. Doubles as the bump map.
+      ctx.fillStyle = '#1e1e1e';
+      ctx.fillRect(0, 0, S, S);
+      const cols = 12;
+      const rows = 16;
+      const cw = S / cols;
+      const rh = S / rows;
+      const R = cw * 0.56;
+      const wire = cw * 0.2;
+      const ring = (x, y) => {
+        const g = ctx.createLinearGradient(x - R, y - R, x + R, y + R);
+        g.addColorStop(0, '#f2f2f2');
+        g.addColorStop(0.45, '#b4b4b4');
+        g.addColorStop(1, '#4a4a4a');
+        ctx.strokeStyle = g;
+        ctx.lineWidth = wire;
+        ctx.beginPath();
+        ctx.ellipse(x, y, R, R * 0.82, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+        ctx.lineWidth = wire * 0.28;
+        ctx.beginPath();
+        ctx.ellipse(x, y, R + wire * 0.12, R * 0.82 + wire * 0.12, 0, Math.PI * 1.05, Math.PI * 1.6);
+        ctx.stroke();
+      };
+      for (let row = -1; row <= rows; row++)
+        for (let col = -1; col <= cols; col++) {
+          const x = (col + (row % 2 ? 0.5 : 0)) * cw;
+          const y = row * rh;
+          for (const dx of [0, S, -S]) for (const dy of [0, S, -S]) if (Math.abs(dx) + Math.abs(dy) <= S) ring(x + dx, y + dy);
+        }
+      break;
+    }
     case 'stripes': {
       for (let i = 0; i < 8; i++) {
         ctx.fillStyle = i % 2 ? '#e8dcc0' : '#2c4f8a';
@@ -499,14 +592,20 @@ export class MaterialBank {
       side: d.double ? THREE.DoubleSide : THREE.FrontSide,
     });
     if (d.emissive) {
-      m.emissive = new THREE.Color(d.emissive);
+      m.emissive = new THREE.Color(d.emissiveTint && tint ? tint : d.emissive);
       m.emissiveIntensity = d.glow ?? 1;
     }
     if (d.opacity !== undefined && d.opacity < 1) {
       m.transparent = true;
       m.opacity = d.opacity;
+      // Thin double-sided shells (bottle glass) must not hide what they contain.
+      if (d.double) m.depthWrite = false;
     }
     if (d.tex && textureFactory) m.map = textureFactory(d.tex);
+    if (d.bump && m.map) {
+      m.bumpMap = m.map;
+      m.bumpScale = d.bump;
+    }
     if (d.image && textureFactory?.fromImage) m.map = textureFactory.fromImage(key, d.image);
     this.cache.set(id, m);
     return m;
@@ -522,7 +621,7 @@ export const SHAPES = {
   cylinder: { label: 'Cylinder', base: true, p: { rt: 0.5, rb: 0.5, h: 1, seg: 16 } },
   cone: { label: 'Cone', base: true, p: { r: 0.5, h: 1, seg: 16 } },
   sphere: { label: 'Sphere / dome', base: false, p: { r: 0.5, seg: 16, hemi: false } },
-  torus: { label: 'Ring / torus', base: false, p: { r: 0.5, tube: 0.08, arc: 360, seg: 24 } },
+  torus: { label: 'Ring / torus', base: false, p: { r: 0.5, tube: 0.08, arc: 360, seg: 24, sides: 8 } },
   prism: { label: 'Gable roof', base: true, p: { w: 2, h: 1, d: 2, overhang: 0 } },
   pyramid: { label: 'Pyramid roof', base: true, p: { w: 2, h: 1, d: 2 } },
   arch: { label: 'Arch wall', base: true, p: { w: 3, h: 3.4, d: 0.6, ow: 1.6, oh: 1.8 } },
@@ -533,7 +632,19 @@ export const SHAPES = {
   rock: { label: 'Rock', base: false, p: { r: 0.8, seed: 1, detail: 1, rough: 0.35 } },
   terrain: { label: 'Terrain patch', base: true, p: { size: 20, seg: 48, height: 3, seed: 1, style: 'hills', flat: 0, edge: true } },
   banner: { label: 'Banner cloth', base: true, p: { w: 1, h: 2, wave: 0.08 } },
+  // A cloth sheet on a regular grid (cols x rows), hung from its top edge at the origin: the top edge
+  // wraps an arc (wrap degrees) and droops at the ends (slope); the sheet widens to flare at the hem,
+  // falls away behind (drape) and is cut by hem: 0 straight, 1 round, 2 point, 3 swallowtail,
+  // 4 scallop, 5 torn. u0/u1 take part of the arc (split tails). A band (r0..r1, c0..c1, -1 = to the
+  // end) offset along the normal makes linings, hem trims and sigils that follow the same cloth.
+  // group ties sheets to one simulated cloth at runtime (Forge playtest). Faces -Z (outward on a back).
+  cloth: { label: 'Cloth sheet', base: false, p: { w: 0.42, h: 1.1, cols: 13, rows: 18, wrap: 90, slope: 0.03, flare: 1.4, drape: 0.12, billow: 0.012, hem: 1, hemDepth: 0.06, scallops: 6, seed: 1, u0: 0, u1: 1, r0: 0, r1: -1, c0: 0, c1: -1, offset: 0, group: 0 } },
   plane: { label: 'Flat plane', base: true, p: { w: 4, d: 4 } },
+  blade: { label: 'Blade', base: true, p: { len: 0.8, w: 0.06, thick: 0.012, bevel: 0.45, tip: 0.12, taper: 0.25, curve: 0, seg: 8, pts: [] } },
+  extrude: { label: 'Extruded outline', base: false, p: { pts: [[-0.2, -0.2], [0.2, -0.2], [0.25, 0.15], [0, 0.3], [-0.25, 0.15]], depth: 0.04, bevel: 0.008, curve: 0, wedge: 0 } },
+  sweep: { label: 'Swept tube', base: false, p: { pts: [[0, 0], [0.2, 0.3], [0, 0.6]], r: 0.03, r2: 0.03, flat: 1, sides: 8, seg: 12 } },
+  loft: { label: 'Lofted shell (fitted)', base: false, p: { pts: [[0, 0, 0, 0.15, 0.1, 0.1], [0.3, 0, 0, 0.17, 0.12, 0.11], [0.5, 0, 0, 0.12, 0.08, 0.08]], power: 2.2, thick: 0, seg: 20 } },
+  crystal: { label: 'Crystal facet', base: true, p: { r: 0.03, h: 0.1, sides: 6, lean: 0, tip: 0.3 } },
 };
 export const TERRAIN_STYLES = ['hills', 'mesa', 'ridge', 'crater', 'flat'];
 
@@ -586,6 +697,108 @@ export function terrainHeight(p, x, z) {
   return hh;
 }
 
+/** Full rest grid of a cloth sheet: positions and outward normals, row-major (r * cols + c). */
+export function clothGrid(p) {
+  const cols = Math.max(3, Math.min(40, Math.round(p.cols)));
+  const rows = Math.max(3, Math.min(48, Math.round(p.rows)));
+  const R = mulberry(Math.round(p.seed * 1000) + 7);
+  const torn = Array.from({ length: cols }, () => R());
+  const wrap = THREE.MathUtils.degToRad(Math.max(0, Math.min(220, p.wrap)));
+  const pos = new Float32Array(cols * rows * 3);
+  for (let r = 0; r < rows; r++) {
+    const t = r / (rows - 1);
+    for (let c = 0; c < cols; c++) {
+      const uf = p.u0 + (p.u1 - p.u0) * (c / (cols - 1)); // 0..1 across the whole arc
+      const u = uf - 0.5;
+      // Hem: how far down this column reaches (fraction of h), measured across this sheet (a split
+      // tail cut from part of the arc gets its own point or curve).
+      let L = 1;
+      const a = Math.abs(c / (cols - 1) - 0.5) * 2;
+      switch (Math.round(p.hem)) {
+        case 1: L = 1 - p.hemDepth * a * a; break;
+        case 2: L = 1 - p.hemDepth * a; break;
+        case 3: L = 1 - p.hemDepth * (1 - a); break;
+        case 4: L = 1 - p.hemDepth * 0.5 * (1 - Math.cos(uf * Math.PI * 2 * Math.max(1, p.scallops))); break;
+        case 5: L = 1 - p.hemDepth * (0.35 * a + 0.65 * torn[c]); break;
+      }
+      // The local split tails (u0/u1 not spanning the arc) point at their own outer corner.
+      const y = -t * p.h * L - p.slope * a * a * (1 - t);
+      const width = p.w * (1 + (p.flare - 1) * Math.pow(t, 0.85));
+      const wr = wrap * (1 - 0.75 * t);
+      let x;
+      let z;
+      if (wr < 1e-3) {
+        x = u * width;
+        z = 0;
+      } else {
+        const Rr = width / wr;
+        x = Rr * Math.sin(u * wr);
+        z = Rr * (1 - Math.cos(u * wr));
+      }
+      z -= p.drape * Math.pow(t, 1.4) - p.billow * Math.sin(uf * Math.PI * 5 + p.seed * 3) * t;
+      pos.set([x, y, z], (r * cols + c) * 3);
+    }
+  }
+  const nrm = new Float32Array(cols * rows * 3);
+  const P = (r, c) => new THREE.Vector3().fromArray(pos, (Math.max(0, Math.min(rows - 1, r)) * cols + Math.max(0, Math.min(cols - 1, c))) * 3);
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+      const du = P(r, c + 1).sub(P(r, c - 1));
+      const dv = P(r + 1, c).sub(P(r - 1, c));
+      const n = new THREE.Vector3().crossVectors(du, dv).normalize();
+      nrm.set(n.toArray(), (r * cols + c) * 3);
+    }
+  return { cols, rows, pos, nrm };
+}
+function mulberry(a) {
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+/** Band of a cloth grid as an indexed sheet with its own 0..1 UVs (decal materials use them). */
+export function clothBand(p) {
+  const { cols, rows } = clothGrid(p);
+  const r0 = Math.max(0, Math.min(rows - 2, Math.round(p.r0)));
+  const r1 = p.r1 < 0 ? rows - 1 : Math.max(r0 + 1, Math.min(rows - 1, Math.round(p.r1)));
+  const c0 = Math.max(0, Math.min(cols - 2, Math.round(p.c0)));
+  const c1 = p.c1 < 0 ? cols - 1 : Math.max(c0 + 1, Math.min(cols - 1, Math.round(p.c1)));
+  return { cols, rows, r0, r1, c0, c1 };
+}
+function clothGeometry(p) {
+  const { cols, pos, nrm } = clothGrid(p);
+  const { r0, r1, c0, c1 } = clothBand(p);
+  const bc = c1 - c0 + 1;
+  const br = r1 - r0 + 1;
+  const out = new Float32Array(bc * br * 3);
+  const uv = new Float32Array(bc * br * 2);
+  for (let r = 0; r < br; r++)
+    for (let c = 0; c < bc; c++) {
+      const i = ((r0 + r) * cols + (c0 + c)) * 3;
+      const o = (r * bc + c) * 3;
+      for (let k = 0; k < 3; k++) out[o + k] = pos[i + k] + nrm[i + k] * p.offset;
+      uv.set([1 - c / (bc - 1), 1 - r / (br - 1)], (r * bc + c) * 2);
+    }
+  const idx = [];
+  for (let r = 0; r < br - 1; r++)
+    for (let c = 0; c < bc - 1; c++) {
+      const a = r * bc + c;
+      const b = a + 1;
+      const d = a + bc;
+      const e = d + 1;
+      idx.push(a, d, b, b, d, e);
+    }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(out, 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
 export function shapeGeometry(shape, p) {
   switch (shape) {
     case 'box':
@@ -597,7 +810,7 @@ export function shapeGeometry(shape, p) {
     case 'sphere':
       return new THREE.SphereGeometry(p.r, Math.max(4, p.seg | 0), Math.max(3, (p.seg / 2) | 0), 0, Math.PI * 2, 0, p.hemi ? Math.PI / 2 : Math.PI);
     case 'torus':
-      return new THREE.TorusGeometry(p.r, p.tube, 8, Math.max(6, p.seg | 0), THREE.MathUtils.degToRad(Math.max(1, Math.min(360, p.arc))));
+      return new THREE.TorusGeometry(p.r, p.tube, Math.max(3, Math.min(16, (p.sides ?? 8) | 0)), Math.max(6, p.seg | 0), THREE.MathUtils.degToRad(Math.max(1, Math.min(360, p.arc))));
     case 'prism': {
       const w = p.w / 2 + (p.overhang ?? 0);
       const s = new THREE.Shape([new THREE.Vector2(-w, 0), new THREE.Vector2(w, 0), new THREE.Vector2(0, p.h)]);
@@ -696,6 +909,8 @@ export function shapeGeometry(shape, p) {
       g.computeVertexNormals();
       return g;
     }
+    case 'cloth':
+      return clothGeometry(p);
     case 'banner': {
       const g = new THREE.PlaneGeometry(p.w, p.h, 6, 8);
       const pos = g.attributes.position;
@@ -712,9 +927,273 @@ export function shapeGeometry(shape, p) {
       g.rotateX(-Math.PI / 2);
       return g;
     }
+    case 'blade':
+      return bladeGeometry(p);
+    case 'extrude':
+      return extrudeGeometry(p);
+    case 'sweep':
+      return sweepGeometry(p);
+    case 'loft':
+      return loftGeometry(p);
+    case 'crystal':
+      return crystalGeometry(p);
     default:
       return onBase(new THREE.BoxGeometry(1, 1, 1));
   }
+}
+
+/**
+ * Blade: a lofted hexagonal (diamond-bevelled) cross-section standing on its base along +Y, flat
+ * shaded so the bevels read. Width profile from pts [[t 0..1, width fraction]] or from taper + tip;
+ * curve bends it towards +X (sabres, kukris).
+ */
+function bladeGeometry(p) {
+  const L = Math.max(0.01, p.len);
+  const W = Math.max(0.002, p.w);
+  const b = Math.max(0.05, Math.min(0.95, p.bevel));
+  let prof = (p.pts ?? []).filter((q) => Array.isArray(q)).map(([t, f]) => [Math.max(0, Math.min(1, t)), Math.max(0, f)]);
+  if (prof.length < 2) {
+    const tip = Math.max(0.01, Math.min(0.9, p.tip / L));
+    prof = [[0, 1], [1 - tip, Math.max(0.05, 1 - p.taper)], [1, 0]];
+  }
+  prof.sort((a, c) => a[0] - c[0]);
+  if (prof[0][0] > 0) prof.unshift([0, prof[0][1]]);
+  const fAt = (t) => {
+    for (let i = 1; i < prof.length; i++)
+      if (t <= prof[i][0]) {
+        const [t0, f0] = prof[i - 1];
+        const [t1, f1] = prof[i];
+        return f0 + (f1 - f0) * ((t - t0) / Math.max(1e-6, t1 - t0));
+      }
+    return prof[prof.length - 1][1];
+  };
+  const fMax = Math.max(...prof.map((q) => q[1]), 1e-3);
+  const ts = new Set(prof.map((q) => q[0]));
+  const n = Math.max(2, p.seg | 0);
+  for (let i = 0; i <= n; i++) ts.add(i / n);
+  const tl = [...ts].filter((t) => t <= prof[prof.length - 1][0] + 1e-9).sort((a, c) => a - c);
+  const rings = tl.map((t) => {
+    const f = fAt(t);
+    const hw = (W / 2) * f;
+    const th = (p.thick / 2) * (0.35 + (0.65 * f) / fMax);
+    const x0 = p.curve * L * t * t;
+    const y = t * L;
+    if (hw < 1e-5) return [[x0, y, 0]];
+    const k = hw * (1 - b);
+    return [[x0 - hw, y, 0], [x0 - k, y, th], [x0 + k, y, th], [x0 + hw, y, 0], [x0 + k, y, -th], [x0 - k, y, -th]];
+  });
+  const out = [];
+  const tri = (a, c, d) => out.push(...a, ...d, ...c); // wound outward
+  for (let i = 0; i < rings.length - 1; i++) {
+    const A = rings[i];
+    const B = rings[i + 1];
+    for (let j = 0; j < 6; j++) {
+      const a0 = A[j % A.length];
+      const a1 = A[(j + 1) % 6 % A.length];
+      const b0 = B[j % B.length];
+      const b1 = B[(j + 1) % 6 % B.length];
+      if (A.length > 1) tri(a0, b0, a1);
+      if (B.length > 1) tri(a1, b0, b1);
+    }
+  }
+  const capRing = (R, flip) => {
+    if (R.length < 3) return;
+    for (let j = 1; j < 5; j++) (flip ? tri(R[0], R[j + 1], R[j]) : tri(R[0], R[j], R[j + 1]));
+  };
+  capRing(rings[0], false);
+  capRing(rings[rings.length - 1], true);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(out, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+/** Extruded 2D outline (XY), centred on Z; curve bows it (shields), wedge thins it towards +X (or -X if negative). */
+function extrudeGeometry(p) {
+  const pts = (p.pts ?? []).filter((q) => Array.isArray(q)).map(([x, y]) => new THREE.Vector2(x, y));
+  if (pts.length < 3) pts.splice(0, pts.length, new THREE.Vector2(-0.1, -0.1), new THREE.Vector2(0.1, -0.1), new THREE.Vector2(0, 0.1));
+  const depth = Math.max(0.001, p.depth);
+  const bevel = Math.max(0, Math.min(p.bevel, depth));
+  const g = new THREE.ExtrudeGeometry(new THREE.Shape(pts), { depth, bevelEnabled: bevel > 0, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 1, curveSegments: 6 });
+  g.translate(0, 0, -depth / 2);
+  g.computeBoundingBox();
+  const bb = g.boundingBox;
+  const pos = g.attributes.position;
+  const wx = Math.max(1e-6, bb.max.x - bb.min.x);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    let z = pos.getZ(i);
+    if (p.wedge) {
+      const t = p.wedge > 0 ? (x - bb.min.x) / wx : (bb.max.x - x) / wx;
+      z *= 1 - Math.min(0.95, Math.abs(p.wedge)) * Math.pow(t, 1.5);
+    }
+    if (p.curve) z -= p.curve * (x * x + 0.35 * pos.getY(i) * pos.getY(i));
+    pos.setZ(i, z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
+/** Tapered tube along a smooth path through pts in the XY plane; flat widens it along Z (bow limbs). */
+function sweepGeometry(p) {
+  const raw = (p.pts ?? []).filter((q) => Array.isArray(q)).map(([x, y]) => new THREE.Vector3(x, y, 0));
+  if (raw.length < 2) raw.splice(0, raw.length, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0.5, 0));
+  const curve = new THREE.CatmullRomCurve3(raw, false, 'centripetal');
+  const sides = Math.max(3, Math.min(24, p.sides | 0));
+  const steps = Math.max(4, Math.min(240, (p.seg | 0) * (raw.length - 1)));
+  const pos = [];
+  const idx = [];
+  const P = new THREE.Vector3();
+  const T = new THREE.Vector3();
+  for (let i = 0; i <= steps; i++) {
+    const u = i / steps;
+    curve.getPointAt(u, P);
+    curve.getTangentAt(u, T);
+    const nx = -T.y;
+    const ny = T.x;
+    const nl = Math.hypot(nx, ny) || 1;
+    const r = p.r + (p.r2 - p.r) * u;
+    for (let j = 0; j < sides; j++) {
+      const a = (j / sides) * Math.PI * 2;
+      const c = Math.cos(a) * r;
+      pos.push(P.x + (nx / nl) * c, P.y + (ny / nl) * c, Math.sin(a) * r * p.flat);
+    }
+  }
+  for (let i = 0; i < steps; i++)
+    for (let j = 0; j < sides; j++) {
+      const a = i * sides + j;
+      const b = i * sides + ((j + 1) % sides);
+      idx.push(a, b, a + sides, b, b + sides, a + sides);
+    }
+  for (const [ring, flip] of [[0, true], [steps, false]]) {
+    const c = pos.length / 3;
+    curve.getPointAt(ring / steps, P);
+    pos.push(P.x, P.y, 0);
+    for (let j = 0; j < sides; j++) {
+      const a = ring * sides + j;
+      const b = ring * sides + ((j + 1) % sides);
+      if (flip) idx.push(c, a, b);
+      else idx.push(c, b, a);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
+ * Lofted shell: superellipse rings stacked along Y. Each point is [y, centreX, centreZ, halfWidth,
+ * frontDepth, backDepth], so a ring can hug an asymmetric body cross-section (chest deeper in front
+ * than behind). thick > 0 makes a hollow shell with rolled rims (open ends); thick = 0 is solid with caps.
+ */
+function loftGeometry(p) {
+  const rings = (p.pts ?? [])
+    .filter((q) => Array.isArray(q) && q.length >= 4)
+    .map(([y, cx = 0, cz = 0, hx = 0.1, zf = hx, zb = zf]) => [y, cx, cz, Math.max(0.0005, hx), Math.max(0.0005, zf), Math.max(0.0005, zb)])
+    .sort((a, b) => a[0] - b[0]);
+  if (rings.length < 2) rings.splice(0, rings.length, [0, 0, 0, 0.1, 0.1, 0.1], [0.2, 0, 0, 0.1, 0.1, 0.1]);
+  const seg = Math.max(6, Math.min(48, p.seg | 0));
+  const e = 2 / Math.max(1, Math.min(6, p.power || 2));
+  const t = Math.max(0, p.thick || 0);
+  const pos = [];
+  const idx = [];
+  const ringPts = (ring, inset) => {
+    const [y, cx, cz, hx, zf, zb] = ring;
+    const out = [];
+    for (let j = 0; j < seg; j++) {
+      const a = (j / seg) * Math.PI * 2;
+      const c = Math.cos(a);
+      const sn = Math.sin(a);
+      const x = cx + Math.sign(c) * Math.abs(c) ** e * Math.max(0.0003, hx - inset);
+      const z = cz + Math.sign(sn) * Math.abs(sn) ** e * Math.max(0.0003, (sn >= 0 ? zf : zb) - inset);
+      out.push([x, y, z]);
+    }
+    return out;
+  };
+  const layers = t > 0 ? [0, t] : [0];
+  const base = [];
+  for (const inset of layers) {
+    base.push(pos.length / 3);
+    for (const ring of rings) for (const q of ringPts(ring, inset)) pos.push(...q);
+  }
+  const n = rings.length;
+  for (let L = 0; L < layers.length; L++) {
+    const b0 = base[L];
+    for (let i = 0; i < n - 1; i++)
+      for (let j = 0; j < seg; j++) {
+        const a = b0 + i * seg + j;
+        const b = b0 + i * seg + ((j + 1) % seg);
+        const c = a + seg;
+        const d = b + seg;
+        if (L === 0) idx.push(a, c, b, b, c, d);
+        else idx.push(a, b, c, b, d, c);
+      }
+  }
+  if (t > 0) {
+    // Rims joining outer and inner walls at both open ends.
+    for (const [i, flip] of [[0, true], [n - 1, false]])
+      for (let j = 0; j < seg; j++) {
+        const o0 = base[0] + i * seg + j;
+        const o1 = base[0] + i * seg + ((j + 1) % seg);
+        const i0 = base[1] + i * seg + j;
+        const i1 = base[1] + i * seg + ((j + 1) % seg);
+        if (flip) idx.push(o0, o1, i0, o1, i1, i0);
+        else idx.push(o0, i0, o1, o1, i0, i1);
+      }
+  } else {
+    for (const [i, flip] of [[0, true], [n - 1, false]]) {
+      const [y, cx, cz] = rings[i];
+      const c = pos.length / 3;
+      pos.push(cx, y, cz);
+      for (let j = 0; j < seg; j++) {
+        const a = base[0] + i * seg + j;
+        const b = base[0] + i * seg + ((j + 1) % seg);
+        if (flip) idx.push(c, a, b);
+        else idx.push(c, b, a);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/** Faceted crystal growing from its base along +Y: flared waist, pointed termination, optional lean. */
+function crystalGeometry(p) {
+  const sides = Math.max(3, Math.min(10, p.sides | 0));
+  const R = Math.max(0.001, p.r);
+  const H = Math.max(0.002, p.h);
+  const tip = Math.max(0.05, Math.min(0.9, p.tip ?? 0.3));
+  const lv = [
+    [0, R * 0.72, 0],
+    [H * (1 - tip), R, p.lean * 0.6],
+    [H, R * 0.04, p.lean],
+  ];
+  const pos = [];
+  const ring = (y, r, lean) => Array.from({ length: sides }, (_, j) => {
+    const a = (j / sides) * Math.PI * 2;
+    return [Math.cos(a) * r + lean, y, Math.sin(a) * r];
+  });
+  const R0 = ring(...lv[0]);
+  const R1 = ring(...lv[1]);
+  const R2 = ring(...lv[2]);
+  const tri = (a, b, c) => pos.push(...a, ...b, ...c);
+  for (const [A, B] of [[R0, R1], [R1, R2]])
+    for (let j = 0; j < sides; j++) {
+      const k = (j + 1) % sides;
+      tri(A[j], B[j], A[k]);
+      tri(A[k], B[j], B[k]);
+    }
+  for (let j = 1; j < sides - 1; j++) tri(R0[0], R0[j], R0[j + 1]);
+  for (let j = 1; j < sides - 1; j++) tri(R2[0], R2[j + 1], R2[j]);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals();
+  return g;
 }
 
 /** World-scale box-projected UVs so textures tile at the same density on every part. */
@@ -780,6 +1259,19 @@ export function recipe(id, name, category, parts, extra = {}) {
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const vec = (v, d) => (Array.isArray(v) && v.length === 3 ? v.map((x, i) => num(x, d[i])) : d.slice());
 
+/** Recipe metadata (e.g. equipment slot, grip point): small JSON of plain values only. */
+function cleanMeta(m) {
+  if (!m || typeof m !== 'object' || Array.isArray(m)) return null;
+  try {
+    const s = JSON.stringify(m);
+    if (s.length > 16000) return null;
+    const o = JSON.parse(s, (k, v) => (typeof v === 'string' ? v.slice(0, 120) : v));
+    return o && typeof o === 'object' ? o : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Validate + normalise untrusted recipe JSON (imports, shared library). Throws on garbage. */
 export function normalizeRecipe(r) {
   if (!r || typeof r !== 'object') throw new Error('Not a recipe: expected a JSON object.');
@@ -792,7 +1284,8 @@ export function normalizeRecipe(r) {
     version: RECIPE_VERSION,
     id: clean(r.id || uid('m'), 60).replace(/[^\w-]/g, '_') || uid('m'),
     name: clean(r.name || 'Untitled model'),
-    category: ['buildings', 'environment', 'terrain', 'props', 'aesthetic', 'imported'].includes(r.category) ? r.category : 'props',
+    category: ['buildings', 'environment', 'terrain', 'props', 'aesthetic', 'equipment', 'imported'].includes(r.category) ? r.category : 'props',
+    ...(cleanMeta(r.meta) ? { meta: cleanMeta(r.meta) } : {}),
     notes: clean(r.notes, 2000),
     tags: Array.isArray(r.tags) ? r.tags.slice(0, 12).map((t) => clean(t, 24)) : [],
     parts: r.parts.map((p) => {
@@ -800,7 +1293,7 @@ export function normalizeRecipe(r) {
       const params = { ...structuredClone(SHAPES[shape].p) };
       for (const [k, dv] of Object.entries(params)) {
         const v = p?.params?.[k];
-        if (k === 'pts') params.pts = Array.isArray(v) ? v.slice(0, 64).map((q) => [num(q?.[0]), num(q?.[1])]) : dv;
+        if (k === 'pts') params.pts = Array.isArray(v) ? v.slice(0, 96).map((q) => (Array.isArray(q) ? q.slice(0, 6) : []).map((x) => num(x))).filter((q) => q.length >= 2) : dv;
         else if (k === 'style') params.style = TERRAIN_STYLES.includes(v) ? v : dv;
         else if (typeof dv === 'boolean') params[k] = typeof v === 'boolean' ? v : dv;
         else params[k] = num(v, dv);
@@ -814,6 +1307,7 @@ export function normalizeRecipe(r) {
         scale: vec(p?.scale, [1, 1, 1]),
         mat: clean(p?.mat || 'chapter_stone', 40),
         tint: typeof p?.tint === 'string' && /^#[0-9a-f]{6}$/i.test(p.tint) ? p.tint : null,
+        ...(typeof p?.bone === 'string' && /^[A-Za-z0-9_]{1,40}$/.test(p.bone) ? { bone: p.bone } : {}),
         params,
       };
     }),
@@ -841,6 +1335,8 @@ export function buildModel(r, bank) {
     mesh.castShadow = !(d.opacity < 1) && p.shape !== 'terrain' && p.shape !== 'plane';
     mesh.receiveShadow = true;
     mesh.userData.partId = p.id;
+    if (p.bone) mesh.userData.bone = p.bone;
+    if (p.shape === 'cloth') mesh.userData.cloth = { ...p.params };
     group.add(mesh);
   }
   return group;

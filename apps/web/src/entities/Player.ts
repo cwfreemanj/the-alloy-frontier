@@ -10,6 +10,7 @@ import type { ColliderWorld } from '@alloy/world';
 import { playableSdf } from '@alloy/world';
 import { ATTACK_POSES, POSE_BLOCK, POSE_DEAD, POSE_DODGE, POSE_GATHER, POSE_GUARD, POSE_STAGGER, Rig, easeIn, easeOut, locomotionPose, mixPose, type Pose } from './Rig';
 import { buildSword, type SwordVisual } from './Weapons';
+import { GearRack, type WornGear } from './Gear';
 import { CharacterBody, DEFAULT_PLAYER_CHARACTER, clipMeta, createBody, phaseClipTime, type AnimRequest, type PlayerCharacterId } from './models/Characters';
 import { playerAnims } from './models/animSets';
 
@@ -106,6 +107,12 @@ export class Player {
     this.body.rHand.add(this.sword.group);
   }
 
+  /** Shield and helmet on the body (forge expansion). */
+  private readonly gearRack = new GearRack(() => this.body);
+  setGear(gear: WornGear): void {
+    this.gearRack.set(gear);
+  }
+
   /** Swap the character model (keeps the equipped weapon). */
   setCharacter(id: PlayerCharacterId): void {
     if (id === this.character && this.body instanceof CharacterBody) return;
@@ -116,6 +123,7 @@ export class Player {
     this.body = makePlayerBody(id);
     this.object.add(this.body.root);
     this.body.rHand.add(this.sword.group);
+    this.gearRack.refresh();
   }
 
   /** Idle presentation while the game isn't simulating (title screen). */

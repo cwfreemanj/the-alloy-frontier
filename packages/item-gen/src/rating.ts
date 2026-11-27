@@ -1,5 +1,5 @@
 import { LIMITS } from './formulas';
-import type { Rarity, WeaponStats } from './types';
+import type { GearBonuses, Rarity, WeaponStats } from './types';
 import { RARITY_ORDER } from './types';
 
 /** Rating value an imbuement contributes. */
@@ -15,6 +15,14 @@ export function equipmentRating(stats: WeaponStats, imbuements: readonly string[
   const efficiency = (1 - stats.staminaCostMultiplier) * 400;
   const abilities = imbuements.reduce((s, id) => s + (IMBUEMENT_RATING[id] ?? 40), 0);
   const raw = dps * 10 + stats.stagger * 2 + efficiency + abilities;
+  if (!Number.isFinite(raw)) return LIMITS.maxStat;
+  return Math.max(1, Math.min(LIMITS.maxStat, Math.round(raw)));
+}
+
+/** PROPOSED rating of armor and shields: their defense plus what their bonuses are worth. */
+export function armorRating(defense: number, bonuses: GearBonuses = {}): number {
+  const attrs = Object.values(bonuses.attributes ?? {}).reduce((a, b) => a + b, 0);
+  const raw = defense * 12 + (bonuses.maxHealth ?? 0) * 2 + (bonuses.maxStamina ?? 0) * 2 + attrs * 25;
   if (!Number.isFinite(raw)) return LIMITS.maxStat;
   return Math.max(1, Math.min(LIMITS.maxStat, Math.round(raw)));
 }

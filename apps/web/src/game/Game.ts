@@ -35,6 +35,7 @@ import { Input } from '../core/Input';
 import { PerfMonitor } from '../core/Perf';
 import { Enemy } from '../entities/Enemy';
 import { PLAYER_RADIUS, Player } from '../entities/Player';
+import { wornFromNet } from '../entities/Gear';
 import { Npc, ResourceNode } from '../entities/WorldObjects';
 import { Effects } from '../fx/Effects';
 import { SaveSystem } from '../state/Save';
@@ -507,6 +508,7 @@ export class Game {
       mhp: c.maxHealth,
       wpn: w ? { bp: w.blueprintId, spec: w.forge.specialization, imb: w.result.imbuements.includes('storm_arc'), rar: w.result.rarity } : null,
       mdl: this.character,
+      gr: this.wornGear(),
     };
   }
 
@@ -642,6 +644,7 @@ export class Game {
           break;
         case 'inventory':
           this.forgePanel?.render();
+          this.player.setGear(wornFromNet(this.wornGear()));
           break;
         case 'stats':
           this.applyCharacterStats();
@@ -999,7 +1002,20 @@ export class Game {
   }
 
   /** Max health and stamina come from the character's attributes (shared rules). */
+  /** Worn gear that shows on the character (shield, helmet), in the network form. */
+  private wornGear(): AvatarState['gr'] {
+    const inv = this.session.inventory;
+    const at = (slot: 'offhand' | 'head') => {
+      const id = inv.equipped[slot];
+      return id ? inv.items[id] : undefined;
+    };
+    const o = at('offhand');
+    const hd = at('head');
+    return { ...(o ? { o: o.blueprintId, or: o.result.rarity } : {}), ...(hd ? { h: hd.blueprintId, hr: hd.result.rarity } : {}) };
+  }
+
   private applyCharacterStats(): void {
+    this.player.setGear(wornFromNet(this.wornGear()));
     const st = characterStats(this.session);
     const c = this.player.combat;
     c.maxHealth = st.maxHealth;
