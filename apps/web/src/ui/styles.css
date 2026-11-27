@@ -148,6 +148,11 @@ button.btn.small { padding: 4px 9px; font-size: 12px; }
 .small { font-size: 12px; }
 .tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 2px; border: 1px solid currentColor; letter-spacing: 0.06em; text-transform: uppercase; }
 
+/* Line icons (icons.ts): a default size and stroke everywhere. Screens such as the character window (.cs)
+   and the forge (.fx) size them their own way; without this, an icon outside them (Bram's shop) drew as a
+   huge filled shape. */
+.ico { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; vertical-align: -3px; }
+.stat-table .stat-ico { color: var(--gold, #c9974f); margin-right: 8px; }
 .stat-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .stat-table td { padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
 .stat-table td:nth-child(2), .stat-table td:nth-child(3) { text-align: right; font-family: var(--mono); }
@@ -524,7 +529,7 @@ select, input[type=number] { background: var(--panel-2); color: var(--text); bor
 @media (prefers-reduced-motion: reduce) { .fx .cell.struck, .fx .cell.over-hit, .fx .cell .spark { animation: none; } }
 /* Right column */
 .fx .stat-table td { padding: 5px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
-.fx .stat-table .stat-ico { color: var(--gold); margin-right: 8px; }
+.fx .stat-table .stat-ico { color: var(--gold, #c9974f); margin-right: 8px; }
 .fx .stat-table .arrow { font-size: 9px; margin-right: 3px; }
 .fx-proj-item { display: grid; grid-template-columns: 44px 1fr; gap: 10px; align-items: center; margin-bottom: 6px; }
 .fx-breakdown tr.total td { color: #ffd9a0; background: rgba(224, 164, 74, 0.08); border-top: 1px solid var(--fx-line); }
