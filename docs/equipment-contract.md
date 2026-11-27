@@ -107,3 +107,5 @@ the forge, equipping and the looks could be built and tested.
   stats never come from the generator. The seed is the blueprint id, so a blueprint looks the same for
   everyone at a given rarity.
 - **The quest** counts only weapons for its forging and equipping steps.
+
+**Generated blueprints** (found, dropped, traded) have their own contract: [blueprint-contract.md](blueprint-contract.md).
