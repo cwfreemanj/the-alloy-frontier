@@ -3,6 +3,15 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-27 16:21 — Blueprint contract draft
+- **PR:** 38
+- **Asked for:** Neal: start on the blueprint contract (the creative director's generated blueprints: own rarity, set or item, lore, resources, proficiency, worth; dropped, found, traded, quest rewards).
+- **Done:**
+  - docs/blueprint-contract.md: what generateBlueprint(seed, context) returns (fields, bounds, determinism, versioning, existing materials only), what the game does (server-rolled drops, sealed blueprints stored on the character, forged items keep a copy of their definition, one lookup helper), four decisions to agree (learned vs single use, set pieces, duplicates, the fixed list), and the order of work.
+  - Review items for both directors in docs/NEEDED.md; linked from equipment-contract.md.
+- **Not done / deferred:** No code: building waits for the contract. Trading, set bonuses and quest rewards come later.
+- **Verified:** Docs only. Checked against the code: about 20 blueprint lookups, MaterialId has five gatherable or bought materials, LIMITS and Rng exist. npm run typecheck, npm test (262/262) and npm run build pass.
+
 ## 2026-11-27 11:46 — Proficiency tree proposal for approval
 - **PR:** 37
 - **Asked for:** Neal, after the creative director asked whether a proficiency tree was proposed (his vote: Smithing, Crafting, Alchemy): write the proposal.
