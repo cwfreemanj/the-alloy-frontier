@@ -24,6 +24,7 @@ import {
   type HammerBoard,
   type HammerState,
   type StrikeKind,
+  slotOf,
 } from '@alloy/crafting';
 import { smithXpToNext } from '@alloy/game-rules';
 import {
@@ -60,11 +61,28 @@ const HEAT_COLOR: Record<string, string> = { dull: '#b0442a', cherry: '#ff6a2a',
 const TEMPER_ICON: Record<string, string> = { oil: 'quench', water: 'quench', air: 'feather' };
 const MAT_ICON: Record<string, string> = { iron_ore: 'ore', ironwood: 'log', ironglass: 'crystal', binding_flux: 'flask' };
 
+/** Forge categories (forge expansion, phase 1): which blueprint families each tab lists. */
+const CATEGORIES = [
+  { id: 'swords', label: 'Swords', icon: 'weapon', families: ['longsword'] },
+  { id: 'maces', label: 'Maces', icon: 'hammer', families: ['mace'] },
+  { id: 'shields', label: 'Shields', icon: 'offhand', families: ['shield'] },
+  { id: 'helmets', label: 'Helmets', icon: 'head', families: ['helmet'] },
+  { id: 'body', label: 'Body', icon: 'chest', families: ['chest', 'legs'] },
+] as const;
+type CategoryId = (typeof CATEGORIES)[number]['id'];
+const categoryOf = (bpId: string): (typeof CATEGORIES)[number] => CATEGORIES.find((c) => (c.families as readonly string[]).includes(getBlueprint(bpId)?.family ?? '')) ?? CATEGORIES[0];
+const SLOT_NAMES: Record<string, string> = { weapon: 'Main hand', offhand: 'Off hand', head: 'Head', chest: 'Chest', legs: 'Legs' };
+/** Armor and shields have defense; weapons have damage. */
+const isArmorBp = (bpId: string): boolean => getBlueprint(bpId)?.baseDefense !== undefined;
+/** The number a piece is mostly about: defense for armor, damage for weapons. */
+const mainStat = (i: ItemInstance): number => i.result.defense ?? i.result.damage;
+
 const section = (ico: string, title: string, extra?: HTMLElement | null) => h('h3', { class: 'fx-h' }, icon(ico), h('span', null, title), extra ?? null);
 
 export class ForgePanel {
   readonly el: HTMLElement;
   private blueprintId = 'iron_longsword';
+  private category: CategoryId = 'swords';
   private mode: 'quick' | 'masterwork' = 'quick';
   private buffer = 2;
   private spec: Specialization = 'balanced';
@@ -99,7 +117,9 @@ export class ForgePanel {
     } catch {
       /* storage unavailable: keep tips on */
     }
-    const first = CRAFTABLE_BLUEPRINTS.find((b) => this.canAfford(b.id)) ?? CRAFTABLE_BLUEPRINTS[0];
+    // Open on swords (the quest's blade), on the first one the smith can make.
+    const swords = CRAFTABLE_BLUEPRINTS.filter((b) => categoryOf(b.id).id === 'swords');
+    const first = swords.find((b) => this.canAfford(b.id)) ?? swords[0] ?? CRAFTABLE_BLUEPRINTS[0];
     this.selectBlueprint(first.id);
     if (this.session.passed('quick_forge') && !this.session.passed('masterwork')) this.mode = 'masterwork';
     this.render();
@@ -125,8 +145,17 @@ export class ForgePanel {
     return bp.materials.every((m) => materialTotal(this.session.inventory, m.materialId) >= m.quantity) && materialTotal(this.session.inventory, bp.buffer.materialId) >= bp.buffer.min;
   }
 
+  /** What is in the slot this blueprint's item would go in (the comparison for the projection). */
+  private equippedFor(bpId: string): ItemInstance | null {
+    const slot = getBlueprint(bpId)?.equip?.slot ?? 'weapon';
+    const inv = this.session.inventory;
+    const id = (inv.equipped as Record<string, string | null | undefined>)[slot === 'ring' ? 'ring1' : slot];
+    return id ? (inv.items[id] ?? null) : null;
+  }
+
   private selectBlueprint(id: string): void {
     this.blueprintId = id;
+    this.category = categoryOf(id).id;
     const bp = getBlueprint(id)!;
     // Default to the required minimum; extra buffer is an explicit, previewed choice.
     this.buffer = bp.buffer.min;
@@ -208,8 +237,38 @@ export class ForgePanel {
     const b = this.session.data.progression.professions.blacksmithing;
     const col = h('div', { class: 'forge-col' });
     col.append(section('scroll', 'Blueprints'));
+    // Category tabs: swords, maces, shields, helmets, body armor.
+    col.append(
+      h(
+        'div',
+        { class: 'fx-cats', role: 'tablist', 'aria-label': 'What to forge' },
+        ...CATEGORIES.map((c) =>
+          h(
+            'button',
+            {
+              class: `fx-cat ${c.id === this.category ? 'on' : ''}`,
+              role: 'tab',
+              'aria-selected': String(c.id === this.category),
+              'data-category': c.id,
+              title: c.label,
+              onclick: () => {
+                if (this.busy || c.id === this.category) return;
+                const options = CRAFTABLE_BLUEPRINTS.filter((b) => categoryOf(b.id).id === c.id);
+                const pick = options.find((b) => this.mastery >= b.masteryRequirement && this.canAfford(b.id)) ?? options.find((b) => this.mastery >= b.masteryRequirement) ?? options[0];
+                if (!pick) return;
+                this.selectBlueprint(pick.id);
+                this.txId = this.session.nextTxId('forge');
+                this.render();
+              },
+            },
+            icon(c.icon),
+            h('span', null, c.label),
+          ),
+        ),
+      ),
+    );
     const list = h('div', { class: 'list' });
-    for (const bp of CRAFTABLE_BLUEPRINTS) {
+    for (const bp of CRAFTABLE_BLUEPRINTS.filter((b) => categoryOf(b.id).id === this.category)) {
       const locked = this.mastery < bp.masteryRequirement;
       const afford = this.canAfford(bp.id);
       const reqs = bp.materials.map((m) => {
@@ -232,12 +291,12 @@ export class ForgePanel {
               this.render();
             },
           },
-          h('div', { class: `bp-thumb ${glass ? 'glass' : ''}` }, icon('weapon')),
+          h('div', { class: `bp-thumb ${glass ? 'glass' : ''}` }, icon(categoryOf(bp.id).icon)),
           h(
             'div',
             { class: 'bp-body' },
             h('div', { class: 'row' }, h('span', { class: 'ttl' }, bp.name), h('span', { class: 'spacer' }), locked ? h('span', { class: 'tag bad' }, `Mastery ${bp.masteryRequirement}`) : afford ? h('span', { class: 'tag good' }, 'Ready') : h('span', { class: 'tag dim' }, 'Missing')),
-            h('div', { class: 'sub' }, `${bp.tier} · base ${bp.baseDamage} dmg · ${bp.baseAttackSpeed.toFixed(2)}× speed`),
+            h('div', { class: 'sub' }, bp.baseDefense !== undefined ? `${bp.tier} · base ${bp.baseDefense} defense · ${SLOT_NAMES[bp.equip?.slot ?? 'weapon'] ?? ''}` : `${bp.tier} · base ${bp.baseDamage} dmg · ${bp.baseAttackSpeed.toFixed(2)}× speed`),
             h('div', { class: 'sub reqs' }, ...reqs),
             bp.potentialImbuements.length ? h('div', { class: 'sub cyan' }, icon('storm'), ` Potential: ${bp.potentialImbuements.map((i) => IMBUEMENTS[i]?.name).join(', ')}`) : null,
           ),
@@ -290,7 +349,7 @@ export class ForgePanel {
       col.append(this.orla('Before you strike iron, go see what Bram sells. Know what coin buys, then show me what your hands can do.', true));
       return col;
     }
-    col.append(h('div', { class: 'fx-showcase' }, h('canvas', { class: 'sword', 'aria-label': 'Weapon preview' }), h('div', { class: 'fx-anvil' })));
+    col.append(h('div', { class: 'fx-showcase' }, h('canvas', { class: 'sword', 'aria-label': `${getBlueprint(this.blueprintId)?.name ?? 'Item'} preview` }), h('div', { class: 'fx-anvil' })));
     if (this.mode === 'masterwork' && !this.result) col.append(this.stepTrack());
     const tip = this.tipFor();
     if (tip) col.append(this.orla(tip));
@@ -546,7 +605,7 @@ export class ForgePanel {
   private qualityEffects(score: number): HTMLElement {
     const ff = 0.95 + 0.3 * score;
     const bp = getBlueprint(this.blueprintId);
-    const lines: Array<HTMLElement> = [h('div', { title: 'Structure quality 0% gives ×0.950 damage, 100% gives ×1.250.' }, `Damage ×${ff.toFixed(3)} `, h('span', { class: 'dim' }, '(up to ×1.250 at 100%)'))];
+    const lines: Array<HTMLElement> = [h('div', { title: 'Structure quality 0% gives ×0.950, 100% gives ×1.250.' }, `${isArmorBp(this.blueprintId) ? 'Defense' : 'Damage'} ×${ff.toFixed(3)} `, h('span', { class: 'dim' }, '(up to ×1.250 at 100%)'))];
     const imb = bp?.potentialImbuements[0];
     if (imb) {
       const catalyst = bp!.materials.some((r) => r.materialId === 'ironglass') ? averageQuality(this.session.inventory, 'ironglass') ?? 0 : 0;
@@ -693,8 +752,8 @@ export class ForgePanel {
 
   private renderResult(): HTMLElement {
     const item = this.result!;
-    const eq = this.session.equipped();
-    const isEquipped = eq?.itemId === item.itemId;
+    // In any slot (armor and shields go in their own).
+    const isEquipped = slotOf(this.session.inventory, item.itemId) !== null;
     return h(
       'div',
       { class: 'forge-result fx-result', 'data-testid': 'forge-result', style: `--rarity:${RARITY_COLORS[item.result.rarity]}` },
@@ -716,7 +775,9 @@ export class ForgePanel {
   // ---------------- Right: projection and why ----------------
   private renderRight(): HTMLElement {
     const col = h('div', { class: 'forge-col' });
-    const eq = this.session.equipped();
+    const eq = this.equippedFor(this.blueprintId);
+    const armor = isArmorBp(this.blueprintId);
+    const unit = armor ? 'defense' : 'dmg';
     if (this.result) {
       col.append(section('target', 'Result vs. previously equipped'));
       col.append(statTable(this.result, eq && eq.itemId !== this.result.itemId ? eq : null));
@@ -734,7 +795,7 @@ export class ForgePanel {
       h(
         'div',
         { class: 'fx-proj-item' },
-        h('div', { class: 'bp-thumb' }, icon('weapon')),
+        h('div', { class: 'bp-thumb' }, icon(categoryOf(this.blueprintId).icon)),
         h('div', null, h('b', null, item.displayName), h('div', { class: 'small', style: `color:${RARITY_COLORS[item.result.rarity]}` }, `${RARITY_LABEL[item.result.rarity]} (projected)`)),
       ),
       statTable(item, eq),
@@ -742,7 +803,7 @@ export class ForgePanel {
     if (this.mode === 'masterwork') {
       const lo = this.preview(this.mastery, 0);
       const hi = this.preview(this.mastery, 1);
-      if (lo.ok && hi.ok) col.append(h('div', { class: 'small muted', style: 'margin-top:4px' }, `Forge quality range: ${lo.plan.item.result.damage}–${hi.plan.item.result.damage} damage (0%–100%).`));
+      if (lo.ok && hi.ok) col.append(h('div', { class: 'small muted', style: 'margin-top:4px' }, `Forge quality range: ${mainStat(lo.plan.item)}–${mainStat(hi.plan.item)} ${armor ? 'defense' : 'damage'} (0%–100%).`));
       if (item.potentialImbuements.length) {
         col.append(h('div', { class: item.result.imbuements.length ? 'small cyan' : 'small dim' }, item.result.imbuements.length ? '⚡ Storm Arc would awaken at this quality.' : '⚡ Storm Arc needs ≥60% resonance (forge quality × 0.7 + ironglass quality × 0.3).'));
       }
@@ -754,28 +815,29 @@ export class ForgePanel {
       h(
         'table',
         { class: 'stat-table fx-breakdown' },
-        row('Base material damage', String(r.plan.blueprint.baseDamage), 'What the blueprint deals before any craftsmanship.'),
+        armor ? row('Base defense', String(r.plan.blueprint.baseDefense), 'How well the blueprint protects before any craftsmanship.') : row('Base material damage', String(r.plan.blueprint.baseDamage), 'What the blueprint deals before any craftsmanship.'),
         row(`Smith (mastery ${f.mastery})`, `×${f.smithFactor.toFixed(3)}`, 'Your blacksmithing mastery. It grows with every blade you forge.'),
         row(`Material (q ${Math.round(item.materialQuality * 100)}%)`, `×${f.materialFactor.toFixed(3)}`, 'The average quality of the ore and wood used. Rich deposits make better steel.'),
         row(`Buffer (${item.buffer.quantity} flux)`, `×${f.bufferFactor.toFixed(4)}`, 'Binding Flux used. More helps a little, less each time.'),
         row(`Forge (${this.mode === 'quick' ? 'Quick' : `${Math.round(f.forgeScore * 100)}%`})`, `×${f.forgeFactor.toFixed(3)}`, 'How well the hammering went (Masterwork), or the fixed Quick Forge result.'),
-        row('Formula damage', String(f.formulaDamage), 'All of the above multiplied together.', true),
+        row(armor ? 'Formula defense' : 'Formula damage', String(f.formulaDamage), 'All of the above multiplied together.', true),
       ),
       h('div', { class: 'small dim' }, 'Specialization, tempering and rarity affixes then modify the formula result.'),
     );
     // Novice vs master comparison with the same materials (GDD 5.6 required).
     const master = this.preview(100);
     const novice = this.preview(0);
-    const shop = merchantPreview(MERCHANT_STOCK[0]);
+    // Bram sells a sword: compare it only with swords.
+    const shop = categoryOf(this.blueprintId).id === 'swords' ? merchantPreview(MERCHANT_STOCK[0]) : null;
     if (master.ok && novice.ok) {
       col.append(
         section('users', 'Same steel, different hands'),
         h(
           'table',
           { class: 'stat-table fx-hands' },
-          h('tr', null, h('td', null, 'Novice (mastery 0)'), h('td', null, `${novice.plan.item.result.damage} dmg`), h('td', { class: 'muted' }, `R ${novice.plan.item.result.rating}`)),
-          h('tr', { class: 'you' }, h('td', null, h('b', null, `You (mastery ${this.mastery})`)), h('td', null, h('b', null, `${item.result.damage} dmg`)), h('td', { class: 'muted' }, `R ${item.result.rating}`)),
-          h('tr', null, h('td', null, 'Master Orla (100)'), h('td', null, `${master.plan.item.result.damage} dmg`), h('td', { class: 'muted' }, `R ${master.plan.item.result.rating}`)),
+          h('tr', null, h('td', null, 'Novice (mastery 0)'), h('td', null, `${mainStat(novice.plan.item)} ${unit}`), h('td', { class: 'muted' }, `R ${novice.plan.item.result.rating}`)),
+          h('tr', { class: 'you' }, h('td', null, h('b', null, `You (mastery ${this.mastery})`)), h('td', null, h('b', null, `${mainStat(item)} ${unit}`)), h('td', { class: 'muted' }, `R ${item.result.rating}`)),
+          h('tr', null, h('td', null, 'Master Orla (100)'), h('td', null, `${mainStat(master.plan.item)} ${unit}`), h('td', { class: 'muted' }, `R ${master.plan.item.result.rating}`)),
           shop ? h('tr', null, h('td', null, "Bram's shop steel"), h('td', null, `${shop.result.damage} dmg`), h('td', { class: 'muted' }, `R ${shop.result.rating}`)) : null,
         ),
       );

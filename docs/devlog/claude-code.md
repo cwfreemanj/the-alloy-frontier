@@ -3,6 +3,17 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-27 11:22 — Forge expansion, phase 1: a mace, shields and armor
+- **PR:** 36
+- **Asked for:** Neal: analyze the creative director's Model Workshop, then expand the forge with helmets, chest armor, legs, shields and a second weapon; he approved phase 1 of the plan.
+- **Done:**
+  - Item generation (starter values; the creative director owns this area per equipment-contract.md): ArmorFamily, 10 blueprints (iron and ironglass mace, shield, helmet, chestplate, platelegs), baseDefense crafted like damage, ARMOR_AFFIXES, armorRating, a look spec per blueprint. Sword generation unchanged.
+  - Forge screen: five category tabs; armor shows defense and compares with the piece in its own slot; 2D previews per type. Fixed: the result's Equip button only knew the weapon slot. The quest counts only weapons.
+  - Looks: vendored the workshop generator (equipment.js, resources.js, body.js, updated core.js), loaded on demand (48 KB gz chunk). Mace in the right hand; shield on the left forearm and helmet on the head, placed on each character's own rest skeleton (measured in the skin's bind space) and scaled to the head. Other players see them (optional gr field, server-validated).
+- **Not done / deferred:** Chest and leg armor don't show on the character yet (phase 2: fitting to Maria and Exo). No new movesets: the mace uses the sword's. Numbers and looks await the creative director's review (added to docs/NEEDED.md).
+- **Verified:** npm run typecheck pass; npm test 262/262 (7 new: armor generation and forging, server armor and gear relay); npm run build pass; npm run test:e2e 21/21 including a new forge-expansion test. Checked in the browser on Maria and Exo: mace in hand, shield on the forearm, helmet on the head; the village still renders with the updated core.js.
+- **Notes:** First placement attempt made gear 100x too large: the characters' skins were bound at a different scale (about 0.0114) than the model uses now (0.01). The pieces are now placed in the skin's bind space, with the scale measured from the bones.
+
 ## 2026-11-27 10:58 — Fixed Bram's shop display
 - **PR:** 35
 - **Asked for:** Neal: the merchant shop displays very weirdly; the items can't be seen.

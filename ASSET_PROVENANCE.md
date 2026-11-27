@@ -5,6 +5,8 @@ Every asset the game ships, where it came from, and its license. Add a row whene
 | Asset | Used for | Source | License | Added by |
 | --- | --- | --- | --- | --- |
 | All characters, enemies, weapons, terrain, buildings, trees, effects | Everything currently in the game | Procedural: generated in code (`apps/web/src/entities`, `packages/world`) | Project code | Initial build |
+| Forged gear looks (maces, shields, helmets; chest and leg armor not shown yet) | 3D looks of the forge-expansion items | Generated in the browser by the Model Workshop equipment generator, vendored from the creative director's workshop artifact (`apps/web/src/world/workshop/equipment.js`, `resources.js`, `body.js`, updated `core.js`). No image or model files: geometry and canvas textures are made in code | Project code (the team's own workshop) | Forge expansion |
+| `body.js` measurements (Ch36 mannequin) | Sizes the generator's armor to a body | Bone positions and skin cross-sections measured from the workshop's "Ch36" mannequin, which appears to be a Mixamo character. Only numbers are shipped, not the mannequin model | Mixamo terms (as for the other Mixamo characters) | Forge expansion |
 | Favicon | Browser tab icon | Inline SVG in `apps/web/index.html` | Project code | Initial build |
 | `maria.glb` (Maria WProp, J J Ong) | Player character option | Mixamo (Adobe) character, converted with `tools/asset-pipeline` (prop sword removed; its grip frame is reused for crafted swords) | Mixamo terms: royalty-free use in projects; don't redistribute the raw files on their own | Character pass |
 | `exo.glb` (Exo Gray) | Player character option | Mixamo character | Mixamo terms | Character pass |

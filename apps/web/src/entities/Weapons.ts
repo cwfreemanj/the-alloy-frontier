@@ -3,6 +3,7 @@
  * rather than a unique heavyweight mesh per item).
  */
 import * as THREE from 'three';
+import { gearLook, holdable } from './Gear';
 import { getBlueprint, type ItemInstance, type Rarity } from '@alloy/item-gen';
 
 export const RARITY_COLORS: Record<Rarity, string> = {
@@ -25,6 +26,8 @@ export interface SwordVisual {
 /** Sword attaches to a hand; the blade extends along local -Y. */
 export function buildSword(item: ItemInstance | null): SwordVisual {
   const bp = getBlueprint(item?.blueprintId ?? 'worn_longsword')!;
+  // Maces and other workshop-made weapons (forge expansion): their look loads on demand.
+  if (bp.look && bp.family !== 'longsword') return buildWorkshopWeapon(bp.id, item?.result.rarity ?? 'common');
   const v = bp.visual;
   const spec = item?.forge.specialization ?? 'balanced';
   const width = spec === 'heavy' ? 0.085 : spec === 'agile' ? 0.05 : spec === 'keen' ? 0.06 : 0.065;
@@ -102,4 +105,23 @@ export function buildShield(): THREE.Group {
   g.add(s, rim);
   g.traverse((o) => ((o as THREE.Mesh).isMesh ? (o.castShadow = true) : null));
   return g;
+}
+
+/**
+ * A weapon with a Model Workshop look (entities/Gear.ts): an empty hand frame at once, filled when
+ * the look has been built. The tip starts at a typical one-handed reach and moves to the real one.
+ */
+function buildWorkshopWeapon(blueprintId: string, rarity: string): SwordVisual {
+  const g = new THREE.Group();
+  const tip = new THREE.Object3D();
+  tip.position.y = -0.7;
+  g.add(tip);
+  const bladeMaterial = new THREE.MeshStandardMaterial({ color: '#8f969c', metalness: 0.85, roughness: 0.3 });
+  void gearLook(blueprintId, rarity).then((look) => {
+    if (!look) return;
+    const held = holdable(look);
+    g.add(held.group);
+    tip.position.y = -held.reach;
+  });
+  return { group: g, bladeMaterial, tip };
 }

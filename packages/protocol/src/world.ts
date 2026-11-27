@@ -40,6 +40,11 @@ export interface AvatarState {
   wpn: { bp: string; spec: string; imb: boolean; rar: string } | null;
   /** Chosen character model (e.g. 'maria', 'exo'). Optional: older clients omit it. */
   mdl?: string;
+  /**
+   * Worn gear that shows (forge expansion): off-hand and head blueprint ids, with their rarities.
+   * Optional: older clients omit it and ignore it.
+   */
+  gr?: { o?: string; or?: string; h?: string; hr?: string };
 }
 
 export interface EnemyNetState {
@@ -229,8 +234,18 @@ function avatar(v: unknown): v is AvatarState {
     num(s.hp, 1e4) &&
     num(s.mhp, 1e4) &&
     (w === null || (!!w && str(w.bp, 64) && str(w.spec, 32) && bool(w.imb) && str(w.rar, 16))) &&
-    (s.mdl === undefined || (str(s.mdl, 16) && /^[a-z]+$/.test(s.mdl)))
+    (s.mdl === undefined || (str(s.mdl, 16) && /^[a-z]+$/.test(s.mdl))) &&
+    gear(s.gr)
   );
+}
+
+/** Optional worn gear: only these short, plain ids (it is relayed to every other player). */
+function gear(v: unknown): boolean {
+  if (v === undefined) return true;
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
+  const g = v as Record<string, unknown>;
+  if (Object.keys(g).some((k) => !['o', 'or', 'h', 'hr'].includes(k))) return false;
+  return ['o', 'or', 'h', 'hr'].every((k) => g[k] === undefined || (str(g[k], 48) && /^[a-z0-9_]+$/.test(g[k] as string)));
 }
 
 /** Player-chosen display names: letters, digits, spaces, - _ ' only. */

@@ -350,7 +350,8 @@ export class Session {
     this.gainAttributes(ATTRIBUTE_XP.forge());
     this.emit({ type: 'toast', text: `+${xp} blacksmithing XP`, tone: 'good' });
     this.emit({ type: 'inventory' });
-    this.quest({ type: 'event', event: req.mode === 'quick' ? 'craft_quick' : 'craft_masterwork' });
+    // The quest asks for a forged weapon: armor and shields don't count.
+    if (isWeaponFamily(bp.family)) this.quest({ type: 'event', event: req.mode === 'quick' ? 'craft_quick' : 'craft_masterwork' });
     return r;
   }
 
@@ -376,7 +377,7 @@ export class Session {
     const item = r.inventory.items[itemId];
     this.emit({ type: 'inventory' });
     if (r.inventory.equipped.weapon !== before) this.emit({ type: 'equip', item: this.equipped() });
-    if (item.source === 'quick_forge' || item.source === 'masterwork_forge') this.quest({ type: 'event', event: 'equip_crafted' });
+    if (r.slot === 'weapon' && (item.source === 'quick_forge' || item.source === 'masterwork_forge')) this.quest({ type: 'event', event: 'equip_crafted' });
     return true;
   }
 

@@ -25,6 +25,18 @@ export const STATS: StatDef[] = [
   { label: 'Equipment rating', icon: 'rating', help: 'One number for the whole weapon: higher is better overall.', get: (i) => i.result.rating, fmt: (v) => v.toFixed(0), dp: 0 },
 ];
 
+/** Armor and shields: what they protect and give (forge expansion). */
+export const ARMOR_STATS: StatDef[] = [
+  { label: 'Defense', icon: 'defense', help: 'Armor while worn: all equipped defense adds up, and 100 defense halves a hit.', get: (i) => i.result.defense ?? 0, fmt: (v) => v.toFixed(0), dp: 0 },
+  { label: 'Max health', icon: 'health', help: 'Extra maximum health while worn.', get: (i) => i.result.bonuses?.maxHealth ?? 0, fmt: (v) => (v ? `+${v.toFixed(0)}` : '—'), dp: 0 },
+  { label: 'Max stamina', icon: 'stamina', help: 'Extra maximum stamina while worn.', get: (i) => i.result.bonuses?.maxStamina ?? 0, fmt: (v) => (v ? `+${v.toFixed(0)}` : '—'), dp: 0 },
+  { label: 'Attributes', icon: 'vitality', help: 'Attribute points this piece adds while worn.', get: (i) => Object.values(i.result.bonuses?.attributes ?? {}).reduce((a, b) => a + b, 0), fmt: (v) => (v ? `+${v.toFixed(0)}` : '—'), dp: 0 },
+  { label: 'Equipment rating', icon: 'rating', help: 'One number for the whole piece: higher is better overall.', get: (i) => i.result.rating, fmt: (v) => v.toFixed(0), dp: 0 },
+];
+
+/** Whether an item is armor or a shield (it has defense instead of damage). */
+export const isArmorItem = (i: ItemInstance): boolean => i.result.defense !== undefined;
+
 export function deltaCell(cur: number, base: number | null, lowerBetter = false, dp = 0): HTMLElement {
   if (base === null) return h('td', { class: 'dim' }, '—');
   const d = cur - base;
@@ -36,7 +48,10 @@ export function deltaCell(cur: number, base: number | null, lowerBetter = false,
 }
 
 export function statTable(item: ItemInstance, compare: ItemInstance | null, compareLabel = 'vs equipped'): HTMLElement {
-  const rows = STATS.map((s) =>
+  const defs = isArmorItem(item) ? ARMOR_STATS : STATS;
+  // Compare like with like: armor with the piece in its slot, a weapon with a weapon.
+  if (compare && isArmorItem(compare) !== isArmorItem(item)) compare = null;
+  const rows = defs.map((s) =>
     h('tr', { title: s.help }, h('td', null, h('span', { class: 'stat-ico' }, icon(s.icon)), s.label), h('td', null, s.fmt(s.get(item))), deltaCell(s.get(item), compare ? s.get(compare) : null, s.lowerBetter, s.dp)),
   );
   return h(
@@ -123,6 +138,10 @@ export function drawSword(canvas: HTMLCanvasElement, item: ItemInstance | null, 
   const bp = getBlueprint(item?.blueprintId ?? blueprintId ?? 'iron_longsword');
   if (!bp) return;
   const v = bp.visual;
+  if (bp.family !== 'longsword' && GEAR_DRAWINGS[bp.family]) {
+    GEAR_DRAWINGS[bp.family](ctx, w, hgt, v, item);
+    return;
+  }
   const spec = item?.forge.specialization ?? 'balanced';
   const cy = hgt / 2;
   const len = Math.min(w * 0.62, 380) * v.length;
@@ -176,3 +195,147 @@ export function drawSword(canvas: HTMLCanvasElement, item: ItemInstance | null, 
     ctx.fill();
   }
 }
+
+// ---------------- Previews for the forge expansion (maces, shields, helmets, chest and leg armor) ----------------
+type Visual = NonNullable<ReturnType<typeof getBlueprint>>['visual'];
+type Draw = (ctx: CanvasRenderingContext2D, w: number, hgt: number, v: Visual, item: ItemInstance | null) => void;
+
+function metal(ctx: CanvasRenderingContext2D, x0: number, y0: number, x1: number, y1: number, v: Visual): CanvasGradient {
+  const g = ctx.createLinearGradient(x0, y0, x1, y1);
+  g.addColorStop(0, v.edge);
+  g.addColorStop(0.5, v.blade);
+  g.addColorStop(1, v.edge);
+  return g;
+}
+
+/** Rarity glow (and the ironglass shimmer) around a drawing. */
+function aura(ctx: CanvasRenderingContext2D, v: Visual, item: ItemInstance | null): void {
+  const rarity = item?.result.rarity ?? 'common';
+  if (item && rarity !== 'common') {
+    ctx.shadowColor = RARITY_COLORS[rarity];
+    ctx.shadowBlur = 18;
+  } else if (v.glow) {
+    ctx.shadowColor = v.glow;
+    ctx.shadowBlur = 6;
+  }
+}
+
+function trim(ctx: CanvasRenderingContext2D, v: Visual): void {
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = v.glow ?? v.guard;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+}
+
+const GEAR_DRAWINGS: Record<string, Draw> = {
+  mace(ctx, w, hgt, v, item) {
+    const cy = hgt / 2;
+    const len = Math.min(w * 0.5, 300);
+    const x0 = (w - len) / 2;
+    ctx.fillStyle = v.grip;
+    ctx.fillRect(x0, cy - 5, len * 0.72, 10);
+    ctx.fillStyle = v.guard;
+    ctx.beginPath();
+    ctx.arc(x0 - 4, cy, 8, 0, Math.PI * 2);
+    ctx.fill();
+    aura(ctx, v, item);
+    const hx = x0 + len * 0.82;
+    ctx.fillStyle = metal(ctx, hx, cy - 34, hx, cy + 34, v);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.ellipse(hx + Math.cos(a) * 14, cy + Math.sin(a) * 14, 20, 7, a, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.beginPath();
+    ctx.arc(hx, cy, 15, 0, Math.PI * 2);
+    ctx.fill();
+    trim(ctx, v);
+  },
+  shield(ctx, w, hgt, v, item) {
+    const cx = w / 2;
+    const top = hgt * 0.08;
+    const s = hgt * 0.84;
+    aura(ctx, v, item);
+    ctx.fillStyle = metal(ctx, cx - s * 0.4, top, cx + s * 0.4, top + s, v);
+    ctx.beginPath();
+    ctx.moveTo(cx - s * 0.38, top);
+    ctx.lineTo(cx + s * 0.38, top);
+    ctx.quadraticCurveTo(cx + s * 0.4, top + s * 0.62, cx, top + s);
+    ctx.quadraticCurveTo(cx - s * 0.4, top + s * 0.62, cx - s * 0.38, top);
+    ctx.closePath();
+    ctx.fill();
+    trim(ctx, v);
+    ctx.fillStyle = v.guard;
+    ctx.beginPath();
+    ctx.arc(cx, top + s * 0.4, s * 0.09, 0, Math.PI * 2);
+    ctx.fill();
+  },
+  helmet(ctx, w, hgt, v, item) {
+    const cx = w / 2;
+    const cy = hgt * 0.58;
+    const r = hgt * 0.34;
+    aura(ctx, v, item);
+    ctx.fillStyle = metal(ctx, cx - r, cy - r, cx + r, cy, v);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, Math.PI, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r * 1.55, r * 0.18, 0, 0, Math.PI * 2);
+    ctx.fill();
+    trim(ctx, v);
+    ctx.fillStyle = v.glow ?? v.guard;
+    ctx.fillRect(cx - 3, cy - r - 6, 6, r * 0.8);
+  },
+  chest(ctx, w, hgt, v, item) {
+    const cx = w / 2;
+    const top = hgt * 0.1;
+    const s = hgt * 0.8;
+    aura(ctx, v, item);
+    ctx.fillStyle = metal(ctx, cx - s * 0.5, top, cx + s * 0.5, top + s, v);
+    ctx.beginPath();
+    ctx.moveTo(cx - s * 0.18, top);
+    ctx.lineTo(cx - s * 0.5, top + s * 0.12);
+    ctx.lineTo(cx - s * 0.42, top + s * 0.55);
+    ctx.lineTo(cx - s * 0.32, top + s);
+    ctx.lineTo(cx + s * 0.32, top + s);
+    ctx.lineTo(cx + s * 0.42, top + s * 0.55);
+    ctx.lineTo(cx + s * 0.5, top + s * 0.12);
+    ctx.lineTo(cx + s * 0.18, top);
+    ctx.quadraticCurveTo(cx, top + s * 0.16, cx - s * 0.18, top);
+    ctx.closePath();
+    ctx.fill();
+    trim(ctx, v);
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, top + s * 0.2);
+    ctx.lineTo(cx, top + s * 0.95);
+    ctx.stroke();
+  },
+  legs(ctx, w, hgt, v, item) {
+    const cx = w / 2;
+    const top = hgt * 0.08;
+    const s = hgt * 0.86;
+    aura(ctx, v, item);
+    ctx.fillStyle = metal(ctx, cx - s * 0.4, top, cx + s * 0.4, top + s, v);
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + side * s * 0.03, top + s * 0.12);
+      ctx.lineTo(cx + side * s * 0.36, top + s * 0.12);
+      ctx.lineTo(cx + side * s * 0.3, top + s);
+      ctx.lineTo(cx + side * s * 0.1, top + s);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.fillRect(cx - s * 0.36, top, s * 0.72, s * 0.14);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = v.guard;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(cx + side * s * 0.2, top + s * 0.55, s * 0.06, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  },
+};

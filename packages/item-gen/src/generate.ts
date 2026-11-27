@@ -23,12 +23,13 @@ import {
   type StatModifier,
 } from './formulas';
 import { MATERIALS } from './materials';
-import { RARITY_AFFIX_COUNT, equipmentRating, minRarity, rarityFromScore } from './rating';
+import { RARITY_AFFIX_COUNT, armorRating, equipmentRating, minRarity, rarityFromScore } from './rating';
 import { Rng, hashHex, stableStringify } from './rng';
 import type {
   Affix,
   ConsumedMaterial,
   ForgeMode,
+  GearBonuses,
   ForgeStageResult,
   ItemInstance,
   ItemSource,
@@ -84,6 +85,38 @@ export const AFFIXES: AffixDefinition[] = [
     mythicOnly: true,
   },
 ];
+
+/**
+ * Armor and shield affixes (forge expansion). STARTER VALUES, like the armor blueprints. They change
+ * the item's defense or give flat bonuses while it is worn (docs/equipment-contract.md).
+ */
+interface ArmorAffixDefinition extends Affix {
+  defense?: number;
+  bonuses?: GearBonuses;
+  mythicOnly?: boolean;
+}
+
+export const ARMOR_AFFIXES: ArmorAffixDefinition[] = [
+  { id: 'reinforced', name: 'Reinforced', description: '+8% defense', defense: 1.08 },
+  { id: 'padded', name: 'Padded', description: '+12 max health', bonuses: { maxHealth: 12 } },
+  { id: 'unburdened', name: 'Unburdened', description: '+10 max stamina', bonuses: { maxStamina: 10 } },
+  { id: 'stalwart', name: 'Stalwart', description: '+1 Vitality', bonuses: { attributes: { vitality: 1 } } },
+  { id: 'enduring', name: 'Enduring', description: '+1 Endurance', bonuses: { attributes: { endurance: 1 } } },
+  { id: 'bulwark_resonance', name: 'Bulwark Resonance', description: '+15% defense and +20 max health', defense: 1.15, bonuses: { maxHealth: 20 }, mythicOnly: true },
+];
+
+/** Add one set of gear bonuses to another. */
+function addBonuses(a: GearBonuses, b: GearBonuses | undefined): GearBonuses {
+  if (!b) return a;
+  const out: GearBonuses = { ...a };
+  if (b.maxHealth) out.maxHealth = (out.maxHealth ?? 0) + b.maxHealth;
+  if (b.maxStamina) out.maxStamina = (out.maxStamina ?? 0) + b.maxStamina;
+  if (b.attributes) {
+    out.attributes = { ...(out.attributes ?? {}) };
+    for (const [k, v] of Object.entries(b.attributes)) out.attributes[k] = (out.attributes[k] ?? 0) + v;
+  }
+  return out;
+}
 
 export interface GenerationInput {
   itemId: string;
@@ -192,6 +225,38 @@ export function generateItem(input: GenerationInput): ItemInstance {
     rarity = 'common';
   }
 
+  // Armor and shields: defense scales with craftsmanship as a weapon's damage does; their weapon stats
+  // stay neutral (only the main-hand item attacks), and they roll armor affixes instead.
+  if (bp.baseDefense !== undefined) {
+    const pool = ARMOR_AFFIXES.filter((a) => !a.mythicOnly || rarity === 'mythic');
+    const defs = rng.shuffle(pool).slice(0, RARITY_AFFIX_COUNT[rarity]);
+    if (rarity === 'mythic' && !defs.some((a) => a.id === 'bulwark_resonance')) defs[defs.length - 1] = ARMOR_AFFIXES.find((a) => a.id === 'bulwark_resonance')!;
+    let defense = formulaDamage(bp.baseDefense, sf, mf, bf, ff);
+    let bonuses: GearBonuses = {};
+    for (const a of defs) {
+      if (a.defense) defense *= a.defense;
+      bonuses = addBonuses(bonuses, a.bonuses);
+    }
+    defense = Math.max(1, Math.min(LIMITS.maxStat, Math.round(defense)));
+    const neutral = finalizeStats({ damage: 1, attackSpeed: 1, stagger: 0, staminaCostMultiplier: 1, critChance: 0 });
+    return seal(bp, input, {
+      mode,
+      mastery,
+      sf,
+      mf,
+      bf,
+      ff,
+      score,
+      specialization,
+      temper,
+      fDamage: defense,
+      stages: [...(input.stages ?? [])],
+      materialQuality,
+      bufferQty,
+      result: { ...neutral, rating: armorRating(defense, bonuses), rarity, affixes: defs.map(({ id, name, description }) => ({ id, name, description })), imbuements: [], defense, ...(Object.keys(bonuses).length ? { bonuses } : {}) },
+    });
+  }
+
   const pool = AFFIXES.filter((a) => !a.mythicOnly || rarity === 'mythic');
   const affixDefs = rng.shuffle(pool).slice(0, RARITY_AFFIX_COUNT[rarity]);
   if (rarity === 'mythic' && !affixDefs.some((a) => a.id === 'maker_resonance')) {
@@ -225,7 +290,45 @@ export function generateItem(input: GenerationInput): ItemInstance {
 
   const affixes: Affix[] = affixDefs.map(({ id, name, description }) => ({ id, name, description }));
   const rating = equipmentRating(finalStats, imbuements);
+  return seal(bp, input, {
+    mode,
+    mastery,
+    sf,
+    mf,
+    bf,
+    ff,
+    score,
+    specialization,
+    temper,
+    fDamage,
+    stages,
+    materialQuality,
+    bufferQty,
+    result: { ...finalStats, rating, rarity, affixes, imbuements },
+  });
+}
 
+interface Sealed {
+  mode: GenerationInput['mode'];
+  mastery: number;
+  sf: number;
+  mf: number;
+  bf: number;
+  ff: number;
+  score: number;
+  specialization: Specialization;
+  temper: TemperStrategy;
+  /** The formula's damage (weapons) or defense (armor) before affixes. */
+  fDamage: number;
+  stages: ForgeStageResult[];
+  materialQuality: number;
+  bufferQty: number;
+  result: ItemInstance['result'];
+}
+
+/** Build the item record and seal it (integrity). Shared by weapons and armor; the fields are unchanged. */
+function seal(bp: NonNullable<ReturnType<typeof getBlueprint>>, input: GenerationInput, x: Sealed): ItemInstance {
+  const { mode, mastery, sf, mf, bf, ff, score, specialization, temper, fDamage, stages, materialQuality, bufferQty } = x;
   const base: Omit<ItemInstance, 'integrity' | 'history'> = {
     schemaVersion: 1,
     itemId: input.itemId,
@@ -255,7 +358,7 @@ export function generateItem(input: GenerationInput): ItemInstance {
       formulaDamage: fDamage,
       stages,
     },
-    result: { ...finalStats, rating, rarity, affixes, imbuements },
+    result: x.result,
     createdAt: input.createdAt,
   };
   return {
