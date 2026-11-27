@@ -5,10 +5,11 @@
  * player it also sends character actions and hands the server's character to the Game.
  */
 import type * as THREE from 'three';
+import { ENEMIES } from '@alloy/game-rules';
 import type { ItemInstance } from '@alloy/item-gen';
 import type { SessionData } from '@alloy/save';
 import type { SessionEvent } from '@alloy/session';
-import type { AvatarState, CharAction, HitVerdict, WorldServerMsg } from '@alloy/protocol';
+import type { AvatarState, CharAction, EnemySpawnInfo, HitVerdict, RaidInfo, WorldServerMsg } from '@alloy/protocol';
 import { RemotePlayer } from '../entities/RemotePlayer';
 import type { Enemy } from '../entities/Enemy';
 import { WorldClient, type WorldStatus } from '../net/WorldClient';
@@ -31,6 +32,12 @@ export interface OnlineGameHooks {
   kicked(reason: string): void;
   /** The server's copy of our character changed (signed-in players). */
   character(data: SessionData, events: SessionEvent[]): void;
+  /** The server added an enemy to the world (raiders, AF-011). */
+  spawnEnemy(info: EnemySpawnInfo): void;
+  /** The server removed an enemy it added. */
+  despawnEnemy(id: string): void;
+  /** A raid started, changed or ended (null: none, e.g. offline). */
+  raid(info: RaidInfo | null): void;
 }
 
 /** The server's answer to a character action. */
@@ -52,6 +59,8 @@ export class Online {
   private announced = false;
   private actSeq = 0;
   private waiting = new Map<number, (r: ActReply) => void>();
+  /** Enemies the server added (raiders); they exist only while online. */
+  private spawned = new Set<string>();
 
   constructor(private g: OnlineGameHooks) {}
 
@@ -101,6 +110,7 @@ export class Online {
     c?.stop();
     this.failWaiting();
     this.clearRemotes();
+    this.clearSpawned();
     if (this.status === 'online') this.g.authorityChanged(false);
     this.status = 'offline';
     this.message = 'Offline';
@@ -120,11 +130,31 @@ export class Online {
     } else {
       this.message = reason ?? 'Offline';
       this.clearRemotes();
+      this.clearSpawned();
       this.failWaiting();
       if (was === 'online') this.g.toast(reason ?? 'Disconnected.', 'warn');
     }
     if ((was === 'online') !== (s === 'online')) this.g.authorityChanged(s === 'online');
     this.g.statusChanged();
+  }
+
+  private spawn(list: EnemySpawnInfo[]): void {
+    for (const s of list) {
+      // Only kinds this browser knows (an outdated one is told to reload anyway).
+      if (this.spawned.has(s.id) || !ENEMIES[s.type]) continue;
+      this.spawned.add(s.id);
+      this.g.spawnEnemy(s);
+    }
+  }
+
+  private despawn(id: string): void {
+    if (this.spawned.delete(id)) this.g.despawnEnemy(id);
+  }
+
+  /** Raiders exist only in the shared world: remove them when we leave it. */
+  private clearSpawned(): void {
+    for (const id of [...this.spawned]) this.despawn(id);
+    this.g.raid(null);
   }
 
   private clearRemotes(): void {
@@ -153,7 +183,11 @@ export class Online {
       case 'welcome':
         this.clearRemotes();
         for (const p of m.players) if (p.id !== m.id) this.addRemote(p.id, p.name);
+        // Raiders from before a reconnect may be gone: start from the server's list.
+        for (const id of [...this.spawned]) if (!m.spawns?.some((s) => s.id === id)) this.despawn(id);
+        this.spawn(m.spawns ?? []);
         for (const s of m.enemies) this.enemy(s.id)?.applyNet(s);
+        this.g.raid(m.raid ?? null);
         {
           const others = m.players.filter((p) => p.id !== m.id).length;
           if (others) this.g.toast(`${others} other player${others > 1 ? 's' : ''} in the world.`, 'info');
@@ -185,6 +219,15 @@ export class Online {
         break;
       case 'notice':
         this.g.toast(m.text, 'info');
+        break;
+      case 'spawn':
+        this.spawn(m.list);
+        break;
+      case 'despawn':
+        for (const id of m.ids) this.despawn(id);
+        break;
+      case 'raid':
+        this.g.raid(m.raid);
         break;
       case 'hitResult': {
         const e = this.enemy(m.enemyId);

@@ -57,6 +57,23 @@ describe('saved world state (AF-013)', () => {
     expect(info.areas.trail.level).toBe(trail.level + ADAPT.maxBonus);
   });
 
+  it("keeps the raid state too: readiness, the last raid and the Captain's camp (AF-011)", async () => {
+    const kv = new CountingKV();
+    server = await startWorldServer({ port: 0, accounts: new AccountService(kv), raids: true });
+    expect(server.room.raids.enabled).toBe(true);
+    const r = server.room.raids;
+    r.restore({ readiness: 7, lastRaidAt: 123, camp: { level: 2 }, count: 3 });
+    r.dirty = true; // only the raid changed
+    await server.close();
+    server = null;
+    expect(kv.writes).toBe(1);
+
+    server = await startWorldServer({ port: 0, accounts: new AccountService(kv) });
+    expect(server.room.raids.enabled).toBe(false); // off unless the server setting is on
+    expect(server.room.raids.save()).toEqual({ readiness: 7, lastRaidAt: 123, camp: { level: 2 }, count: 3 });
+    expect(server.room.enemies.find((e) => e.id === 'raid-camp-3')?.level).toBe(2);
+  });
+
   it("doesn't write while nothing happens, and keeps the world running if the database fails", async () => {
     const kv = new CountingKV();
     server = await startWorldServer({ port: 0, accounts: new AccountService(kv) });

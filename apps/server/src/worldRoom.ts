@@ -7,11 +7,12 @@
  * (computed from the server-side weapon). Client-owned: the player's own movement
  * (sanity-checked), and a guest's character (kept in their browser).
  */
-import { ATTACKS, checkMove, finisherMultiplier, heightOk, dist2, forwardPoint, inArc, inCircle, isNear, newMoveGuard, resetMoveGuard, type AttackId, type MoveGuard, type Vec2 } from '@alloy/game-rules';
+import { ATTACKS, CAPTAIN_FLUX, checkMove, finisherMultiplier, heightOk, dist2, forwardPoint, inArc, inCircle, isNear, newMoveGuard, resetMoveGuard, type AttackId, type MoveGuard, type Vec2 } from '@alloy/game-rules';
 import { WORLD_LIMITS, WORLD_PROTOCOL, parseWorldClientMsg, type AvatarState, type CharAction, type EnemyNetState, type WorldPlayerInfo, type WorldServerMsg } from '@alloy/protocol';
-import { GATHER_SECONDS, RANGE_SLACK, applyAction, damageAgainst, playerHit, rewardHit, rewardHitTaken, rewardKill } from '@alloy/session';
+import { GATHER_SECONDS, RANGE_SLACK, applyAction, damageAgainst, playerHit, rewardHit, rewardHitTaken, rewardKill, rewardRaid } from '@alloy/session';
 import type { CharacterHost, LiveCharacter } from './characters';
 import { WorldObserver, noticeFor, type AreaId } from './worldObserver';
+import { RaidDirector, spawnInfo } from './raids';
 import { ENEMY_SPAWNS, EnemySim, RESPAWN_POINT, buildWorldColliders, terrainHeight, type ColliderWorld } from '@alloy/world';
 
 const PLAYER_RADIUS = 0.4;
@@ -27,6 +28,8 @@ const OBSERVE_INTERVAL = 2;
 const MIN_GATHER_INTERVAL_MS = GATHER_SECONDS * 900;
 /** At most this often, a character update caused by hits/XP is sent (actions reply at once). */
 const CHAR_PUSH_INTERVAL_MS = 250;
+/** Character actions in the village that make it busier, so raiders come sooner (AF-011). */
+const VILLAGE_ACTIVITY = new Set(['forge', 'brew', 'buy', 'sell']);
 
 interface Member {
   id: string;
@@ -89,6 +92,8 @@ export class WorldRoom {
   /** What players are doing, area by area (adaptive world). */
   readonly observer: WorldObserver;
   private observeTimer = 0;
+  /** Raids on Emberhold (AF-011). */
+  readonly raids: RaidDirector;
   private enemyArea = new Map<string, AreaId>();
   private nextId = 1;
   stats: WorldStats = { malformed: 0, rateLimited: 0, rejectedHits: 0, acceptedHits: 0, enemyHitsOnPlayers: 0, kills: 0, acts: 0, rejectedActs: 0, speedRejected: 0, heightRejected: 0, damageByType: {}, damageByFamily: {} };
@@ -103,6 +108,38 @@ export class WorldRoom {
     this.observer = new WorldObserver(now);
     const colliders = worldColliders();
     this.enemies = ENEMY_SPAWNS.filter((s) => s.type !== 'dummy').map((s) => new EnemySim(s, colliders));
+    this.raids = new RaidDirector(
+      {
+        now: () => this.now(),
+        players: () =>
+          [...this.members.values()]
+            .filter((m) => m.state)
+            .map((m) => ({ id: m.id, rank: m.char?.session.data.progression.adventurer.rank ?? null, inVillage: this.observer.areaAt({ x: m.state!.x, z: m.state!.z }) === 'village', alive: m.state!.hp > 0 && m.state!.ph !== 'dead' })),
+        addEnemy: (e) => {
+          this.enemies.push(e);
+          this.broadcast({ t: 'spawn', list: [spawnInfo(e)] });
+          const s = netState(e);
+          this.lastSent.set(e.id, JSON.stringify({ ...s, st: 0 }));
+          this.broadcast({ t: 'enemies', list: [s] });
+        },
+        removeEnemy: (id) => {
+          const i = this.enemies.findIndex((e) => e.id === id);
+          if (i >= 0) this.enemies.splice(i, 1);
+          this.lastSent.delete(id);
+          this.contributors.delete(id);
+          this.broadcast({ t: 'despawn', ids: [id] });
+        },
+        broadcast: (msg) => this.broadcast(msg),
+        rewardWin: (id, coins, xp) => {
+          const m = this.members.get(id);
+          if (!m?.char) return;
+          const events = rewardRaid(m.char.session, { coins, xp });
+          this.host?.changed(m.char);
+          this.pushChar(m, [{ type: 'toast', text: `Raid repelled · +${coins} coins · +${xp} XP`, tone: 'good' }, ...events], true);
+        },
+      },
+      colliders,
+    );
   }
 
   get playerCount(): number {
@@ -158,6 +195,8 @@ export class WorldRoom {
     }
     else if (msg.t === 'hit') this.hit(me, msg.enemyId, msg.attackId, msg.damage, msg.stagger, msg.guardBreak, msg.crit);
     else if (msg.t === 'act') this.act(me, msg.id, msg.a);
+    // Local test servers only (the same setting as debug teleports).
+    else if (msg.t === 'debugRaid' && this.allowTeleport) this.raids.debugStart(msg.warn);
     return me.id;
   }
 
@@ -234,6 +273,7 @@ export class WorldRoom {
     this.stats.acts++;
     if (a.k === 'gather') c.lastGatherAt = t;
     if ((a.k === 'gather' || a.k === 'search') && pos) this.observer.activity(pos, a.k);
+    if (VILLAGE_ACTIVITY.has(a.k) && pos && this.observer.areaAt(pos) === 'village') this.raids.villageActivity();
     this.host?.changed(c);
     me.send({ t: 'actResult', id, ok: true, ...(r.item ? { item: r.item } : {}) });
     this.pushChar(me, r.events, true);
@@ -279,7 +319,7 @@ export class WorldRoom {
     const id = `p${this.nextId++}`;
     const m: Member = { id, name, accountId, close, state: null, send, windowStart: this.now(), msgs: 0, hits: 0, char, move: null, lastCorrectAt: 0, lastUse: new Map() };
     this.members.set(id, m);
-    send({ t: 'welcome', id, players: this.infos(), enemies: this.enemies.map(netState), protocol: WORLD_PROTOCOL });
+    send({ t: 'welcome', id, players: this.infos(), enemies: this.enemies.map(netState), protocol: WORLD_PROTOCOL, spawns: this.raids.spawnInfos(), raid: this.raids.info() });
     if (char) this.sendChar(m);
     return id;
   }
@@ -331,7 +371,10 @@ export class WorldRoom {
     // Guard-break is only legitimate on the Guardbreaker attack.
     const res = e.brain.receiveHit({ damage, stagger, guardBreak: guardBreak && atk.guardBreak });
     this.stats.acceptedHits++;
-    if (!res.ignored) this.credit(e.id, me.id);
+    if (!res.ignored) {
+      this.credit(e.id, me.id);
+      this.raids.hitBy(e.id, me.id);
+    }
     if (me.char && !res.ignored && res.damage > 0) {
       const family = me.char.session.weaponFamily ?? 'unarmed';
       if (dealtType) this.stats.damageByType[dealtType] = (this.stats.damageByType[dealtType] ?? 0) + res.damage;
@@ -357,14 +400,18 @@ export class WorldRoom {
     this.observer.kill(e.pos2, list.map((id) => this.members.get(id)?.char?.session.data.progression.adventurer.rank).filter((r): r is number => r !== undefined));
     this.broadcast({ t: 'enemies', list: [netState(e)] });
     this.broadcast({ t: 'kill', enemyId: e.id, type: e.spawn.type, contributors: list });
+    const captain = this.raids.killed(e.id);
     // Rewards for signed-in contributors are rolled here; guests roll their own.
     for (const id of list) {
       const m = this.members.get(id);
       if (!m?.char) continue;
       const r = rewardKill(m.char.session, e.spawn.type, e.id, this.rng, e.level);
       this.host?.changed(m.char);
-      const loot = `${e.def.name} defeated · +${r.coins} coins${r.flux ? ` · +${r.flux} Binding Flux` : ''}`;
-      this.pushChar(m, [{ type: 'toast', text: loot, tone: 'good' }, ...r.events], true);
+      // The Raider Captain always drops Binding Flux for everyone who helped.
+      const extra = captain ? rewardRaid(m.char.session, { flux: CAPTAIN_FLUX, dropId: e.id }) : [];
+      const flux = r.flux + (captain ? CAPTAIN_FLUX : 0);
+      const loot = `${e.def.name} defeated · +${r.coins} coins${flux ? ` · +${flux} Binding Flux` : ''}`;
+      this.pushChar(m, [{ type: 'toast', text: loot, tone: 'good' }, ...r.events, ...extra], true);
     }
   }
 
@@ -383,6 +430,7 @@ export class WorldRoom {
       this.observeTimer = 0;
       this.observeWorld();
     }
+    this.raids.step(dt);
     const players = this.livingPlayers();
     for (const e of this.enemies) {
       // Target: the nearest living player.
@@ -423,7 +471,7 @@ export class WorldRoom {
   }
 
   private respawnCheck(e: EnemySim): void {
-    if (e.brain.alive) return;
+    if (e.brain.alive || this.raids.owns(e.id)) return;
     const r = e.def.respawnSeconds ?? (e.def.kind === 'elite' ? ELITE_SHARED_RESPAWN : null);
     if (r === null || e.deadFor < r) return;
     for (const m of this.members.values()) if (m.state && dist2({ x: m.state.x, z: m.state.z }, e.home) < RESPAWN_CLEAR_RADIUS) return;
@@ -446,7 +494,7 @@ export class WorldRoom {
     const players = [...this.members.values()].filter((m) => m.char && m.state).map((m) => ({ pos: { x: m.state!.x, z: m.state!.z }, rank: m.char!.session.data.progression.adventurer.rank }));
     for (const c of this.observer.observe(players)) this.broadcast({ t: 'notice', text: noticeFor(c) });
     for (const e of this.enemies) {
-      if (e.def.kind === 'dummy') continue;
+      if (e.def.kind === 'dummy' || this.raids.owns(e.id)) continue;
       const want = this.observer.levelOf(this.areaOf(e));
       if (want === e.level) continue;
       const st = e.brain.state;
@@ -460,7 +508,7 @@ export class WorldRoom {
    * start-up, before anyone has joined).
    */
   applyAreaLevels(): void {
-    for (const e of this.enemies) if (e.def.kind !== 'dummy') e.setLevel(this.observer.levelOf(this.areaOf(e)));
+    for (const e of this.enemies) if (e.def.kind !== 'dummy' && !this.raids.owns(e.id)) e.setLevel(this.observer.levelOf(this.areaOf(e)));
   }
 
   /** Relay avatars and changed enemies (called at the network rate). */

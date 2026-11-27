@@ -4,6 +4,7 @@
  * Locally: http://localhost:2568 (add --lan for other devices on your network).
  * On a cloud host: the platform sets PORT; the server listens on all interfaces.
  * ALLOWED_ORIGINS (comma-separated) lets a separately hosted copy of the game connect.
+ * RAIDS=1 turns on raids on Emberhold (AF-011, docs/raids.md); they are off by default.
  */
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -40,7 +41,11 @@ if (!existsSync(resolve(dist, 'index.html'))) console.warn('No game build found 
 const allowTeleport = process.env.ALLOW_TELEPORT === '1' && !process.env.RENDER;
 if (allowTeleport) console.warn('ALLOW_TELEPORT=1: the movement speed check is OFF (local testing only).');
 
-startWorldServer({ port, host: cloud || lan ? '0.0.0.0' : '127.0.0.1', staticDir, allowedOrigins, accounts, trustProxy, allowTeleport }).then((s) => {
+// Raids on Emberhold (AF-011) start on their own only with RAIDS=1.
+const raids = process.env.RAIDS === '1';
+if (raids) console.log('RAIDS=1: raids on Emberhold are on.');
+
+startWorldServer({ port, host: cloud || lan ? '0.0.0.0' : '127.0.0.1', staticDir, allowedOrigins, accounts, trustProxy, allowTeleport, raids }).then((s) => {
   console.log(`Alloy Frontier world server listening on port ${s.port} (serving the game too). Account storage: ${kv.kind}.`);
   if (!cloud) console.log(`Play: http://localhost:${s.port}`);
   // Hosts stop the old server on every deploy (SIGTERM): write characters before exiting.

@@ -18,7 +18,7 @@ import { EQUIP_SLOTS } from '@alloy/crafting';
 export type { CharAction } from '@alloy/session';
 
 /** v2: character actions for signed-in players. */
-export const WORLD_PROTOCOL = 2;
+export const WORLD_PROTOCOL = 3;
 
 /** Compact animation state of a player avatar. */
 export interface AvatarState {
@@ -58,6 +58,28 @@ export interface EnemyNetState {
   cz?: number;
 }
 
+/** An enemy the server added to the world (raiders, AF-011). The browser creates it. */
+export interface EnemySpawnInfo {
+  id: string;
+  /** Archetype id (e.g. 'raider', 'raider_captain'). */
+  type: string;
+  x: number;
+  z: number;
+  yaw: number;
+}
+
+/** A raid on Emberhold, for the HUD (docs/raids.md). */
+export interface RaidInfo {
+  phase: 'warning' | 'fighting' | 'won' | 'lost';
+  /** Seconds left: until the raiders arrive (warning), or to defeat the Captain (fighting). */
+  left: number;
+  /** Raiders still standing, the Captain included. */
+  raiders: number;
+  /** Whether the Captain is in the fight (or, after a loss, at large). */
+  captain: boolean;
+  wave: 1 | 2;
+}
+
 export interface WorldPlayerInfo {
   id: string;
   name: string;
@@ -80,16 +102,24 @@ export type WorldClientMsg =
   | { t: 'hello'; name: string; protocol: number; token?: string; slot?: 1 | 2 }
   | { t: 'state'; s: AvatarState }
   | { t: 'hit'; enemyId: string; attackId: string; damage: number; stagger: number; guardBreak: boolean; crit: boolean }
-  | { t: 'act'; id: number; a: CharAction };
+  | { t: 'act'; id: number; a: CharAction }
+  /** Local test servers only: start a raid now, with a warning of `warn` seconds. */
+  | { t: 'debugRaid'; warn: number };
 
 export type WorldServerMsg =
-  | { t: 'welcome'; id: string; players: WorldPlayerInfo[]; enemies: EnemyNetState[]; protocol: number }
+  | { t: 'welcome'; id: string; players: WorldPlayerInfo[]; enemies: EnemyNetState[]; protocol: number; spawns?: EnemySpawnInfo[]; raid?: RaidInfo | null }
   | { t: 'joined'; player: WorldPlayerInfo }
   | { t: 'left'; id: string; name: string }
   | { t: 'players'; list: Array<{ id: string; s: AvatarState }> }
   | { t: 'enemies'; list: EnemyNetState[] }
   /** A world announcement (an area grows dangerous or settles). Older clients ignore it. */
   | { t: 'notice'; text: string }
+  /** Enemies added to the world (create them before their 'enemies' state arrives). */
+  | { t: 'spawn'; list: EnemySpawnInfo[] }
+  /** Enemies removed from the world. */
+  | { t: 'despawn'; ids: string[] }
+  /** A raid started, changed or ended. */
+  | { t: 'raid'; raid: RaidInfo }
   | ({ t: 'hitResult' } & HitVerdict)
   | { t: 'playerHit'; enemyId: string; damage: number; heavy: boolean }
   | { t: 'kill'; enemyId: string; type: string; contributors: string[] }
@@ -242,6 +272,8 @@ export function parseWorldClientMsg(raw: unknown): WorldClientMsg | null {
       const a = charAction(o.a);
       return int(o.id, 0, 2 ** 31) && a ? { t: 'act', id: o.id, a } : null;
     }
+    case 'debugRaid':
+      return int(o.warn, 1, 60) ? { t: 'debugRaid', warn: o.warn } : null;
     default:
       return null;
   }

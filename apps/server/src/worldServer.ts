@@ -32,6 +32,8 @@ export interface WorldServerOptions {
   characters?: CharacterStore;
   /** Skip the movement speed check (debug teleports in local browser tests). Never on a hosted server. */
   allowTeleport?: boolean;
+  /** Raids on Emberhold start on their own (AF-011). Off unless set (server setting RAIDS=1). */
+  raids?: boolean;
 }
 
 export interface RunningWorldServer {
@@ -94,6 +96,7 @@ export async function startWorldServer(opts: WorldServerOptions = {}): Promise<R
   const store = opts.characters ?? (accounts ? accountCharacterStore(accounts) : null);
   const characters = store ? new CharacterHost(store) : null;
   const room = new WorldRoom(undefined, characters, Math.random, !!opts.allowTeleport);
+  room.raids.enabled = !!opts.raids;
   // The world remembers how hard players pushed each area across restarts (AF-013).
   const worldState = accounts ? new WorldStateStore(accounts.kv, room) : null;
   if (await worldState?.load()) console.log('World state restored (area levels and tallies).');

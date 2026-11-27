@@ -90,6 +90,13 @@ html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
 .zone-banner .s { color: var(--muted); font-size: 13px; margin-top: 4px; letter-spacing: 0.06em; }
 .zone-banner .rule { height: 1px; width: 260px; margin: 8px auto; background: linear-gradient(90deg, transparent, var(--ember), transparent); }
 
+/* Raid on Emberhold (AF-011) */
+.raid-banner { position: absolute; top: 48px; left: 50%; transform: translateX(-50%); text-align: center; padding: 8px 18px; border-radius: 6px; background: rgba(40, 12, 8, 0.78); border: 1px solid rgba(255, 90, 40, 0.55); box-shadow: 0 0 18px rgba(255, 70, 20, 0.25); display: none; pointer-events: none; z-index: 4; }
+.raid-banner.show { display: block; }
+.raid-banner .n { font-family: var(--display); font-size: 20px; letter-spacing: 0.1em; color: #ffcf9a; }
+.raid-banner .s { font-size: 13px; color: #f2d6c0; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.raid-banner[data-phase='won'] { background: rgba(14, 34, 20, 0.8); border-color: rgba(90, 210, 130, 0.55); box-shadow: none; }
+.raid-banner[data-phase='won'] .n { color: #b8f0c8; }
 .world-labels { position: absolute; inset: 0; }
 .enemy-bar { position: absolute; width: 90px; transform: translate(-50%, -100%); display: grid; gap: 2px; justify-items: center; }
 .enemy-bar .nm { font-size: 11px; text-shadow: 0 1px 2px #000; white-space: nowrap; display: flex; gap: 5px; align-items: baseline; }
@@ -557,3 +564,5 @@ select, input[type=number] { background: var(--panel-2); color: var(--text); bor
 .name-field { display: grid; gap: 3px; }
 .name-hint.bad { color: var(--bad); }
 .hud-name { color: #ffd9a0; font-weight: 700; margin-right: 4px; }
+/* Toasts move down while the raid banner shows, so neither covers the other. */
+.hud:has(.raid-banner.show) .toasts { top: 124px; }

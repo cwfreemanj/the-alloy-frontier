@@ -1,9 +1,10 @@
-# Raids on Emberhold (AF-011): proposal
+# Raids on Emberhold (AF-011)
 
-**Status: proposal, waiting for design approval.** Nothing here is built yet. The GDD (AF-011) asks for
-approval of three things before building: **what triggers a raid, how big it is, and what winning or
-losing does.** Those are sections 1–3, each with a recommended rule. Section 4 lists smaller choices
-with defaults, and section 5 says how it would be built.
+**Status: approved and built (2026-11-27, PR #34). Off on the live server until the server setting
+`RAIDS=1` is turned on.** The technical director approved the rules below as proposed. The GDD
+(AF-011) asked for approval of three things: **what triggers a raid, how big it is, and what winning
+or losing does** (sections 1–3). Section 4 lists the smaller choices, section 5 how it is built, and
+section 7 how to try it.
 
 This is part 2 of the [adaptive world](adaptive-world.md): the world observer already keeps per-area
 tallies, saved across restarts (AF-013). The protection fee after a lost raid is AF-012, built after this.
@@ -96,22 +97,43 @@ winnable, while four players still face ten raiders and a Captain.
 - **Turned off until approved:** raids sit behind a server setting, off by default, so nothing changes on the
   live server until you say so.
 
-## 5. How it would be built
+## 5. How it is built
 
-- **Rules** in `packages/game-rules/src/raid.ts`, shared by the server and the browser: readiness, raid size,
-  raider level, waves and outcome. Unit-tested.
-- **The raid itself** runs on the server, in the world room, using the existing enemy simulation. Raiders
-  and the Captain are server enemies like the others: the server does all the damage and rewards, and
-  the browser only shows them. Server tests with a fake clock run through warning, waves, a win and a loss.
-- **Network:** one new `raid` message (warning, wave, won or lost, with a countdown). Raiders come through the
-  existing enemy messages. `WORLD_PROTOCOL` goes up, because older browsers don't know the new enemy types.
-- **Browser:** the horn, the HUD countdown, notices, and the raider tint.
-- **Saved state:** readiness, the last raid time, and the Captain's camp go into the existing
-  `world:observer` row. No new database rows and nothing that costs money.
-- **Browser test:** start a raid with the local test command, win it, and check the rewards.
+- **Rules** in `packages/game-rules/src/raid.ts` (`RAID`, `raidSize`, `raiderLevel`, `shouldStartRaid`,
+  `raidReward`), shared by the server and the browser. The **Ember Raider** and **Raider Captain** are in
+  `ENEMIES` (`enemy.ts`); the entry, patrol route and camp points are `RAID_POINTS` in `@alloy/world`.
+- **The raid** runs on the server: `RaidDirector` in `apps/server/src/raids.ts`, owned by the world room.
+  Raiders are server enemies like the others (the server does the damage, kill credit and rewards), with
+  three differences: they are added and removed during play, they keep the raid's level instead of the
+  area's, and they never respawn. Their home is the village square, so they never leave the village.
+- **Rewards:** normal kill rewards; the win bonus (`raidReward`) for every signed-in player who hit a raider;
+  the Captain's Binding Flux (`CAPTAIN_FLUX`) for everyone who helped defeat him. Guests roll their own kill
+  rewards as before and get no win bonus.
+- **Network** (`WORLD_PROTOCOL` 3, so older browsers are asked to reload): `spawn` and `despawn` add and remove
+  raiders, `raid` carries the phase, raiders left and seconds left for the HUD, and `welcome` includes both
+  for a player who joins mid-raid.
+- **Browser:** raiders are created and removed as the server says (`Online.ts`), with an ember-red tint
+  (`Enemy.ts`); a banner at the top shows the countdown and raiders left (`Hud.ts`). Horn and arrival are
+  announced with the existing notices; there is no horn sound yet.
+- **Saved state:** readiness, the last raid time, the raid count and the Captain's camp go into the existing
+  `world:observer` row, under `raid`. No new rows and nothing that costs money.
+- **Server setting:** `RAIDS=1` lets raids start on their own. Without it nothing starts by itself.
+- **Tests:** `packages/game-rules/test/raid.test.ts` (rules); `apps/server/test/raids.test.ts` (on a fake clock:
+  readiness and the horn, a full win with both waves and rewards, losses by abandonment and by time, the
+  camp, saving); `apps/server/test/worldState.test.ts` (the raid state survives a restart);
+  `tests/e2e/world.spec.ts` (in a real browser: the banner, three raiders, a kill, a loss and the camp).
 
 ## 6. Open questions for later (not needed to start)
 
 - **"Daily" protection fee (AF-012):** the game has no in-game day yet. A real day (24 hours), or a shorter
   game day, needs deciding before AF-012.
 - **Should guests count toward raid size?** They do in this proposal, since they fight the raiders too.
+
+## 7. Trying it
+
+- **On your machine:** `npm run world`, open http://localhost:2568/?debug, start a game, then in the browser
+  console run `__alloy.raid(5)` (a raid with a 5-second warning). This needs `ALLOW_TELEPORT=1` (local only),
+  like the other test hooks. To have raids start on their own, also set `RAIDS=1`.
+- **On the live server:** add the setting `RAIDS=1` in Render's Environment settings (a settings change on the
+  hosting, so the owner does it). Raids then start on their own as in section 1. The test command never
+  works there.

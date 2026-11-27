@@ -3,6 +3,20 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-27 10:00 — Built raids on Emberhold (AF-011)
+- **PR:** 34
+- **Asked for:** Neal approved the raid proposal as written: build it.
+- **Done:**
+  - Rules in game-rules raid.ts; Ember Raider and Raider Captain enemies; RAID_POINTS (entry, village patrol, camp) checked clear of colliders.
+  - Server: RaidDirector (apps/server/src/raids.ts) in the world room: readiness, the horn, a 60 s warning, two waves and the Captain, a 5-minute limit, a loss when nobody defends the village for 30 s, the Captain's camp on the trail. Win bonus and the Captain's Binding Flux. Raid state saved in the world:observer row. Off unless the server setting RAIDS=1; a debugRaid test command only on local test servers.
+  - Protocol 3: spawn, despawn and raid messages; welcome includes raiders and the raid. Browser: raiders created and removed, ember-red tint, a raid banner with the countdown; toasts move below it.
+  - Game.ts: 19 changed lines (hooks, the Warden-only 'falls silent' toast, the raid test hook).
+- **Not done / deferred:** Not on in the live game: needs RAIDS=1 in Render's settings, which is the owner's call. No horn sound, no raider models of their own (the Scavenger's, tinted). The protection fee is AF-012.
+- **Verified:**
+  - npm run typecheck pass; npm test 28 files, 255 tests pass (13 new for raids); npm run build pass.
+  - npm run test:e2e: 19 passed, 1 failed: the full-loop test at line 262 (pressing E at Orla didn't open her dialog, the known flake in M4.md; offline, no raids). It passed when rerun alone. The new raid browser test passed (3 raiders, a kill, the loss, the camp).
+- **Notes:** A first version of the browser test 'left' to the quarry; the sentinels killed the player, who respawned in the village and so kept defending it. The server was right; the test now waits on a quiet part of the trail.
+
 ## 2026-11-27 07:18 — Raid proposal for approval (AF-011)
 - **PR:** 34
 - **Asked for:** Start AF-011 with the raid proposal: the trigger, size and outcomes need design approval before building.

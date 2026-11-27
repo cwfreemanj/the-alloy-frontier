@@ -8,7 +8,7 @@ import { expect, test, type Page } from '@playwright/test';
 const WORLD = 'http://localhost:2569';
 
 type W = { status: string; id: string | null; name: string; others: Array<{ id: string; name: string; x: number; z: number; hp: number | null }> };
-type S = { world: W; quest: { step: string }; enemies: Array<{ id: string; state: string; hp: number; x: number; z: number }>; pos: { x: number; z: number } };
+type S = { world: W; quest: { step: string }; enemies: Array<{ id: string; type: string; state: string; hp: number; x: number; z: number }>; pos: { x: number; z: number } };
 const state = (p: Page) => p.evaluate(() => (window as unknown as { __alloy: { state: () => S } }).__alloy.state());
 const call = (p: Page, fn: string, ...args: unknown[]) =>
   p.evaluate(([f, a]) => (window as unknown as Record<string, Record<string, (...x: unknown[]) => unknown>>).__alloy[f as string](...(a as unknown[])), [fn, args] as const);
@@ -83,4 +83,59 @@ test('two players share one world: presence, movement, a shared fight and shared
   await ctxB.close();
   await expect.poll(async () => (await state(a)).world.others.some((o) => o.name.startsWith('Bravo')), { timeout: 15_000 }).toBe(false);
   await ctxA.close();
+});
+
+// Last in this file: a lost raid leaves the Raider Captain camped on the trail for later tests.
+test('a raid on Emberhold: the horn, raiders to fight, and a loss that leaves the Captain camped (AF-011)', async ({ browser }) => {
+  test.setTimeout(180_000);
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+  const p = await ctx.newPage();
+  await enter(p, 'Defender');
+  await p.evaluate(() => (window as unknown as { __alloy: { session: () => { talk: (n: string) => void } } }).__alloy.session().talk('orla'));
+  const raiders = async () => (await state(p)).enemies.filter((e) => e.type === 'raider');
+  const banner = p.getByTestId('raid-banner');
+
+  // The local test command: the horn, with a 3-second warning.
+  await call(p, 'raid', 3);
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText('Raid on Emberhold');
+  // The first wave appears (one defender: 3 raiders) and the banner counts them.
+  await expect.poll(async () => (await raiders()).length, { timeout: 10_000 }).toBe(3);
+  await expect(banner).toContainText('Raiders in the village');
+  await expect(banner).toContainText('3 raiders left');
+
+  // Fight one: the server takes hits on raiders like any enemy.
+  const target = (await raiders())[0].id;
+  let dead = false;
+  for (let i = 0; i < 120 && !dead; i++) {
+    const s = await state(p);
+    const e = s.enemies.find((x) => x.id === target)!;
+    if (e.state === 'dead') {
+      dead = true;
+      break;
+    }
+    if (Math.hypot(e.x - s.pos.x, e.z - s.pos.z) > 2.4) await call(p, 'teleport', e.x - 1.6 * Math.sign(e.x - s.pos.x || 1), e.z);
+    await call(p, 'face', Math.atan2(e.x - s.pos.x, e.z - s.pos.z));
+    await call(p, 'heal');
+    await p.keyboard.press('KeyJ');
+    await p.waitForTimeout(250);
+  }
+  expect(dead).toBe(true);
+  // (One swing can catch two raiders.)
+  await expect.poll(async () => Number((await banner.textContent())?.match(/(\d+) raiders? left/)?.[1] ?? 3)).toBeLessThan(3);
+  await p.screenshot({ path: '.tmp/raid-view.png' });
+
+  // Everyone leaves the village: after 30 seconds the raid is lost. The player waits at a quiet
+  // spot on the trail, out of every enemy's sight (one who falls respawns in the village square,
+  // which counts as defending it).
+  await call(p, 'heal');
+  await call(p, 'teleport', -10, 95);
+  await expect.poll(async () => (await state(p)).pos.z).toBeGreaterThan(90);
+  await expect(banner).toContainText('Emberhold has fallen', { timeout: 45_000 });
+  // The raiders withdraw (the fallen one is removed too) and the Captain camps on the trail.
+  await expect.poll(async () => (await raiders()).length, { timeout: 15_000 }).toBe(0);
+  const camp = (await state(p)).enemies.find((e) => e.type === 'raider_captain');
+  expect(camp?.id).toMatch(/^raid-camp-/);
+  expect(Math.hypot(camp!.x - 12, camp!.z - 68)).toBeLessThan(2);
+  await ctx.close();
 });

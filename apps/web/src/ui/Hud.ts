@@ -3,6 +3,7 @@ import { POTION_COOLDOWN } from '@alloy/crafting';
 import * as THREE from 'three';
 import { ATTACKS, QUEST_EDGE_YOU_MAKE, STAMINA_CONFIG, describeProgress, weaponXpToNext, type AttackId, type PlayerCombat, WEAPON_FAMILIES } from '@alloy/game-rules';
 import { IMBUEMENTS, itemDisplayName, materialName, type ItemInstance, type MaterialId } from '@alloy/item-gen';
+import type { RaidInfo } from '@alloy/protocol';
 import type { Session } from '../state/Session';
 import { PATH, ZONES, type Zone } from '@alloy/world';
 import { h } from './dom';
@@ -45,6 +46,10 @@ export class Hud {
   private gatherFill: HTMLElement;
   private toasts: HTMLElement;
   private banner: HTMLElement;
+  /** Raid on Emberhold (AF-011): what's happening and the countdown. */
+  private raidEl: HTMLElement;
+  private raidState: { info: RaidInfo; endsAt: number } | null = null;
+  private raidTimer: number | null = null;
   private labels: HTMLElement;
   private reticle: HTMLElement;
   readonly perf: HTMLElement;
@@ -121,6 +126,7 @@ export class Hud {
     this.gatherBar = h('div', { class: 'gather-bar meter cyan' }, this.gatherFill);
     this.toasts = h('div', { class: 'toasts', 'aria-live': 'polite' });
     this.banner = h('div', { class: 'zone-banner' });
+    this.raidEl = h('div', { class: 'raid-banner', 'data-testid': 'raid-banner', role: 'status' });
     this.labels = h('div', { class: 'world-labels' });
     this.reticle = h('div', { class: 'lock-reticle' });
     this.perf = h('div', { class: 'perf', 'data-testid': 'perf' });
@@ -140,6 +146,7 @@ export class Hud {
       this.gatherBar,
       this.toasts,
       this.banner,
+      this.raidEl,
       this.perf,
       this.death,
       h('div', { class: 'hint-line' }, 'Esc: menu · I: character · F3: performance'),
@@ -156,6 +163,50 @@ export class Hud {
     this.toasts.append(t);
     while (this.toasts.children.length > 5) this.toasts.firstChild?.remove();
     setTimeout(() => t.remove(), 3300);
+  }
+
+  /** Show a raid's state (null hides it). A win or loss shows for a few seconds. */
+  raid(info: RaidInfo | null): void {
+    if (this.raidTimer !== null) clearInterval(this.raidTimer);
+    this.raidTimer = null;
+    this.raidState = info ? { info, endsAt: performance.now() + info.left * 1000 } : null;
+    if (!info) {
+      this.raidEl.classList.remove('show');
+      return;
+    }
+    this.drawRaid();
+    if (info.phase === 'warning' || info.phase === 'fighting') this.raidTimer = window.setInterval(() => this.drawRaid(), 250);
+    else
+      this.raidTimer = window.setTimeout(() => {
+        this.raidTimer = null;
+        if (this.raidState?.info === info) this.raid(null);
+      }, 8000);
+  }
+
+  private drawRaid(): void {
+    const r = this.raidState;
+    if (!r) return;
+    const { info } = r;
+    const secs = Math.max(0, Math.ceil((r.endsAt - performance.now()) / 1000));
+    const clock = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+    let title: string;
+    let line: string;
+    if (info.phase === 'warning') {
+      title = 'Raid on Emberhold';
+      line = `Raiders reach the village in ${clock}`;
+    } else if (info.phase === 'fighting') {
+      title = info.captain ? 'Defeat the Raider Captain' : 'Raiders in the village';
+      line = `${info.raiders} raider${info.raiders === 1 ? '' : 's'} left${info.wave === 1 ? ' · more coming' : ''} · ${clock}`;
+    } else if (info.phase === 'won') {
+      title = 'Emberhold holds!';
+      line = 'The raiders scatter into the Ironwood.';
+    } else {
+      title = 'Emberhold has fallen';
+      line = 'The Raider Captain camps on the Ironwood Trail.';
+    }
+    this.raidEl.dataset.phase = info.phase;
+    this.raidEl.replaceChildren(h('div', { class: 'n' }, title), h('div', { class: 's' }, line));
+    this.raidEl.classList.add('show');
   }
 
   zoneBanner(z: Zone): void {
