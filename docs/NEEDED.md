@@ -1,0 +1,35 @@
+# Needed from people
+
+Things only a person can do, which the project is waiting on. **AI agents: read this at the start of
+every session, before any other work, and tell the person you're working with about their items**
+(see "Before you start" in [AGENTS.md](../AGENTS.md)).
+
+Most important first. When an item is done, remove it here in the same pull request as its result.
+
+## Creative director (git name `cwfreemanj`)
+
+1. **Performance report from your own computer. Top priority, about 5 minutes.**
+   - **Why:** performance has only been measured on the technical director's laptop. A second machine
+     shows how the game runs on different hardware, and M4 can't be signed off without it. It also
+     decides whether the performance pass (AF-014) is needed.
+   - **How:**
+     1. Open https://alloy-frontier.onrender.com in a normal Chrome or Edge window, at your usual
+        screen size. The first load can take about a minute while the server wakes.
+     2. Leave the graphics preset on medium (the default) and play for a few minutes.
+     3. Stand still on the Ironwood Trail for 15 seconds.
+     4. Press **Esc**, then **Copy performance report**.
+     5. Optional: switch to the low preset and repeat steps 3 and 4.
+     6. Give the report to your AI agent, or send it to the technical director.
+   - **For the agent:** you can't take this measurement yourself: it has to come from the person's own
+     browser, since headless and automated numbers aren't reliable. Walk them through the steps, then
+     save the report as `docs/perf/<date>-creative-director-<machine>.md`, fill in the creative director's
+     row in section 2 of [M4.md](M4.md), and open a pull request.
+2. **Play the game through once, from a new character to the quest summary**, and answer the five
+   questions (F1–F5) in section 1 of [M4.md](M4.md). M4 needs three playthroughs in all, from anyone.
+3. **Sign off gameplay feel and UI clarity**, after the playthroughs: section 3 of [M4.md](M4.md).
+
+## Technical director (git name `Neal`)
+
+1. **Play the game through once, from a new character**, and fill in a row in section 1 of
+   [M4.md](M4.md). Three playthroughs are needed in all.
+2. **Tag the `v0.1.0` release** once the creative director has signed off (yours is done): section 4 of [M4.md](M4.md).

@@ -3,6 +3,21 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-27 07:09 — Recorded the technical director's M4 sign-off
+- **Asked for:** Put Neal's name and date on his M4 sign-off row.
+- **Done:** docs/M4.md: technical director row signed (Neal, 2026-11-27), status row now Partly. docs/NEEDED.md: Neal's sign-off item removed; the v0.1.0 tag now waits only on the creative director's sign-off. Entry in neal.md.
+- **Not done / deferred:** Creative director's sign-off, performance report and the playthroughs are still open.
+- **Verified:** Docs only; the earlier checks on this branch (typecheck, 242/242 tests, build) still apply.
+
+## 2026-11-27 06:53 — A to-do list for people that every agent brings up first
+- **Asked for:** Make sure the creative director's AI tells him, before any other work, what's needed from him (above all the performance report from his machine), and asks whether to do it now or continue.
+- **Done:**
+  - New docs/NEEDED.md: each person's items, most important first; the creative director's performance report is first, with the steps and why a second machine matters.
+  - AGENTS.md (read by Codex, and by Claude through CLAUDE.md): a 'Before you start' section at the top telling agents to read NEEDED.md, find who they're working with from git config user.name, list that person's items and ask 'do this now, or continue with your work?', once per session.
+  - M4.md links to NEEDED.md.
+- **Not done / deferred:** No code changes. The partner's agent only sees this once he pulls main after this merges.
+- **Verified:** npm run typecheck, npm test (242/242) and npm run build pass. Docs only, so no browser tests.
+
 ## 2026-11-25 18:46 — Forge button 'covered': a late pointer lock, not the layout
 - **Asked for:** Find and fix why the full-loop browser test sometimes times out clicking Quick Forge, with Playwright reporting that .forge-center intercepts pointer events.
 - **Done:** Found the cause in the original failing log: the preliminary hit test passed every retry; the real mousedown was the one intercepted. Closing a menu (Esc on Bram's shop) asks for pointer lock, which the browser grants asynchronously. The forge opened ~200 ms later; setModal's exitPointerLock did nothing because the lock wasn't granted yet. When it arrived, the canvas held the mouse over the forge, so every click went to the canvas with frozen coordinates that land on the centre column. Fix in apps/web/src/core/Input.ts: remember whether a lock is still wanted (requestPointerLock sets it, exitPointerLock clears it) and release a lock that is granted after it was cancelled. Players could hit the same bug by closing one menu and quickly opening another. Tests: new e2e test that delays the browser's lock grant by 600 ms, closes and reopens the inventory, and checks the lock is released; the full loop now also checks there is no pointer lock and that elementFromPoint at the Forge button's centre is the button.
