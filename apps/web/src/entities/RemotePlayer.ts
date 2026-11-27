@@ -6,8 +6,8 @@ import * as THREE from 'three';
 import type { AvatarState } from '@alloy/protocol';
 import type { ItemInstance } from '@alloy/item-gen';
 import { ATTACK_POSES, POSE_BLOCK, POSE_DEAD, POSE_DODGE, POSE_GATHER, POSE_GUARD, POSE_STAGGER, Rig, easeIn, easeOut, locomotionPose, mixPose, type Pose } from './Rig';
-import { buildSword, type SwordVisual } from './Weapons';
-import { GearRack, wornFromNet } from './Gear';
+import { buildSword, buildWorkshopWeapon, type SwordVisual } from './Weapons';
+import { GearRack, lookFromNet, wornFromNet } from './Gear';
 import { makePlayerBody, playerAnimRequest } from './Player';
 import { CharacterBody, DEFAULT_PLAYER_CHARACTER, isPlayerCharacter, type PlayerCharacterId } from './models/Characters';
 
@@ -141,14 +141,16 @@ export class RemotePlayer {
   }
 
   private updateSword(s: AvatarState): void {
-    const key = s.wpn ? `${s.wpn.bp}|${s.wpn.spec}|${s.wpn.imb}|${s.wpn.rar}` : '';
+    const key = s.wpn ? `${s.wpn.bp}|${s.wpn.spec}|${s.wpn.imb}|${s.wpn.rar}|${s.wpn.lk ?? ''}` : '';
     if (key === this.swordKey) return;
     this.swordKey = key;
     this.body.rHand.remove(this.sword.group);
     const look = s.wpn
       ? ({ blueprintId: s.wpn.bp, forge: { specialization: s.wpn.spec }, result: { imbuements: s.wpn.imb ? ['storm_arc'] : [], rarity: s.wpn.rar } } as unknown as ItemInstance)
       : null;
-    this.sword = buildSword(look);
+    // A found weapon: its look comes with it (this browser doesn't have its blueprint).
+    const found = s.wpn?.lk ? lookFromNet(s.wpn.lk) : undefined;
+    this.sword = found && s.wpn ? buildWorkshopWeapon(s.wpn.bp, s.wpn.rar, found) : buildSword(look);
     this.body.rHand.add(this.sword.group);
   }
 

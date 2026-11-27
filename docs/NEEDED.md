@@ -36,7 +36,8 @@ Most important first. When an item is done, remove it here in the same pull requ
 6. **Agree the blueprint contract:** [blueprint-contract.md](blueprint-contract.md). It turns your blueprint design
    into what `generateBlueprint` returns and what the game does with it. The technical director has made the four
    open decisions (section 3: learned and the scroll stays, set pieces one at a time, duplicates, the fixed list
-   stays). About 15 minutes. After that, your next build step is `generateBlueprint` itself (section 4).
+   stays). About 15 minutes. The game side is already built against a stand-in, so your next build step is the
+   real `generateBlueprint` and drop table: replace them in `packages/item-gen/src/found.ts` (contract section 5).
 
 ## Technical director (git name `Neal`)
 

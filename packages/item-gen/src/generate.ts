@@ -5,7 +5,8 @@
  * caller-supplied itemId/createdAt, which are also inputs). Final stats are
  * snapshotted into `result` so later balance changes never silently alter items.
  */
-import { getBlueprint } from './blueprints';
+import { getBlueprint, type BlueprintDefinition } from './blueprints';
+import { validPiece } from './found';
 import {
   BALANCE_VERSION,
   GENERATOR_VERSION,
@@ -135,6 +136,8 @@ export interface GenerationInput {
   createdAt: number;
   /** Used for merchant/quest stock that consumes no lots. */
   fixedMaterialQuality?: number;
+  /** A found blueprint's definition (its id is `blueprintId`). Copied into the item. */
+  blueprint?: BlueprintDefinition;
 }
 
 function weightedQuality(mats: ConsumedMaterial[], filter: (m: ConsumedMaterial) => boolean): number | undefined {
@@ -165,10 +168,10 @@ function finalizeStats(s: WeaponStats): WeaponStats {
 }
 
 export function computeIntegrity(item: Omit<ItemInstance, 'integrity' | 'history' | 'customName'>): string {
-  const { itemId, seed, generatorVersion, balanceVersion, blueprintId, materials, buffer, forge, result, createdAt, source } =
-    item;
+  const { itemId, seed, generatorVersion, balanceVersion, blueprintId, materials, buffer, forge, result, createdAt, source, blueprint } = item;
+  // `blueprint` only when present, so items made before found blueprints keep their hash.
   return hashHex(
-    stableStringify({ itemId, seed, generatorVersion, balanceVersion, blueprintId, materials, buffer, forge, result, createdAt, source }),
+    stableStringify({ itemId, seed, generatorVersion, balanceVersion, blueprintId, materials, buffer, forge, result, createdAt, source, ...(blueprint ? { blueprint } : {}) }),
   );
 }
 
@@ -179,7 +182,7 @@ export function verifyIntegrity(item: ItemInstance): boolean {
 export class GenerationError extends Error {}
 
 export function generateItem(input: GenerationInput): ItemInstance {
-  const bp = getBlueprint(input.blueprintId);
+  const bp = input.blueprint && input.blueprint.id === input.blueprintId ? input.blueprint : getBlueprint(input.blueprintId);
   if (!bp) throw new GenerationError(`Unknown blueprint ${input.blueprintId}`);
   const rng = new Rng(`${input.seed}:${GENERATOR_VERSION}`);
 
@@ -327,7 +330,7 @@ interface Sealed {
 }
 
 /** Build the item record and seal it (integrity). Shared by weapons and armor; the fields are unchanged. */
-function seal(bp: NonNullable<ReturnType<typeof getBlueprint>>, input: GenerationInput, x: Sealed): ItemInstance {
+function seal(bp: BlueprintDefinition, input: GenerationInput, x: Sealed): ItemInstance {
   const { mode, mastery, sf, mf, bf, ff, score, specialization, temper, fDamage, stages, materialQuality, bufferQty } = x;
   const base: Omit<ItemInstance, 'integrity' | 'history'> = {
     schemaVersion: 1,
@@ -360,12 +363,19 @@ function seal(bp: NonNullable<ReturnType<typeof getBlueprint>>, input: Generatio
     },
     result: x.result,
     createdAt: input.createdAt,
+    // Found blueprints aren't in the standard table: the item keeps a copy.
+    ...(getBlueprint(bp.id) ? {} : { blueprint: JSON.parse(JSON.stringify(bp)) as BlueprintDefinition }),
   };
   return {
     ...base,
     history: [{ at: input.createdAt, event: `Created by ${input.maker.name} (${input.source})` }],
     integrity: computeIntegrity(base),
   };
+}
+
+/** The blueprint an item was made from: its own copy (found blueprints), else the standard table. */
+export function blueprintOf(item: Pick<ItemInstance, 'blueprintId' | 'blueprint'>): BlueprintDefinition | undefined {
+  return item.blueprint ?? getBlueprint(item.blueprintId);
 }
 
 export function itemDisplayName(item: ItemInstance): string {
@@ -376,7 +386,9 @@ export function itemDisplayName(item: ItemInstance): string {
 export function validateItem(item: unknown): item is ItemInstance {
   if (!item || typeof item !== 'object') return false;
   const it = item as ItemInstance;
-  if (it.schemaVersion !== 1 || typeof it.itemId !== 'string' || !getBlueprint(it.blueprintId)) return false;
+  if (it.schemaVersion !== 1 || typeof it.itemId !== 'string') return false;
+  // A standard blueprint, or the item's own copy of a found one.
+  if (!getBlueprint(it.blueprintId) && !(validPiece(it.blueprint) && it.blueprint.id === it.blueprintId)) return false;
   const r = it.result;
   if (!r) return false;
   for (const k of ['damage', 'attackSpeed', 'stagger', 'staminaCostMultiplier', 'critChance', 'rating'] as const) {

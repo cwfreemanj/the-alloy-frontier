@@ -11,7 +11,7 @@
  * - Chest and leg armor have no look on the character yet (phase 2: fitting to Maria and Exo).
  */
 import * as THREE from 'three';
-import { getBlueprint } from '@alloy/item-gen';
+import { getBlueprint, type BlueprintDefinition } from '@alloy/item-gen';
 import type { EquipmentMeta } from '../world/workshop/equipment.js';
 import { buildModel, optimizeForGame } from '../world/workshop/core.js';
 import { workshopBank } from '../world/WorkshopModels';
@@ -30,12 +30,25 @@ const MANNEQUIN_HEAD_TOP = new THREE.Vector3(0, 1.7649, 0.0287);
 
 const looks = new Map<string, Promise<GearLook | null>>();
 
-/** The look of a blueprint at a rarity (null: no workshop look, or it failed to build). */
-export function gearLook(blueprintId: string, rarity: string): Promise<GearLook | null> {
-  const key = `${blueprintId}|${rarity}`;
+type LookSpec = NonNullable<BlueprintDefinition['look']>;
+
+/** A look in the short network form "type:shape:blend" (other players' found gear). */
+export const lookToNet = (l: LookSpec | undefined): string | undefined => (l ? [l.type, l.shape ?? '', l.blend ?? ''].join(':') : undefined);
+export function lookFromNet(s: string | undefined): LookSpec | undefined {
+  if (!s) return undefined;
+  const [type, shape, blend] = s.split(':');
+  return type ? { type, ...(shape ? { shape } : {}), ...(blend ? { blend } : {}) } : undefined;
+}
+
+/**
+ * The look of a blueprint at a rarity (null: no workshop look, or it failed to build). Found blueprints
+ * aren't in the standard table, so their look is passed in.
+ */
+export function gearLook(blueprintId: string, rarity: string, given?: LookSpec): Promise<GearLook | null> {
+  const look = given ?? getBlueprint(blueprintId)?.look;
+  const key = `${blueprintId}|${rarity}|${lookToNet(look) ?? ''}`;
   let p = looks.get(key);
   if (!p) {
-    const look = getBlueprint(blueprintId)?.look;
     p = !look
       ? Promise.resolve(null)
       : import('../world/workshop/equipment.js')
@@ -153,13 +166,16 @@ function wearHelmet(body: CharacterBody, look: GearLook): THREE.Object3D | null 
 
 /** What a character wears that shows: off-hand and head (blueprint id and rarity of each). */
 export interface WornGear {
-  offhand?: { bp: string; rar: string } | null;
-  head?: { bp: string; rar: string } | null;
+  offhand?: { bp: string; rar: string; look?: LookSpec } | null;
+  head?: { bp: string; rar: string; look?: LookSpec } | null;
 }
 
 /** Worn gear from the network form (AvatarState.gr). */
-export function wornFromNet(gr: { o?: string; or?: string; h?: string; hr?: string } | undefined): WornGear {
-  return { offhand: gr?.o ? { bp: gr.o, rar: gr.or ?? 'common' } : null, head: gr?.h ? { bp: gr.h, rar: gr.hr ?? 'common' } : null };
+export function wornFromNet(gr: { o?: string; or?: string; ol?: string; h?: string; hr?: string; hl?: string } | undefined): WornGear {
+  return {
+    offhand: gr?.o ? { bp: gr.o, rar: gr.or ?? 'common', look: lookFromNet(gr.ol) } : null,
+    head: gr?.h ? { bp: gr.h, rar: gr.hr ?? 'common', look: lookFromNet(gr.hl) } : null,
+  };
 }
 
 /**
@@ -187,9 +203,9 @@ export class GearRack {
     for (const p of this.pieces) p.removeFromParent();
     this.pieces = [];
     const gen = ++this.gen;
-    const wear = (g: { bp: string; rar: string } | null | undefined, put: (b: CharacterBody, l: GearLook) => THREE.Object3D | null) => {
+    const wear = (g: WornGear['head'], put: (b: CharacterBody, l: GearLook) => THREE.Object3D | null) => {
       if (!g) return;
-      void gearLook(g.bp, g.rar).then((look) => {
+      void gearLook(g.bp, g.rar, g.look).then((look) => {
         const b = this.body();
         if (!look || gen !== this.gen || !(b instanceof CharacterBody)) return;
         const p = put(b, look);

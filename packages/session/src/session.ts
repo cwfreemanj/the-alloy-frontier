@@ -11,6 +11,10 @@ import {
   buy,
   createInventory,
   discardItem,
+  addScroll,
+  discardScroll,
+  learnScroll,
+  resolveBlueprint,
   equipItem,
   equipWeapon,
   equippedItems,
@@ -57,7 +61,7 @@ import {
   currentStep,
   type QuestEvent,
 } from '@alloy/game-rules';
-import { getBlueprint, materialName, type ItemInstance, type MaterialId, type ToolKind, type WeaponFamily } from '@alloy/item-gen';
+import { RARITY_LABEL, materialName, type GeneratedBlueprint, type ItemInstance, type MaterialId, type ToolKind, type WeaponFamily } from '@alloy/item-gen';
 
 /** Herbalism XP per potion brewed. */
 export const BREW_XP = 3;
@@ -342,7 +346,7 @@ export class Session {
     if (r.duplicate) return r;
     this.data.inventory = r.inventory;
     this.data.stats.crafted++;
-    const bp = getBlueprint(req.blueprintId)!;
+    const bp = resolveBlueprint(this.data.inventory, req.blueprintId)!;
     const xp = craftXp(req.mode === 'quick' ? bp.masteryXp.quick : bp.masteryXp.masterwork, req.mode, r.item.forge.forgeScore);
     const g = addSmithXp(this.data.progression, xp);
     this.data.progression = g.state;
@@ -396,6 +400,42 @@ export class Session {
 
   discard(itemId: string): boolean {
     const r = discardItem(this.data.inventory, itemId);
+    if (!r.ok) {
+      this.emit({ type: 'toast', text: r.message, tone: 'warn' });
+      return false;
+    }
+    this.setInventory(r.inventory);
+    return true;
+  }
+
+  /** A found blueprint goes in the bag (docs/blueprint-contract.md). Returns the scroll id, or null. */
+  addBlueprint(bp: GeneratedBlueprint): string | null {
+    const r = addScroll(this.data.inventory, bp);
+    if (!r.ok) {
+      this.emit({ type: 'toast', text: r.message, tone: 'warn' });
+      return null;
+    }
+    this.setInventory(r.inventory);
+    const known = this.data.inventory.learned?.[bp.id] ? ' (already learned)' : '';
+    this.emit({ type: 'toast', text: `Found a blueprint: ${bp.name} (${RARITY_LABEL[bp.rarity]})${known}. Learn it in your inventory (I).`, tone: 'good' });
+    return r.scrollId;
+  }
+
+  /** Learn a scroll's blueprint; the scroll stays. */
+  learnScroll(scrollId: string): boolean {
+    const r = learnScroll(this.data.inventory, scrollId);
+    if (!r.ok) {
+      this.emit({ type: 'toast', text: r.message, tone: r.error === 'already_learned' ? 'info' : 'warn' });
+      return false;
+    }
+    this.setInventory(r.inventory);
+    this.emit({ type: 'toast', text: `Learned ${r.blueprint.name}. It is in the forge now.`, tone: 'good' });
+    return true;
+  }
+
+  /** Throw a scroll away (a learned blueprint stays learned). */
+  discardScroll(scrollId: string): boolean {
+    const r = discardScroll(this.data.inventory, scrollId);
     if (!r.ok) {
       this.emit({ type: 'toast', text: r.message, tone: 'warn' });
       return false;

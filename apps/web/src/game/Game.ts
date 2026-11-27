@@ -29,13 +29,13 @@ import {
 } from '@alloy/game-rules';
 import { cleanName, type AvatarState, type HitVerdict } from '@alloy/protocol';
 import { toolPower } from '@alloy/crafting';
-import { IMBUEMENTS, type ItemInstance } from '@alloy/item-gen';
+import { IMBUEMENTS, type ItemInstance, generateBlueprint } from '@alloy/item-gen';
 import { CameraRig } from '../core/CameraRig';
 import { Input } from '../core/Input';
 import { PerfMonitor } from '../core/Perf';
 import { Enemy } from '../entities/Enemy';
 import { PLAYER_RADIUS, Player } from '../entities/Player';
-import { wornFromNet } from '../entities/Gear';
+import { lookToNet, wornFromNet } from '../entities/Gear';
 import { Npc, ResourceNode } from '../entities/WorldObjects';
 import { Effects } from '../fx/Effects';
 import { SaveSystem } from '../state/Save';
@@ -506,7 +506,8 @@ export class Game {
       pr: r(Math.min(1, c.t / Math.max(0.01, dur))),
       hp: Math.round(c.health),
       mhp: c.maxHealth,
-      wpn: w ? { bp: w.blueprintId, spec: w.forge.specialization, imb: w.result.imbuements.includes('storm_arc'), rar: w.result.rarity } : null,
+      // lk: a found weapon's look, so other players can draw it (they don't have its blueprint).
+      wpn: w ? { bp: w.blueprintId, spec: w.forge.specialization, imb: w.result.imbuements.includes('storm_arc'), rar: w.result.rarity, ...(w.blueprint?.look ? { lk: lookToNet(w.blueprint.look) } : {}) } : null,
       mdl: this.character,
       gr: this.wornGear(),
     };
@@ -857,6 +858,8 @@ export class Game {
       (slot, skill) => this.act({ k: 'skillbar', slot, skill }),
       (recipe, qty) => this.act({ k: 'brew', recipe, qty }),
       (item) => this.usePotion(item),
+      (scroll) => this.act({ k: 'learn', scroll }),
+      (scroll) => this.act({ k: 'scrap', scroll }),
     );
     this.setModal('inventory', p.el);
     this.panel = p;
@@ -1011,7 +1014,11 @@ export class Game {
     };
     const o = at('offhand');
     const hd = at('head');
-    return { ...(o ? { o: o.blueprintId, or: o.result.rarity } : {}), ...(hd ? { h: hd.blueprintId, hr: hd.result.rarity } : {}) };
+    // Found pieces also send their look (other players don't have their blueprints).
+    return {
+      ...(o ? { o: o.blueprintId, or: o.result.rarity, ...(o.blueprint?.look ? { ol: lookToNet(o.blueprint.look) } : {}) } : {}),
+      ...(hd ? { h: hd.blueprintId, hr: hd.result.rarity, ...(hd.blueprint?.look ? { hl: lookToNet(hd.blueprint.look) } : {}) } : {}),
+    };
   }
 
   private applyCharacterStats(): void {
@@ -1298,7 +1305,7 @@ export class Game {
     window.setTimeout(() => this.audio.sfx('coin', 0.8), 250);
     // Signed in, the server rolls the rewards and sends them with the character.
     if (this.mode !== 'account') {
-      const r = rewardKill(this.session, e.spawn.type, e.id, Math.random);
+      const r = rewardKill(this.session, e.spawn.type, e.id, Math.random, undefined, { area: zoneAt(e.home).id });
       if (r.flux) this.hud.toast('Scavenger dropped Binding Flux', 'info');
       this.hud.toast(`${d.name} defeated · +${r.coins} coins`, 'good');
     }
@@ -1747,6 +1754,9 @@ export class Game {
       // Grants only work on guest characters: an account character belongs to the server.
       give: (material: 'iron_ore' | 'ironwood' | 'ironglass' | 'binding_flux', qty: number, quality = 0.6) => this.mode !== 'account' && this.session.gather('debug', material, qty, quality, {}),
       coins: (n: number) => (this.mode !== 'account' ? (this.session.addCoins(n), true) : false),
+      // A found blueprint (guests only, like the other grants): returns its scroll id.
+      blueprint: (area: 'village' | 'trail' | 'quarry' | 'foundry' = 'trail', seed = `debug-${Date.now()}`, level = 5) =>
+        this.mode !== 'account' ? this.session.addBlueprint(generateBlueprint(seed, { area, source: 'chest', sourceId: 'debug', level })) : null,
       act: (a: CharAction) => this.act(a),
       heal: () => this.player.combat.revive(),
       // Start a raid now, with a short warning (local test servers only).

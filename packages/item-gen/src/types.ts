@@ -157,6 +157,11 @@ export interface ItemInstance {
   result: ItemResult;
   createdAt: number;
   history: ItemHistoryEntry[];
+  /**
+   * A copy of the blueprint it was forged from, when that was a found (generated) blueprint
+   * (docs/blueprint-contract.md). The item then always knows its slot, family and look. Covered by integrity.
+   */
+  blueprint?: import('./blueprints').BlueprintDefinition;
   /** Hash of the immutable creation snapshot, used to detect tampering/corruption. */
   integrity: string;
 }

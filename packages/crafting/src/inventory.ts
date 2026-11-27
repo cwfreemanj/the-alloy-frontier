@@ -5,9 +5,13 @@
  */
 import {
   MATERIALS,
+  blueprintOf,
   getBlueprint,
   isMaterialId,
+  validateBlueprint,
   validateItem,
+  type BlueprintDefinition,
+  type GeneratedBlueprint,
   type ConsumedMaterial,
   type EquipInfo,
   type ToolKind,
@@ -33,9 +37,19 @@ export interface InventoryState {
   itemOrder: string[];
   /** Item id per slot. `weapon` is the main hand (the name predates the other slots). */
   equipped: Equipped;
-  seq: { lot: number; item: number };
+  seq: { lot: number; item: number; scroll?: number };
   journal: JournalEntry[];
+  /**
+   * Found blueprints the character carries, by scroll id (docs/blueprint-contract.md). A scroll can be
+   * learned, discarded (and later sold, traded or given), learned or not. Optional: older saves have none.
+   */
+  scrolls?: Record<string, GeneratedBlueprint>;
+  /** Found blueprints the character has learned (can forge), by blueprint id. Optional like scrolls. */
+  learned?: Record<string, GeneratedBlueprint>;
 }
+
+/** Most scrolls a character can carry. */
+export const MAX_SCROLLS = 200;
 
 /** Character equipment slots (see docs/equipment-contract.md). */
 export const EQUIP_SLOTS = ['head', 'shoulders', 'neck', 'cape', 'chest', 'belt', 'hands', 'legs', 'feet', 'ring1', 'ring2', 'weapon', 'offhand', 'tool'] as const;
@@ -156,7 +170,50 @@ export function insertItem(draft: InventoryState, item: ItemInstance): void {
 
 /** Where an item goes (from its blueprint). Blueprints without `equip` are one-handed main-hand weapons. */
 export function equipInfo(item: ItemInstance): EquipInfo {
-  return getBlueprint(item.blueprintId)?.equip ?? { slot: 'weapon', hands: 1 };
+  return blueprintOf(item)?.equip ?? { slot: 'weapon', hands: 1 };
+}
+
+// ---------------- Found blueprints: scrolls and learning ----------------
+
+/** A blueprint this character can forge from: a learned found blueprint, or a standard pattern. */
+export function resolveBlueprint(inv: InventoryState, id: string): BlueprintDefinition | undefined {
+  const found = typeof id === 'string' && inv.learned && Object.prototype.hasOwnProperty.call(inv.learned, id) ? inv.learned[id] : undefined;
+  return found?.piece ?? getBlueprint(id);
+}
+
+/** Learned found blueprints, in the order they were learned. */
+export function learnedBlueprints(inv: InventoryState): GeneratedBlueprint[] {
+  return Object.values(inv.learned ?? {});
+}
+
+/** Put a found blueprint in the character's bag (a new scroll). */
+export function addScroll(inv: InventoryState, bp: GeneratedBlueprint): { ok: true; inventory: InventoryState; scrollId: string } | Fail {
+  if (!validateBlueprint(bp)) return fail('invalid_blueprint', 'That blueprint is damaged.');
+  if (Object.keys(inv.scrolls ?? {}).length >= MAX_SCROLLS) return fail('scrolls_full', `You can carry at most ${MAX_SCROLLS} blueprints.`);
+  const draft = cloneInventory(inv);
+  const n = (draft.seq.scroll ?? 0) + 1;
+  const scrollId = `scr-${draft.ownerId}-${n}`;
+  draft.seq.scroll = n;
+  (draft.scrolls ??= {})[scrollId] = bp;
+  return { ok: true, inventory: draft, scrollId };
+}
+
+/** Learn a scroll's blueprint. The scroll stays (to sell, trade or give away). */
+export function learnScroll(inv: InventoryState, scrollId: string): { ok: true; inventory: InventoryState; blueprint: GeneratedBlueprint } | Fail {
+  const bp = typeof scrollId === 'string' && inv.scrolls && Object.prototype.hasOwnProperty.call(inv.scrolls, scrollId) ? inv.scrolls[scrollId] : undefined;
+  if (!bp) return fail('unknown_scroll', 'You don’t have that blueprint.');
+  if (inv.learned?.[bp.id]) return fail('already_learned', "You've already learned this blueprint.");
+  const draft = cloneInventory(inv);
+  (draft.learned ??= {})[bp.id] = bp;
+  return { ok: true, inventory: draft, blueprint: bp };
+}
+
+/** Throw a scroll away (learned blueprints stay learned). */
+export function discardScroll(inv: InventoryState, scrollId: string): { ok: true; inventory: InventoryState } | Fail {
+  if (typeof scrollId !== 'string' || !inv.scrolls || !Object.prototype.hasOwnProperty.call(inv.scrolls, scrollId)) return fail('unknown_scroll', 'You don’t have that blueprint.');
+  const draft = cloneInventory(inv);
+  delete draft.scrolls![scrollId];
+  return { ok: true, inventory: draft };
 }
 
 /** The slot an item currently occupies, if any. */
@@ -283,5 +340,13 @@ export function validateInventory(inv: unknown): { ok: true } | Fail {
     seen.add(id);
   }
   if (s.equipped?.offhand && isTwoHanded(s, s.equipped.weapon)) return fail('equipped', 'Off-hand used with a two-handed weapon');
+  if (s.scrolls !== undefined) {
+    if (!s.scrolls || typeof s.scrolls !== 'object' || Object.keys(s.scrolls).length > MAX_SCROLLS) return fail('scrolls', 'Invalid blueprints');
+    for (const [id, bp] of Object.entries(s.scrolls)) if (!validateBlueprint(bp)) return fail('scroll', `Invalid or tampered blueprint ${id}`);
+  }
+  if (s.learned !== undefined) {
+    if (!s.learned || typeof s.learned !== 'object') return fail('learned', 'Invalid learned blueprints');
+    for (const [id, bp] of Object.entries(s.learned)) if (!validateBlueprint(bp) || bp.id !== id) return fail('learned', `Invalid or tampered blueprint ${id}`);
+  }
   return { ok: true };
 }

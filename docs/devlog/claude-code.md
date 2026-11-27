@@ -3,6 +3,16 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-27 16:53 — Found blueprints: the game side, with a stand-in generator
+- **PR:** 39
+- **Asked for:** Neal: start the game side of the blueprint contract, against a stand-in generator.
+- **Done:**
+  - item-gen found.ts: GeneratedBlueprint, BlueprintContext, sealBlueprint, validateBlueprint (bounds and seal), validPiece, and a STAND-IN generateBlueprint and BLUEPRINT_DROP for the creative director to replace. Items keep a sealed copy of a found blueprint (item.blueprint, in the integrity hash only when present, so old items keep their hash); blueprintOf(item) replaces the standard-table lookups.
+  - Inventory: scrolls (max 200) and learned; addScroll, learnScroll (scroll stays; 'You've already learned this blueprint.'), discardScroll, resolveBlueprint, validation. The forge resolves learned blueprints and passes them to generation.
+  - Session and server: learn and scrap actions; drops from kills (5%, elites 50%, by area) and searches (chests 30%, caches 20%, barrels 2%, seeded). Screens: a Blueprints section in the inventory; found blueprints in the forge under their category, marked Found. Other players get found weapons' and shields' looks (optional wpn.lk, gr.ol, gr.hl, validated).
+- **Not done / deferred:** Selling, trading and giving scrolls; quest rewards; Crafting and Alchemy blueprints (need the proficiency tree); set bonuses. The real generator is the creative director's.
+- **Verified:** npm run typecheck pass; npm test 273/273 (11 new); npm run build pass; npm run test:e2e 22/22 including a new found-blueprints test. In the browser: two scrolls, learned one (scroll kept, 'Learned', the duplicate message), forged it from the Body tab, equipped it, and it survived a save and reload.
+
 ## 2026-11-27 16:27 — Blueprint contract: the four decisions
 - **PR:** 38
 - **Asked for:** Neal answered the contract's four questions.

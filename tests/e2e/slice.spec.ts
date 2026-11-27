@@ -535,3 +535,45 @@ test('forge expansion: forge a shield, helmet and mace from their tabs; they sho
   expect(eq).toEqual({ weapon: 'iron_mace', offhand: 'iron_shield', head: 'iron_helmet' });
   expect(errors).toEqual([]);
 });
+
+test('found blueprints: learn a scroll in the inventory (it stays), then forge it at the anvil', async ({ page }) => {
+  const errors = await newGame(page);
+  type A = Record<string, (...x: unknown[]) => unknown>;
+  const scroll = (await page.evaluate(() => {
+    const a = (window as unknown as { __alloy: A }).__alloy;
+    const s = a.session() as { data: { quest: { stepIndex: number }; progression: { professions: { blacksmithing: { mastery: number } } } } };
+    s.data.quest.stepIndex = 8;
+    s.data.progression.professions.blacksmithing.mastery = 60;
+    for (const m of ['iron_ore', 'ironwood', 'ironglass', 'binding_flux']) a.give(m, 40, 0.6);
+    return a.blueprint('trail', 'e2e-blueprint', 5);
+  })) as string;
+  expect(scroll).toMatch(/^scr-/);
+  // Learn it on the Inventory screen; the scroll stays, and learning again isn't offered.
+  await page.keyboard.press('KeyI');
+  await page.getByRole('tab', { name: 'Inventory' }).click();
+  await page.getByTestId(`learn-${scroll}`).click();
+  await expect(page.getByTestId(`learn-${scroll}`)).toHaveText('Learned');
+  await expect(page.locator(`[data-scroll="${scroll}"]`)).toBeVisible();
+  await page.keyboard.press('Escape');
+  // Forge it: it is listed under its category, marked Found.
+  const bp = await page.evaluate(() => {
+    const a = (window as unknown as { __alloy: A }).__alloy;
+    const inv = (a.session() as { data: { inventory: { learned: Record<string, { id: string; piece: { family: string } }> } } }).data.inventory;
+    a.teleport(-14, 13.5);
+    (a.game as unknown as { openForge: () => void }).openForge();
+    return Object.values(inv.learned)[0];
+  });
+  const tab = ({ longsword: 'swords', mace: 'maces', shield: 'shields', helmet: 'helmets', chest: 'body', legs: 'body' } as Record<string, string>)[bp.piece.family];
+  await page.locator(`[data-category="${tab}"]`).click();
+  const card = page.locator(`[data-blueprint="${bp.id}"]`);
+  await expect(card).toContainText('Found');
+  await card.click();
+  await page.getByTestId('quick-forge-confirm').click();
+  await expect(page.getByTestId('equip-result')).toBeVisible();
+  const made = await page.evaluate((id) => {
+    const inv = ((window as unknown as { __alloy: A }).__alloy.session() as { data: { inventory: { items: Record<string, { blueprintId: string; blueprint?: { id: string } }> } } }).data.inventory;
+    return Object.values(inv.items).find((i) => i.blueprintId === id)?.blueprint?.id ?? null;
+  }, bp.id);
+  expect(made).toBe(bp.id);
+  expect(errors).toEqual([]);
+});

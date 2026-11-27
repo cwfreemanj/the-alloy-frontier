@@ -25,16 +25,18 @@ import {
   type HammerState,
   type StrikeKind,
   slotOf,
+  resolveBlueprint,
+  learnedBlueprints,
 } from '@alloy/crafting';
 import { smithXpToNext } from '@alloy/game-rules';
 import {
   CRAFTABLE_BLUEPRINTS,
+  type BlueprintDefinition,
   IMBUEMENTS,
   RARITY_LABEL,
   SPECIALIZATIONS,
   TEMPERS,
   bufferFactor,
-  getBlueprint,
   materialName,
   smithFactor,
   type HeatLevel,
@@ -70,10 +72,10 @@ const CATEGORIES = [
   { id: 'body', label: 'Body', icon: 'chest', families: ['chest', 'legs'] },
 ] as const;
 type CategoryId = (typeof CATEGORIES)[number]['id'];
-const categoryOf = (bpId: string): (typeof CATEGORIES)[number] => CATEGORIES.find((c) => (c.families as readonly string[]).includes(getBlueprint(bpId)?.family ?? '')) ?? CATEGORIES[0];
+const categoryOf = (bp: BlueprintDefinition | undefined): (typeof CATEGORIES)[number] => CATEGORIES.find((c) => (c.families as readonly string[]).includes(bp?.family ?? '')) ?? CATEGORIES[0];
 const SLOT_NAMES: Record<string, string> = { weapon: 'Main hand', offhand: 'Off hand', head: 'Head', chest: 'Chest', legs: 'Legs' };
 /** Armor and shields have defense; weapons have damage. */
-const isArmorBp = (bpId: string): boolean => getBlueprint(bpId)?.baseDefense !== undefined;
+const isArmorBp = (bp: BlueprintDefinition | undefined): boolean => bp?.baseDefense !== undefined;
 /** The number a piece is mostly about: defense for armor, damage for weapons. */
 const mainStat = (i: ItemInstance): number => i.result.defense ?? i.result.damage;
 
@@ -118,7 +120,7 @@ export class ForgePanel {
       /* storage unavailable: keep tips on */
     }
     // Open on swords (the quest's blade), on the first one the smith can make.
-    const swords = CRAFTABLE_BLUEPRINTS.filter((b) => categoryOf(b.id).id === 'swords');
+    const swords = CRAFTABLE_BLUEPRINTS.filter((b) => categoryOf(b).id === 'swords');
     const first = swords.find((b) => this.canAfford(b.id)) ?? swords[0] ?? CRAFTABLE_BLUEPRINTS[0];
     this.selectBlueprint(first.id);
     if (this.session.passed('quick_forge') && !this.session.passed('masterwork')) this.mode = 'masterwork';
@@ -141,13 +143,23 @@ export class ForgePanel {
   }
 
   private canAfford(bpId: string): boolean {
-    const bp = getBlueprint(bpId)!;
+    const bp = this.bp(bpId)!;
     return bp.materials.every((m) => materialTotal(this.session.inventory, m.materialId) >= m.quantity) && materialTotal(this.session.inventory, bp.buffer.materialId) >= bp.buffer.min;
+  }
+
+  /** A blueprint this smith can use: a learned found blueprint, or a standard pattern. */
+  private bp(id: string): BlueprintDefinition | undefined {
+    return resolveBlueprint(this.session.inventory, id);
+  }
+
+  /** Everything the forge lists: the standard patterns, then the found blueprints the smith has learned. */
+  private allBlueprints(): BlueprintDefinition[] {
+    return [...CRAFTABLE_BLUEPRINTS, ...learnedBlueprints(this.session.inventory).map((b) => b.piece)];
   }
 
   /** What is in the slot this blueprint's item would go in (the comparison for the projection). */
   private equippedFor(bpId: string): ItemInstance | null {
-    const slot = getBlueprint(bpId)?.equip?.slot ?? 'weapon';
+    const slot = this.bp(bpId)?.equip?.slot ?? 'weapon';
     const inv = this.session.inventory;
     const id = (inv.equipped as Record<string, string | null | undefined>)[slot === 'ring' ? 'ring1' : slot];
     return id ? (inv.items[id] ?? null) : null;
@@ -155,8 +167,8 @@ export class ForgePanel {
 
   private selectBlueprint(id: string): void {
     this.blueprintId = id;
-    this.category = categoryOf(id).id;
-    const bp = getBlueprint(id)!;
+    this.category = categoryOf(this.bp(id)).id;
+    const bp = this.bp(id)!;
     // Default to the required minimum; extra buffer is an explicit, previewed choice.
     this.buffer = bp.buffer.min;
     this.resetMasterwork();
@@ -218,7 +230,7 @@ export class ForgePanel {
     this.el.append(panel);
     this.fit();
     const canvas = this.el.querySelector<HTMLCanvasElement>('canvas.sword');
-    if (canvas) requestAnimationFrame(() => drawSword(canvas, this.result ?? (this.preview().ok ? (this.preview() as { ok: true; plan: { item: ItemInstance } }).plan.item : null), this.blueprintId));
+    if (canvas) requestAnimationFrame(() => drawSword(canvas, this.result ?? (this.preview().ok ? (this.preview() as { ok: true; plan: { item: ItemInstance } }).plan.item : null), this.blueprintId, this.bp(this.blueprintId)));
   }
 
   /** Scale the screen to the window: everything visible at once, never a scrollbar. */
@@ -253,7 +265,7 @@ export class ForgePanel {
               title: c.label,
               onclick: () => {
                 if (this.busy || c.id === this.category) return;
-                const options = CRAFTABLE_BLUEPRINTS.filter((b) => categoryOf(b.id).id === c.id);
+                const options = this.allBlueprints().filter((b) => categoryOf(b).id === c.id);
                 const pick = options.find((b) => this.mastery >= b.masteryRequirement && this.canAfford(b.id)) ?? options.find((b) => this.mastery >= b.masteryRequirement) ?? options[0];
                 if (!pick) return;
                 this.selectBlueprint(pick.id);
@@ -268,7 +280,7 @@ export class ForgePanel {
       ),
     );
     const list = h('div', { class: 'list' });
-    for (const bp of CRAFTABLE_BLUEPRINTS.filter((b) => categoryOf(b.id).id === this.category)) {
+    for (const bp of this.allBlueprints().filter((b) => categoryOf(b).id === this.category)) {
       const locked = this.mastery < bp.masteryRequirement;
       const afford = this.canAfford(bp.id);
       const reqs = bp.materials.map((m) => {
@@ -278,6 +290,7 @@ export class ForgePanel {
       const bufHave = materialTotal(inv, bp.buffer.materialId);
       reqs.push(h('span', { class: `req ${bufHave >= bp.buffer.min ? 'ok' : 'no'}` }, `Flux ≥${bp.buffer.min} (${bufHave})`));
       const glass = bp.materials.some((m) => m.materialId === 'ironglass');
+      const found = this.session.inventory.learned?.[bp.id];
       list.append(
         h(
           'button',
@@ -291,11 +304,11 @@ export class ForgePanel {
               this.render();
             },
           },
-          h('div', { class: `bp-thumb ${glass ? 'glass' : ''}` }, icon(categoryOf(bp.id).icon)),
+          h('div', { class: `bp-thumb ${glass ? 'glass' : ''}` }, icon(categoryOf(bp).icon)),
           h(
             'div',
             { class: 'bp-body' },
-            h('div', { class: 'row' }, h('span', { class: 'ttl' }, bp.name), h('span', { class: 'spacer' }), locked ? h('span', { class: 'tag bad' }, `Mastery ${bp.masteryRequirement}`) : afford ? h('span', { class: 'tag good' }, 'Ready') : h('span', { class: 'tag dim' }, 'Missing')),
+            h('div', { class: 'row' }, h('span', { class: 'ttl', style: found ? `color:${RARITY_COLORS[found.rarity]}` : '' }, bp.name), found ? h('span', { class: 'tag', title: found.lore }, 'Found') : null, h('span', { class: 'spacer' }), locked ? h('span', { class: 'tag bad' }, `Mastery ${bp.masteryRequirement}`) : afford ? h('span', { class: 'tag good' }, 'Ready') : h('span', { class: 'tag dim' }, 'Missing')),
             h('div', { class: 'sub' }, bp.baseDefense !== undefined ? `${bp.tier} · base ${bp.baseDefense} defense · ${SLOT_NAMES[bp.equip?.slot ?? 'weapon'] ?? ''}` : `${bp.tier} · base ${bp.baseDamage} dmg · ${bp.baseAttackSpeed.toFixed(2)}× speed`),
             h('div', { class: 'sub reqs' }, ...reqs),
             bp.potentialImbuements.length ? h('div', { class: 'sub cyan' }, icon('storm'), ` Potential: ${bp.potentialImbuements.map((i) => IMBUEMENTS[i]?.name).join(', ')}`) : null,
@@ -349,7 +362,7 @@ export class ForgePanel {
       col.append(this.orla('Before you strike iron, go see what Bram sells. Know what coin buys, then show me what your hands can do.', true));
       return col;
     }
-    col.append(h('div', { class: 'fx-showcase' }, h('canvas', { class: 'sword', 'aria-label': `${getBlueprint(this.blueprintId)?.name ?? 'Item'} preview` }), h('div', { class: 'fx-anvil' })));
+    col.append(h('div', { class: 'fx-showcase' }, h('canvas', { class: 'sword', 'aria-label': `${this.bp(this.blueprintId)?.name ?? 'Item'} preview` }), h('div', { class: 'fx-anvil' })));
     if (this.mode === 'masterwork' && !this.result) col.append(this.stepTrack());
     const tip = this.tipFor();
     if (tip) col.append(this.orla(tip));
@@ -432,7 +445,7 @@ export class ForgePanel {
   }
 
   private renderBuffer(): HTMLElement {
-    const bp = getBlueprint(this.blueprintId)!;
+    const bp = this.bp(this.blueprintId)!;
     const owned = materialTotal(this.session.inventory, bp.buffer.materialId);
     const max = Math.max(bp.buffer.min, Math.min(owned, bp.buffer.min + 30));
     const bf = bufferFactor(this.buffer, bp.buffer.standardBatch);
@@ -500,7 +513,7 @@ export class ForgePanel {
     if (this.stage === 'setup') {
       wrap.append(this.renderBuffer());
       wrap.append(h('div', { class: 'fx-sub-h' }, '→ Specialization'));
-      const bp = getBlueprint(this.blueprintId)!;
+      const bp = this.bp(this.blueprintId)!;
       wrap.append(
         h(
           'div',
@@ -604,8 +617,8 @@ export class ForgePanel {
   /** What the current structure quality means for the finished weapon. */
   private qualityEffects(score: number): HTMLElement {
     const ff = 0.95 + 0.3 * score;
-    const bp = getBlueprint(this.blueprintId);
-    const lines: Array<HTMLElement> = [h('div', { title: 'Structure quality 0% gives ×0.950, 100% gives ×1.250.' }, `${isArmorBp(this.blueprintId) ? 'Defense' : 'Damage'} ×${ff.toFixed(3)} `, h('span', { class: 'dim' }, '(up to ×1.250 at 100%)'))];
+    const bp = this.bp(this.blueprintId);
+    const lines: Array<HTMLElement> = [h('div', { title: 'Structure quality 0% gives ×0.950, 100% gives ×1.250.' }, `${isArmorBp(this.bp(this.blueprintId)) ? 'Defense' : 'Damage'} ×${ff.toFixed(3)} `, h('span', { class: 'dim' }, '(up to ×1.250 at 100%)'))];
     const imb = bp?.potentialImbuements[0];
     if (imb) {
       const catalyst = bp!.materials.some((r) => r.materialId === 'ironglass') ? averageQuality(this.session.inventory, 'ironglass') ?? 0 : 0;
@@ -776,7 +789,7 @@ export class ForgePanel {
   private renderRight(): HTMLElement {
     const col = h('div', { class: 'forge-col' });
     const eq = this.equippedFor(this.blueprintId);
-    const armor = isArmorBp(this.blueprintId);
+    const armor = isArmorBp(this.bp(this.blueprintId));
     const unit = armor ? 'defense' : 'dmg';
     if (this.result) {
       col.append(section('target', 'Result vs. previously equipped'));
@@ -795,7 +808,7 @@ export class ForgePanel {
       h(
         'div',
         { class: 'fx-proj-item' },
-        h('div', { class: 'bp-thumb' }, icon(categoryOf(this.blueprintId).icon)),
+        h('div', { class: 'bp-thumb' }, icon(categoryOf(this.bp(this.blueprintId)).icon)),
         h('div', null, h('b', null, item.displayName), h('div', { class: 'small', style: `color:${RARITY_COLORS[item.result.rarity]}` }, `${RARITY_LABEL[item.result.rarity]} (projected)`)),
       ),
       statTable(item, eq),
@@ -828,7 +841,7 @@ export class ForgePanel {
     const master = this.preview(100);
     const novice = this.preview(0);
     // Bram sells a sword: compare it only with swords.
-    const shop = categoryOf(this.blueprintId).id === 'swords' ? merchantPreview(MERCHANT_STOCK[0]) : null;
+    const shop = categoryOf(this.bp(this.blueprintId)).id === 'swords' ? merchantPreview(MERCHANT_STOCK[0]) : null;
     if (master.ok && novice.ok) {
       col.append(
         section('users', 'Same steel, different hands'),

@@ -4,7 +4,7 @@
  */
 import * as THREE from 'three';
 import { gearLook, holdable } from './Gear';
-import { getBlueprint, type ItemInstance, type Rarity } from '@alloy/item-gen';
+import { blueprintOf, getBlueprint, type BlueprintDefinition, type ItemInstance, type Rarity } from '@alloy/item-gen';
 
 export const RARITY_COLORS: Record<Rarity, string> = {
   common: '#b9b4aa',
@@ -25,9 +25,11 @@ export interface SwordVisual {
 
 /** Sword attaches to a hand; the blade extends along local -Y. */
 export function buildSword(item: ItemInstance | null): SwordVisual {
-  const bp = getBlueprint(item?.blueprintId ?? 'worn_longsword')!;
+  // The item's own blueprint (found ones travel with it); an unknown one (another player's found sword) is
+  // drawn as the standard pattern.
+  const bp = (item ? blueprintOf(item) : undefined) ?? getBlueprint(item?.blueprintId ?? 'worn_longsword') ?? getBlueprint('iron_longsword')!;
   // Maces and other workshop-made weapons (forge expansion): their look loads on demand.
-  if (bp.look && bp.family !== 'longsword') return buildWorkshopWeapon(bp.id, item?.result.rarity ?? 'common');
+  if (bp.look && bp.family !== 'longsword') return buildWorkshopWeapon(bp.id, item?.result.rarity ?? 'common', bp.look);
   const v = bp.visual;
   const spec = item?.forge.specialization ?? 'balanced';
   const width = spec === 'heavy' ? 0.085 : spec === 'agile' ? 0.05 : spec === 'keen' ? 0.06 : 0.065;
@@ -111,15 +113,15 @@ export function buildShield(): THREE.Group {
  * A weapon with a Model Workshop look (entities/Gear.ts): an empty hand frame at once, filled when
  * the look has been built. The tip starts at a typical one-handed reach and moves to the real one.
  */
-function buildWorkshopWeapon(blueprintId: string, rarity: string): SwordVisual {
+export function buildWorkshopWeapon(blueprintId: string, rarity: string, look?: BlueprintDefinition['look']): SwordVisual {
   const g = new THREE.Group();
   const tip = new THREE.Object3D();
   tip.position.y = -0.7;
   g.add(tip);
   const bladeMaterial = new THREE.MeshStandardMaterial({ color: '#8f969c', metalness: 0.85, roughness: 0.3 });
-  void gearLook(blueprintId, rarity).then((look) => {
-    if (!look) return;
-    const held = holdable(look);
+  void gearLook(blueprintId, rarity, look).then((built) => {
+    if (!built) return;
+    const held = holdable(built);
     g.add(held.group);
     tip.position.y = -held.reach;
   });

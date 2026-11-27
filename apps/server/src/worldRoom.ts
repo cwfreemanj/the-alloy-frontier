@@ -405,7 +405,7 @@ export class WorldRoom {
     for (const id of list) {
       const m = this.members.get(id);
       if (!m?.char) continue;
-      const r = rewardKill(m.char.session, e.spawn.type, e.id, this.rng, e.level);
+      const r = rewardKill(m.char.session, e.spawn.type, e.id, this.rng, e.level, { area: this.areaOf(e) });
       this.host?.changed(m.char);
       // The Raider Captain always drops Binding Flux for everyone who helped.
       const extra = captain ? rewardRaid(m.char.session, { flux: CAPTAIN_FLUX, dropId: e.id }) : [];

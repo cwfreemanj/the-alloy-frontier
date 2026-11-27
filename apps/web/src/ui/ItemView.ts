@@ -1,5 +1,5 @@
 /** Shared item presentation: stat tables with comparison, provenance, sword preview drawing. */
-import { IMBUEMENTS, RARITY_LABEL, SPECIALIZATIONS, TEMPERS, getBlueprint, itemDisplayName, type ItemInstance } from '@alloy/item-gen';
+import { IMBUEMENTS, RARITY_LABEL, SPECIALIZATIONS, TEMPERS, blueprintOf, getBlueprint, itemDisplayName, type BlueprintDefinition, type ItemInstance } from '@alloy/item-gen';
 import { RARITY_COLORS } from '../entities/Weapons';
 import { h } from './dom';
 import { icon } from './icons';
@@ -86,7 +86,7 @@ export function itemHeader(item: ItemInstance): HTMLElement {
     'div',
     null,
     h('div', { class: 'row' }, h('b', { style: `color:${RARITY_COLORS[item.result.rarity]}` }, itemDisplayName(item)), h('span', { class: 'spacer' }), rarityTag(item)),
-    h('div', { class: 'small muted' }, `${getBlueprint(item.blueprintId)?.tier ?? ''} · ${sourceLabel(item)} · made by ${item.forge.makerName}${item.forge.mode === 'quick' || item.forge.mode === 'masterwork' ? ` (mastery ${item.forge.mastery})` : ''}`),
+    h('div', { class: 'small muted' }, `${blueprintOf(item)?.tier ?? ''} · ${sourceLabel(item)} · made by ${item.forge.makerName}${item.forge.mode === 'quick' || item.forge.mode === 'masterwork' ? ` (mastery ${item.forge.mastery})` : ''}`),
   );
 }
 
@@ -125,7 +125,7 @@ export function provenanceText(item: ItemInstance): string {
 }
 
 /** Draw a sword silhouette that reflects blueprint, specialization, rarity and imbuement. */
-export function drawSword(canvas: HTMLCanvasElement, item: ItemInstance | null, blueprintId?: string): void {
+export function drawSword(canvas: HTMLCanvasElement, item: ItemInstance | null, blueprintId?: string, def?: BlueprintDefinition): void {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const w = canvas.clientWidth || 500;
   const hgt = canvas.clientHeight || 150;
@@ -135,7 +135,8 @@ export function drawSword(canvas: HTMLCanvasElement, item: ItemInstance | null, 
   if (!ctx) return;
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, hgt);
-  const bp = getBlueprint(item?.blueprintId ?? blueprintId ?? 'iron_longsword');
+  // The item's own blueprint (found ones travel with it), else the one being previewed.
+  const bp = (item ? blueprintOf(item) : undefined) ?? def ?? getBlueprint(blueprintId ?? 'iron_longsword');
   if (!bp) return;
   const v = bp.visual;
   if (bp.family !== 'longsword' && GEAR_DRAWINGS[bp.family]) {

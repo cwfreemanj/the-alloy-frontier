@@ -7,7 +7,7 @@
  */
 import { EQUIP_SLOTS, type EquipSlot, type ForgeRequest } from '@alloy/crafting';
 import { ATTACKS, ATTRIBUTE_IDS, SKILLS, isSkill, GATHER_PROFICIENCY_XP, PROFICIENCY_YIELD_BONUS, proficiencyFor, proficiencyLevel, damageTypeOf, mitigate, resistanceMultiplier, ATTRIBUTE_XP, ENEMIES, scaledArchetype, computeOutgoingHit, critContest, staggerContest, type AttackDefinition, type AttributeId, type AttributeLevels, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
-import { Rng, getBlueprint, materialName, type DamageType, type ItemInstance, type ToolKind, type WeaponStats } from '@alloy/item-gen';
+import { BLUEPRINT_DROP, Rng, blueprintOf, generateBlueprint, materialName, type BlueprintArea, type DamageType, type GeneratedBlueprint, type ItemInstance, type ToolKind, type WeaponStats } from '@alloy/item-gen';
 import { FORGE_ANVIL, NPCS, SEARCH_HEIGHT, SEARCH_RANGE, containerDef, terrainHeight } from '@alloy/world';
 import { searchContainer } from './containers';
 import { NODE_RESPAWN_SECONDS, nodeDef, nodeStateForGather, nodeTraits, nodeYield, regrowNodes } from './nodes';
@@ -26,6 +26,9 @@ export type CharAction =
   | { k: 'equip'; item: string; slot?: EquipSlot }
   | { k: 'unequip'; slot: EquipSlot }
   | { k: 'discard'; item: string }
+  /** Found blueprints: learn a scroll (it stays), or throw one away. */
+  | { k: 'learn'; scroll: string }
+  | { k: 'scrap'; scroll: string }
   | { k: 'talk'; npc: 'orla' }
   | { k: 'event'; ev: 'open_merchant' }
   | { k: 'allocate'; attr: AttributeId; n: number }
@@ -132,6 +135,16 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
       const { value: ok, events } = captureEvents(s, () => s.discard(a.item));
       return ok ? { ok: true, events } : no('discard', warnText(events, 'Could not discard that.'), events);
     }
+    case 'learn': {
+      const { value: ok, events } = captureEvents(s, () => s.learnScroll(a.scroll));
+      // "You've already learned this blueprint." is an info toast, not a warning: pass on the last toast.
+      const said = [...events].reverse().find((e) => e.type === 'toast') as { text?: string } | undefined;
+      return ok ? { ok: true, events } : no('learn', said?.text ?? 'Could not learn that.', events);
+    }
+    case 'scrap': {
+      const { value: ok, events } = captureEvents(s, () => s.discardScroll(a.scroll));
+      return ok ? { ok: true, events } : no('scrap', warnText(events, 'Could not throw that away.'), events);
+    }
     case 'talk': {
       if (a.npc !== 'orla') return no('unknown_npc', 'Nobody to talk to.');
       if (!near(ctx, NPCS.orla.pos, RANGE.npc)) return no('out_of_range', 'Move closer to talk.');
@@ -182,13 +195,22 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
 }
 
 /** Rewards for a kill this character took part in: coins, adventurer XP, drops, quest progress. */
-export function rewardKill(s: Session, enemyType: string, enemyId: string, rng: () => number, level?: number): { coins: number; flux: number; events: SessionEvent[] } {
+export function rewardKill(
+  s: Session,
+  enemyType: string,
+  enemyId: string,
+  rng: () => number,
+  level?: number,
+  /** Where it fell (found blueprints are made from the area). */
+  where: { area: BlueprintArea } = { area: 'trail' },
+): { coins: number; flux: number; events: SessionEvent[]; blueprint?: GeneratedBlueprint } {
   const base = ENEMIES[enemyType];
   if (!base) return { coins: 0, flux: 0, events: [] };
   // A levelled-up enemy (adaptive world) is worth more XP and coins.
   const def = level !== undefined ? scaledArchetype(base, level) : base;
   let coins = 0;
   let flux = 0;
+  let blueprint: GeneratedBlueprint | undefined;
   const { events } = captureEvents(s, () => {
     const [lo, hi] = def.coins;
     coins = lo + Math.floor(rng() * (hi - lo + 1));
@@ -200,8 +222,13 @@ export function rewardKill(s: Session, enemyType: string, enemyId: string, rng: 
     }
     s.gainAttributes(ATTRIBUTE_XP.kill(def.kind));
     s.recordKill(enemyType);
+    // Sometimes a blueprint (STAND-IN chances; elites drop them far more often).
+    if (def.kind !== 'dummy' && rng() < (def.kind === 'elite' ? BLUEPRINT_DROP.elite : BLUEPRINT_DROP.enemy)) {
+      const bp = generateBlueprint(`kill:${enemyId}:${Math.floor(rng() * 2 ** 31)}`, { area: where.area, source: 'enemy', sourceId: enemyType, level: def.level });
+      if (s.addBlueprint(bp)) blueprint = bp;
+    }
   });
-  return { coins, flux, events };
+  return { coins, flux, events, ...(blueprint ? { blueprint } : {}) };
 }
 
 /**
@@ -285,7 +312,7 @@ export function hitAgainst(s: Session, atk: AttackDefinition, critRoll: number, 
 /** The damage type of the equipped weapon (unarmed: blunt). */
 export function weaponDamageType(s: Session): DamageType {
   const w = s.equipped();
-  return w ? damageTypeOf(w.family, getBlueprint(w.blueprintId)?.damageType) : 'blunt';
+  return w ? damageTypeOf(w.family, blueprintOf(w)?.damageType) : 'blunt';
 }
 
 /**
