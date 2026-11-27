@@ -44,7 +44,8 @@ export class MerchantPanel {
         );
         row.append(h('div', { class: 'row', style: 'margin-top:6px' }, h('span', { class: 'spacer' }), h('button', { class: 'btn', 'data-buy': s.id, disabled: this.session.inventory.coins < s.price, onclick: () => void this.onBuy(s.id, 1).then(() => this.render()) }, 'Buy')));
       } else {
-        row.append(h('div', { class: 'small muted' }, `Buffer material for every forge recipe. Owned: ${materialTotal(this.session.inventory, 'binding_flux')}`));
+        const blurb = s.materialId === 'healing_salve' ? 'Restores health. Drink it with key 5.' : 'Buffer material for every forge recipe.';
+        row.append(h('div', { class: 'small muted' }, `${blurb} Owned: ${materialTotal(this.session.inventory, s.materialId ?? 'binding_flux')}`));
         row.append(
           h(
             'div',

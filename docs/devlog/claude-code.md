@@ -3,6 +3,14 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-27 10:58 — Fixed Bram's shop display
+- **PR:** 35
+- **Asked for:** Neal: the merchant shop displays very weirdly; the items can't be seen.
+- **Done:**
+  - Cause: the line-icon styles (size, outline) existed only inside the character window and the forge screen. The shop reuses the item stat table, so each stat's icon drew as a huge filled black shape and pushed the items off screen. Added a default .ico style (16 px outline) that those screens still override, and a default colour for stat icons.
+  - Second bug on the same screen: Healing Salve showed Binding Flux's description and owned count. Each material now shows its own.
+- **Verified:** Opened the shop in the production build: icons 16x16, all three items visible, Healing Salve reads 'Restores health. Drink it with key 5. Owned: 0'. npm run typecheck, npm test (255/255), npm run build pass; the full-loop browser test passes.
+
 ## 2026-11-27 10:00 — Built raids on Emberhold (AF-011)
 - **PR:** 34
 - **Asked for:** Neal approved the raid proposal as written: build it.
