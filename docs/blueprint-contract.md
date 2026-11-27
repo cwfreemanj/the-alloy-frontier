@@ -1,6 +1,7 @@
 # Blueprint contract: generated blueprints
 
-**Status: draft for both directors to agree** (2026-11-27). This is the interface between the blueprint
+**Status: the four open decisions were made by the technical director on 2026-11-27 (section 3); the creative
+director reviews the whole contract.** This is the interface between the blueprint
 **generator** (the creative director's side, in `packages/item-gen`) and everything around it (the technical
 director's side: storage, drops, the server, forging, the screens). It works like
 [equipment-contract.md](equipment-contract.md): change it here first, then tell the other side.
@@ -26,7 +27,8 @@ places). A generated blueprint exists only because someone found it, so:
 - the browser and the server must **read it the same way**.
 
 The fixed blueprints stay as the **standard patterns** (the starter longsword, Bram's stock, the forge's
-current list). Generated ones are added alongside them.
+current list), and grow into the **inherent blueprints** that come with blacksmithing levels. Generated ones
+are the unique blueprints a player has to find (section 3).
 
 ## 1. What the generator returns (creative director's side)
 
@@ -46,6 +48,7 @@ export interface BlueprintContext {
   level: number;
 }
 
+/** One found blueprint: it teaches one item (a set piece is its own blueprint). */
 export interface GeneratedBlueprint {
   /** 'gbp_' + a hash of the generator version, seed and context. Unique and stable. */
   id: string;
@@ -57,12 +60,13 @@ export interface GeneratedBlueprint {
   name: string;
   /** At most 600 characters. */
   lore: string;
-  /** A single item, or a set of pieces. */
-  kind: 'item' | 'set';
-  /** What it makes: one definition, or one per set piece (at most 8). */
-  pieces: BlueprintDefinition[];
-  /** For sets: the set's id and name (set bonuses come later, after the 18th). */
-  set?: { id: string; name: string };
+  /** What it makes: one item, in the existing blueprint format. */
+  piece: BlueprintDefinition;
+  /**
+   * A set piece names its set. Each piece of a set is a separate blueprint, found on its own; set bonuses
+   * come later, after the 18th.
+   */
+  set?: { id: string; name: string; pieces: number };
   /** See docs/proficiency-tree.md: the branch and level needed to make it. */
   requirement: { branch: 'smithing' | 'crafting' | 'alchemy'; level: number };
   /** Estimated worth in coins (merchants can use it later). */
@@ -80,8 +84,9 @@ Rules for the generator:
   gathered, and its quality), which is the technical director's side. The rarity tree should list which
   resources exist now and which are planned.
 - **Deterministic:** no `Math.random`, no clock; use the seed (`Rng` in `rng.ts`).
-- **Bounded:** names at most 48 characters, lore at most 600, at most 8 pieces, numbers finite and within
-  `LIMITS`. The game rejects anything outside these.
+- **Bounded:** names at most 48 characters, lore at most 600, a set of at most 8 pieces, numbers finite and
+  within `LIMITS`. The game rejects anything outside these.
+- **A set's pieces share the set's `id`**, so any piece found later is recognised as part of the same set.
 - **Version it:** bump `generator.version` whenever the same seed would give a different blueprint.
 - Also wanted from the generator: `RESOURCE_RARITY` (each material's rarity) and the **drop chances** per source,
   so the server can roll them. A plain table is enough, for example `{ enemy: 0.08, chest: 0.35 }`, scaled by rarity.
@@ -94,41 +99,46 @@ Rules for the generator:
   their browser, as for their other loot.
 - **Sealed, like items:** a blueprint carries an `integrity` hash. A changed blueprint fails validation, and
   saves reject it.
-- **Owned blueprints are stored on the character**, in a new `blueprints` part of the inventory
-  (at most 200), saved with the character. Older saves get an empty list.
-- **Forging from one:** the forge lists owned blueprints next to the standard ones, with their rarity, lore,
+- **Two lists on the character**, saved with it (older saves get empty ones):
+  - **Scrolls** (`inventory.scrolls`, at most 200): blueprints the player carries. A scroll can be learned,
+    sold, traded, given away or discarded, whether or not it has been learned.
+  - **Learned** (`inventory.learned`, no practical limit): what the player can forge. Learning copies the
+    blueprint here; **the scroll stays**, so the player can still sell, trade or give it away.
+- **Duplicates:** learning a blueprint already learned changes nothing and says **"You've already learned this
+  blueprint."** The scroll stays, to discard, sell or trade.
+- **Forging from one:** the forge lists learned blueprints next to the standard ones, with their rarity, lore,
   worth and requirement. The player needs the materials, the flux and the required level (until the
   proficiency tree is built, Smithing uses blacksmithing mastery, and Crafting and Alchemy blueprints wait).
+- **Inherent blueprints:** the standard patterns are learned automatically as blacksmithing levels up (each has
+  its `masteryRequirement`, as today). More can be added to that list; the unique ones are only found.
 - **Every forged item keeps a copy of its piece's definition** (`item.blueprint`, inside the item's
   integrity). The item then always knows its slot, family, damage type and look, whatever happens to the
   blueprint. All blueprint lookups go through one helper that checks, in order, the item's copy, then the
-  character's blueprints, then the standard table.
-- **Trading** is not built yet. When it is, a blueprint moves between characters through the server, which
-  checks ownership.
+  character's learned blueprints, then the standard table.
+- **Trading and giving** are not built yet. When they are, a scroll moves between characters through the
+  server, which checks ownership. Selling a scroll to a merchant can come first (it has a worth).
 - **Network:** the character data already carries the inventory, so owned blueprints travel with it. The
   browser never sends a blueprint, only its id.
 
-## 3. Decisions to agree
+## 3. Decisions (technical director, 2026-11-27)
 
-1. **Used up or learned?** When a player forges from a found blueprint:
-   - **(a) learned:** reading it once teaches it for good, like a recipe book;
-   - **(b) single use:** each blueprint makes one item (or one set), and is used up;
-   - **(c) charges:** a few uses, more for rarer blueprints.
-
-   Recommended: **(a) learned, with the scroll kept** until the player chooses to learn it, so unlearned
-   scrolls can still be traded or sold. It rewards finding rare ones without making them throwaway.
-2. **Set pieces:** forge each piece separately (recommended: fits the forge as it is), or the whole set at once?
-3. **Duplicates:** a blueprint the player already knows drops again: turn it into coins at its worth
-   (recommended), or keep a second scroll to trade?
-4. **The forge's fixed list:** keep the standard patterns forever (recommended for the starter quest), or retire
-   them once generated blueprints cover the same items?
+1. **Learned, and the scroll stays.** A found blueprint is learned for good. Learning doesn't use the scroll up:
+   the player can still sell it, trade it or give it to another player.
+2. **Set pieces are forged one at a time.** Each piece is its own blueprint. A player can forge the pieces whose
+   blueprints they have found and learned.
+3. **Duplicates:** learning one already learned says "You've already learned this blueprint." The scroll can
+   then be discarded, sold or traded.
+4. **The fixed list stays.** The standard patterns are the inherent blueprints: learned automatically as
+   blacksmithing levels up. Finding blueprints opens up the more unique ones.
 
 ## 4. Order of work
 
 1. **Agree this contract** (both directors).
 2. **Creative director:** `generateBlueprint`, `RESOURCE_RARITY` and the drop chances, with tests
    (determinism, bounds). A first version can use only today's five materials.
-3. **Technical director:** storage, sealing and validation; the blueprint lookup helper; the item's copy of its
-   definition; server drops from enemies and chests; the forge's list of owned blueprints. This can start
-   against a stand-in generator right away, then switch to the real one.
-4. **Then:** quest rewards, the proficiency requirement (after the tree), set bonuses, trading.
+3. **Technical director:** scrolls and learned blueprints on the character, sealing and validation; learning
+   (and the duplicate message); the blueprint lookup helper; the item's copy of its definition; server drops
+   from enemies and chests; the forge's list of learned blueprints; discarding scrolls. This can start against
+   a stand-in generator right away, then switch to the real one.
+4. **Then:** selling scrolls, quest rewards, the proficiency requirement (after the tree), set bonuses,
+   trading and giving between players.

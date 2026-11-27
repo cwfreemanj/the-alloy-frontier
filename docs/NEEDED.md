@@ -34,8 +34,9 @@ Most important first. When an item is done, remove it here in the same pull requ
 5. **Approve or change the proficiency tree proposal:** [proficiency-tree.md](proficiency-tree.md). It builds on
    your three branches (Smithing, Crafting, Alchemy); the perk list is your call. About 10 minutes.
 6. **Agree the blueprint contract:** [blueprint-contract.md](blueprint-contract.md). It turns your blueprint design
-   into what `generateBlueprint` returns and what the game does with it, and asks four questions (section 3).
-   About 15 minutes. After that, your next build step is `generateBlueprint` itself (section 4).
+   into what `generateBlueprint` returns and what the game does with it. The technical director has made the four
+   open decisions (section 3: learned and the scroll stays, set pieces one at a time, duplicates, the fixed list
+   stays). About 15 minutes. After that, your next build step is `generateBlueprint` itself (section 4).
 
 ## Technical director (git name `Neal`)
 
@@ -43,6 +44,4 @@ Most important first. When an item is done, remove it here in the same pull requ
    [M4.md](M4.md). Three playthroughs are needed in all.
 2. **Approve or change the proficiency tree proposal** with the creative director:
    [proficiency-tree.md](proficiency-tree.md). About 10 minutes.
-3. **Agree the blueprint contract** with the creative director: [blueprint-contract.md](blueprint-contract.md),
-   especially the four decisions in section 3. About 15 minutes.
-4. **Tag the `v0.1.0` release** once the creative director has signed off (yours is done): section 4 of [M4.md](M4.md).
+3. **Tag the `v0.1.0` release** once the creative director has signed off (yours is done): section 4 of [M4.md](M4.md).
