@@ -144,6 +144,12 @@ const SOURCE_LORE: Record<BlueprintSource, string> = {
   quest: 'Given in thanks, with instructions to make good use of it.',
   trade: 'Passed from hand to hand along the frontier.',
 };
+/**
+ * How often a found armor blueprint is a set piece. The creative director asked for set blueprints to be rare
+ * (2026-11-28): a low, arbitrary number, theirs to tune.
+ */
+export const SET_CHANCE = 0.05;
+
 /** The stand-in's one set per area (armor pieces only). */
 const SETS: Record<BlueprintArea, { id: string; name: string; pieces: number }> = {
   village: { id: 'set_emberhold_watch', name: 'Emberhold Watch', pieces: 4 },
@@ -173,7 +179,7 @@ export function generateBlueprint(seed: string, ctx: BlueprintContext): Generate
   const armor = base.baseDefense !== undefined;
   const shapes = base.look ? SHAPES[base.look.type] : undefined;
   const look = base.look && shapes ? { ...base.look, shape: shapes[Math.floor(r.next() * shapes.length)] } : base.look;
-  const set = armor && r.next() < 0.35 ? SETS[ctx.area] : undefined;
+  const set = armor && r.next() < SET_CHANCE ? SETS[ctx.area] : undefined;
   const up = 1 + 0.05 * tier;
   const piece: BlueprintDefinition = {
     ...base,

@@ -7,7 +7,7 @@ generator (section 5).** This is the interface between the blueprint
 director's side: storage, drops, the server, forging, the screens). It works like
 [equipment-contract.md](equipment-contract.md): change it here first, then tell the other side.
 
-The creative director's design, as he described it (2026-11-27):
+The creative director's design, as they described it (2026-11-27):
 - A blueprint has **its own rarity**, from what it specifies: rarer materials and a higher proficiency make a
   rarer blueprint. A **resource rarity tree** is coming.
 - A blueprint is for **one item or a set**, with **lore**, **resources required**, an **item or set type**, a

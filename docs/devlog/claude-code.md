@@ -3,6 +3,20 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-28 10:16 — GDD v0.6 brought up to date
+- **PR:** 46
+- **Asked for:** Neal: updated GDD.
+- **Done:** GDD v0.6 now covers the Crafting branch (#44), titles and selling scrolls (#45, marked waiting to merge) and the creative director's notes (#46): where the project stands, the D22 titles note, the Crafting row of the tree and its perks, what the game contains, balance records for accessories, titles, selling scrolls and set chance, and AF-017. The AF-022 and AF-027 rows are left to #45, so the two PRs merge cleanly.
+- **Not done / deferred:** No version bump to v0.7: the changes are additions to v0.6.
+- **Verified:** Docs only. Checked that #45's GDD changes merge with this branch's without conflict (git merge-file).
+
+## 2026-11-28 08:10 — The creative director's notes on GDD v0.6, and their pronouns
+- **PR:** 46
+- **Asked for:** Neal passed on the creative director's notes on GDD v0.6, their question about the raids, and their request that documents use their they/them pronouns.
+- **Done:** Wrote docs/creative-director-notes-2026-11-28.md, answering each note: what Emberhold is, who made the raids, the classes of equipment and the item rules, estimated stats on scrolls, blueprint sources and set rarity, a proposed base level curve for equipment power, and whether gathering trains the branches. GDD v0.6: D17 sources, D19 rare sets, D21 and D22 confirmed by both, AF-025 adds NPCs, a new section 8. The stand-in's set chance went from 35% to 5% (SET_CHANCE in found.ts). Changed he/him to they/them for the creative director in the GDD, the blueprint contract, the proficiency tree and earlier entries of this log; AGENTS.md now tells every agent.
+- **Not done / deferred:** Didn't build estimated stats on scrolls or the power curve: both need the creative director's yes. The perk list, the curve's numbers and the real set chance remain theirs.
+- **Verified:** npm run typecheck, npm test (294/294) and npm run build pass on this branch. No browser tests: there's no gameplay change apart from the set chance.
+
 ## 2026-11-27 21:58 — Selling scrolls and titles (AF-022, AF-027)
 - **PR:** 45
 - **Asked for:** Neal: do the two small pieces next: selling scrolls to Bram and titles.
@@ -24,11 +38,11 @@ Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and g
 
 ## 2026-11-27 20:16 — GDD v0.6
 - **PR:** 43
-- **Asked for:** Neal: confirm the creative director's blueprint and proficiency points are answered and built, and update the GDD to the newest version so he can be sent the latest design.
+- **Asked for:** Neal: confirm the creative director's blueprint and proficiency points are answered and built, and update the GDD to the newest version so they can be sent the latest design.
 - **Done:**
-  - docs/GDD-v0.6.md: where the project stands (PRs #30-#42), decisions D14-D24 (raids, forge families, gear looks, found blueprints, learning and scrolls, sets, standard patterns, proficiency tree, perks, ownership, camera), a point-by-point status of his blueprint design and proficiency vote, what the game contains now, balance records (raids, armor and mace, blueprint drops, Alchemy, perks), updated tickets (AF-020 to AF-027) and open decisions.
+  - docs/GDD-v0.6.md: where the project stands (PRs #30-#42), decisions D14-D24 (raids, forge families, gear looks, found blueprints, learning and scrolls, sets, standard patterns, proficiency tree, perks, ownership, camera), a point-by-point status of their blueprint design and proficiency vote, what the game contains now, balance records (raids, armor and mace, blueprint drops, Alchemy, perks), updated tickets (AF-020 to AF-027) and open decisions.
   - README and the title screen point to v0.6; v0.5 notes it was updated by v0.6.
-- **Not done / deferred:** Perk choices are described as built in #42, which isn't merged yet: merge #42 first. Trading, quest-reward and world-pickup blueprints, and his resource rarity tree are listed as not built or waiting.
+- **Not done / deferred:** Perk choices are described as built in #42, which isn't merged yet: merge #42 first. Trading, quest-reward and world-pickup blueprints, and their resource rarity tree are listed as not built or waiting.
 - **Verified:** Numbers checked against the code (raid.ts, found.ts, blueprints, perks). npm run typecheck, npm test (280/280 on main, without #42) and npm run build pass.
 
 ## 2026-11-27 20:12 — Proficiency tree, step 2: perk choices
@@ -89,7 +103,7 @@ Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and g
 
 ## 2026-11-27 11:46 — Proficiency tree proposal for approval
 - **PR:** 37
-- **Asked for:** Neal, after the creative director asked whether a proficiency tree was proposed (his vote: Smithing, Crafting, Alchemy): write the proposal.
+- **Asked for:** Neal, after the creative director asked whether a proficiency tree was proposed (their vote: Smithing, Crafting, Alchemy): write the proposal.
 - **Done:**
   - docs/proficiency-tree.md: three branches with gathering as their roots; levels by doing plus a choice of two perks every 10 levels; a starter perk table (levels 10-30 and the roots); respec at Orla's; titles at the top; where it shows; how blueprints name a branch and level; a build order aimed at the 18th.
   - Added review items for both directors to docs/NEEDED.md; linked from the design backlog's perks-and-titles item.
@@ -145,12 +159,12 @@ Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and g
 - **Verified:** Docs only; the earlier checks on this branch (typecheck, 242/242 tests, build) still apply.
 
 ## 2026-11-27 06:53 — A to-do list for people that every agent brings up first
-- **Asked for:** Make sure the creative director's AI tells him, before any other work, what's needed from him (above all the performance report from his machine), and asks whether to do it now or continue.
+- **Asked for:** Make sure the creative director's AI tells them, before any other work, what's needed from them (above all the performance report from their machine), and asks whether to do it now or continue.
 - **Done:**
   - New docs/NEEDED.md: each person's items, most important first; the creative director's performance report is first, with the steps and why a second machine matters.
   - AGENTS.md (read by Codex, and by Claude through CLAUDE.md): a 'Before you start' section at the top telling agents to read NEEDED.md, find who they're working with from git config user.name, list that person's items and ask 'do this now, or continue with your work?', once per session.
   - M4.md links to NEEDED.md.
-- **Not done / deferred:** No code changes. The partner's agent only sees this once he pulls main after this merges.
+- **Not done / deferred:** No code changes. The partner's agent only sees this once they pull main after this merges.
 - **Verified:** npm run typecheck, npm test (242/242) and npm run build pass. Docs only, so no browser tests.
 
 ## 2026-11-25 18:46 — Forge button 'covered': a late pointer lock, not the layout
