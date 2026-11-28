@@ -30,8 +30,8 @@ export const PERKS: PerkDef[] = [
   { id: 'herbal_lore', branch: 'alchemy', level: 20, name: 'Herbal Lore', description: '+1 herb each time you pick.', ready: true },
   { id: 'cook', branch: 'alchemy', level: 30, name: 'Cook', description: 'Food lasts 50% longer.', ready: false },
   { id: 'enchanter', branch: 'alchemy', level: 30, name: 'Enchanter', description: 'May add a minor imbuement to forged gear.', ready: false },
-  { id: 'jeweler', branch: 'crafting', level: 10, name: 'Jeweler', description: 'Rings and necklaces roll one extra affix.', ready: false },
-  { id: 'tailor', branch: 'crafting', level: 10, name: 'Tailor', description: 'Capes and cloth gain +5 max stamina.', ready: false },
+  { id: 'jeweler', branch: 'crafting', level: 10, name: 'Jeweler', description: 'Rings and necklaces you craft roll one extra affix.', ready: true },
+  { id: 'tailor', branch: 'crafting', level: 10, name: 'Tailor', description: 'Capes you craft gain +5 max stamina.', ready: true },
   { id: 'setwright', branch: 'crafting', level: 20, name: 'Setwright', description: 'Set bonuses need one fewer piece.', ready: false },
   { id: 'engraver', branch: 'crafting', level: 20, name: 'Engraver', description: 'Name and inscribe your gear.', ready: false },
   { id: 'dyer', branch: 'crafting', level: 30, name: 'Dyer', description: 'Recolour gear.', ready: false },
@@ -50,6 +50,8 @@ export const PERK_EFFECTS = {
   distillerExtra: 1,
   quickHandsSeconds: 2,
   herbalLoreExtra: 1,
+  jewelerAffixes: 1,
+  tailorStamina: 5,
 } as const;
 
 export const perkById = (id: string): PerkDef | undefined => PERKS.find((p) => p.id === id);

@@ -3,7 +3,7 @@
 **Status: approved by the technical director on 2026-11-27, as written; the creative director reviews it (his
 changes, if any, come in through review). Steps 1 and 2 of section 6 are built: Alchemy trains from brewing and
 strengthens potions; the Proficiencies screen shows the branches with their roots; perk choices work
-(section 7).** The creative
+(section 7); the Crafting branch has its workbench, first recipes and level-10 perks (AF-021).** The creative
 director suggested three branches (Smithing, Crafting, Alchemy); this proposal builds on that and on what
 the game already has. Sections 1–4 are the decisions to approve, each with a recommendation. Section 5 says
 how it connects to generated blueprints, and section 6 how it would be built and in what order.

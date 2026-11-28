@@ -45,9 +45,10 @@ import { CharacterWindow, type CharacterTab } from '../ui/CharacterWindow';
 import { GameAudio, type MusicTrack } from '../audio/GameAudio';
 import { ForgePanel } from '../ui/ForgePanel';
 import { Hud } from '../ui/Hud';
+import { WorkbenchPanel } from '../ui/WorkbenchPanel';
 import { MerchantPanel, dialogPanel, pausePanel, summaryPanel, titleScreen, type Settings } from '../ui/Panels';
 import { h } from '../ui/dom';
-import { ALL_RESOURCE_NODES, CONTAINERS, ENEMY_SPAWNS, FORGE_ANVIL, SEARCH_HEIGHT, SEARCH_RANGE, NPCS, RESPAWN_POINT, ZONES, zoneAt, type EnemySpawn, type Zone } from '@alloy/world';
+import { ALL_RESOURCE_NODES, CONTAINERS, ENEMY_SPAWNS, FORGE_ANVIL, WORKBENCH, SEARCH_HEIGHT, SEARCH_RANGE, NPCS, RESPAWN_POINT, ZONES, zoneAt, type EnemySpawn, type Zone } from '@alloy/world';
 import { terrainHeight } from '@alloy/world';
 import { EmberholdWorld } from '../world/EmberholdWorld';
 import { orlaDialogue } from './Dialogue';
@@ -86,8 +87,8 @@ function levelColor(diff: number): string {
   return diff >= 3 ? '#ff5a4a' : diff >= 1 ? '#ffa040' : diff === 0 ? '#ffe27a' : diff >= -2 ? '#8fd88a' : '#a8a8a8';
 }
 
-type Interact = 'npc' | 'anvil' | 'node' | 'inspect' | 'search';
-type Modal = null | 'title' | 'pause' | 'forge' | 'inventory' | 'merchant' | 'dialog' | 'summary';
+type Interact = 'npc' | 'anvil' | 'bench' | 'node' | 'inspect' | 'search';
+type Modal = null | 'title' | 'pause' | 'forge' | 'workbench' | 'inventory' | 'merchant' | 'dialog' | 'summary';
 
 const SETTINGS_KEY = 'alloy-frontier.settings.v1';
 const DEFAULT_SETTINGS: Settings = { quality: 'medium', sensitivity: 1, invertY: false, showPerf: false, reducedShake: false, musicVolume: 0.55, sfxVolume: 0.8 };
@@ -889,6 +890,16 @@ export class Game {
     this.forgePanel = p;
   }
 
+  /** The workbench: rings, necklaces and capes (the Crafting branch). */
+  openWorkbench(): void {
+    if (!this.session.passed('commission')) {
+      this.hud.toast('Speak with Master Smith Orla first.', 'warn');
+      return;
+    }
+    const p = new WorkbenchPanel(this.session, () => this.closeModal(), (id) => void this.act({ k: 'equip', item: id }), (req) => this.act({ k: 'forge', req }));
+    this.setModal('workbench', p.el);
+  }
+
   /** Examine something in the world (lore card). */
   private openInspect(id: string): void {
     const it = INSPECTABLES.find((x) => x.id === id);
@@ -1422,6 +1433,9 @@ export class Game {
     }
     const da = dist2(FORGE_ANVIL, p);
     if (da < 2.8) consider('anvil', 'anvil', 'Use the forge', da);
+    // The workbench (Crafting), on the forge's ground floor.
+    const dw = dist2(WORKBENCH, p);
+    if (dw < 2.2 && this.player.position.y - terrainHeight(WORKBENCH.x, WORKBENCH.z) < 1) consider('bench', 'bench', 'Use the workbench', dw - 0.6);
     for (const c of CONTAINERS) {
       const d = dist2(c.pos, p);
       if (d >= SEARCH_RANGE - 0.2 || Math.abs(this.player.position.y - (terrainHeight(c.pos.x, c.pos.z) + c.floor)) > SEARCH_HEIGHT) continue;
@@ -1458,6 +1472,8 @@ export class Game {
       else this.openMerchant();
     } else if (it.kind === 'anvil') {
       this.openForge();
+    } else if (it.kind === 'bench') {
+      this.openWorkbench();
     } else if (it.kind === 'search') {
       if (containerCooldown(this.session, it.id) > 0) this.hud.toast('Already searched. It refills over time.', 'info');
       else void this.act({ k: 'search', id: it.id });

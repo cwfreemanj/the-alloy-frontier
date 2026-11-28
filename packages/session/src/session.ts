@@ -348,8 +348,11 @@ export class Session {
   }
 
   forge(req: Omit<ForgeRequest, 'maker' | 'createdAt'>): ReturnType<typeof executeForge> {
-    // The maker, perks included, comes from this character, never from the request.
-    const full: ForgeRequest = { ...req, maker: { id: PLAYER_ID, name: PLAYER_NAME, mastery: this.smithMastery, perks: chosenPerks(this.data.progression) }, createdAt: Date.now() };
+    // The maker, perks included, comes from this character, never from the request. A Crafting recipe
+    // (workbench) is made at the character's Crafting level, a Smithing one at blacksmithing mastery.
+    const crafting = resolveBlueprint(this.data.inventory, req.blueprintId)?.branch === 'crafting';
+    const skill = crafting ? branchLevel(this.data.progression, 'crafting') : this.smithMastery;
+    const full: ForgeRequest = { ...req, maker: { id: PLAYER_ID, name: PLAYER_NAME, mastery: skill, perks: chosenPerks(this.data.progression) }, createdAt: Date.now() };
     const r = executeForge(this.data.inventory, full);
     if (!r.ok) {
       this.emit({ type: 'toast', text: r.message, tone: 'warn' });
@@ -360,12 +363,16 @@ export class Session {
     this.data.stats.crafted++;
     const bp = resolveBlueprint(this.data.inventory, req.blueprintId)!;
     const xp = craftXp(req.mode === 'quick' ? bp.masteryXp.quick : bp.masteryXp.masterwork, req.mode, r.item.forge.forgeScore);
-    const g = addSmithXp(this.data.progression, xp);
-    this.data.progression = g.state;
-    if (g.levelsGained > 0) this.emit({ type: 'progress', kind: 'smith', levels: g.levelsGained });
-    if (g.levelsGained > 0) this.announcePerkChoices('smithing');
+    if (crafting) {
+      this.gainProficiency('crafting', xp);
+    } else {
+      const g = addSmithXp(this.data.progression, xp);
+      this.data.progression = g.state;
+      if (g.levelsGained > 0) this.emit({ type: 'progress', kind: 'smith', levels: g.levelsGained });
+      if (g.levelsGained > 0) this.announcePerkChoices('smithing');
+    }
     this.gainAttributes(ATTRIBUTE_XP.forge());
-    this.emit({ type: 'toast', text: `+${xp} blacksmithing XP`, tone: 'good' });
+    this.emit({ type: 'toast', text: `+${xp} ${crafting ? 'Crafting' : 'blacksmithing'} XP`, tone: 'good' });
     this.emit({ type: 'inventory' });
     // The quest asks for a forged weapon: armor and shields don't count.
     if (isWeaponFamily(bp.family)) this.quest({ type: 'event', event: req.mode === 'quick' ? 'craft_quick' : 'craft_masterwork' });

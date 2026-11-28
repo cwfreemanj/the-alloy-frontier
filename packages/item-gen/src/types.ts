@@ -43,8 +43,10 @@ export type WeaponFamily = 'longsword' | 'shortsword' | 'greatsword' | 'axe' | '
 export type DamageType = 'slash' | 'pierce' | 'blunt' | 'magic';
 /** Armor and shields: they give defense, not damage (docs/equipment-contract.md). */
 export type ArmorFamily = 'shield' | 'helmet' | 'chest' | 'legs';
-/** Every kind of item. Gathering tools and armor are not weapons (no weapon mastery). */
-export type ItemFamily = WeaponFamily | ArmorFamily | 'tool';
+/** Crafted at the workbench (the Crafting branch): bonuses more than defense. */
+export type AccessoryFamily = 'ring' | 'necklace' | 'cape';
+/** Every kind of item. Gathering tools, armor and accessories are not weapons (no weapon mastery). */
+export type ItemFamily = WeaponFamily | ArmorFamily | AccessoryFamily | 'tool';
 
 /** Equipment slots on the character (see docs/equipment-contract.md). 'ring' fits either ring slot. */
 export type EquipSlotKind = 'weapon' | 'offhand' | 'head' | 'shoulders' | 'neck' | 'cape' | 'chest' | 'belt' | 'hands' | 'legs' | 'feet' | 'ring' | 'tool';

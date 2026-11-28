@@ -28,7 +28,8 @@ Most important first. When an item is done, remove it here in the same pull requ
    questions (F1–F5) in section 1 of [M4.md](M4.md). M4 needs three playthroughs in all, from anyone.
 3. **Sign off gameplay feel and UI clarity**, after the playthroughs: section 3 of [M4.md](M4.md).
 4. **Review the forge expansion (your area: item generation and looks).** The forge now makes maces, shields,
-   helmets, chestplates and platelegs with starter stats, and uses your workshop generator for their looks.
+   helmets, chestplates and platelegs, and the workbench rings, a pendant and a cloak, all with starter stats; your
+   workshop generator makes the forge items' looks.
    Check or change the numbers and looks: [forge-expansion.md](forge-expansion.md) lists what to look at.
    About 15 minutes.
 5. **Review the proficiency tree:** [proficiency-tree.md](proficiency-tree.md). It builds on your three branches

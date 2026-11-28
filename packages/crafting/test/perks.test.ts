@@ -11,7 +11,8 @@ describe('perk choices', () => {
   it('offers two perks at every 10th level; only milestones whose perks both work are offered', () => {
     for (const b of ['smithing', 'crafting', 'alchemy'] as const) for (const m of milestones(b)) expect(m.perks).toHaveLength(2);
     expect(milestones('smithing').every((m) => m.ready)).toBe(true);
-    expect(milestones('crafting').some((m) => m.ready)).toBe(false); // nothing trains Crafting yet
+    // Crafting (AF-021): Jeweler and Tailor work; the later Crafting perks are still coming.
+    expect(milestones('crafting').map((m) => m.ready)).toEqual([true, false, false]);
     expect(new Set(PERKS.map((p) => p.id)).size).toBe(PERKS.length);
   });
 

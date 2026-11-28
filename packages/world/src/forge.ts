@@ -58,6 +58,10 @@ export const FORGE_PLAN = {
   loftChest: { x: 2.7, z: -2.55 },
 } as const;
 
+/** Where a crafter stands at the workbench (in front of it, on the ground floor): the Crafting station. */
+// Toward the front end of the bench, away from the sword rack's spot (whose "Examine" would win the prompt).
+export const WORKBENCH: Vec2 = forgeToWorld(FORGE_PLAN.workbench.x - 0.75, FORGE_PLAN.workbench.z + 0.4);
+
 /** The forge's anvil: Orla's working anvil in front of the hearth. */
 export const FORGE_ANVIL_LOCAL = FORGE_PLAN.anvil;
 

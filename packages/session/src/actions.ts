@@ -5,16 +5,16 @@
  * clock and random numbers); the browser runs the same code locally for guests. Clients
  * only ever send the action (an intent), never its result.
  */
-import { EQUIP_SLOTS, type EquipSlot, type ForgeRequest } from '@alloy/crafting';
+import { EQUIP_SLOTS, type EquipSlot, type ForgeRequest, resolveBlueprint } from '@alloy/crafting';
 import { ATTACKS, ATTRIBUTE_IDS, SKILLS, isSkill, GATHER_PROFICIENCY_XP, PROFICIENCY_YIELD_BONUS, proficiencyFor, proficiencyLevel, damageTypeOf, mitigate, resistanceMultiplier, ATTRIBUTE_XP, ENEMIES, scaledArchetype, computeOutgoingHit, critContest, staggerContest, type AttackDefinition, type AttributeId, type AttributeLevels, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2, PERK_EFFECTS, hasPerk } from '@alloy/game-rules';
 import { BLUEPRINT_DROP, Rng, blueprintOf, generateBlueprint, materialName, type BlueprintArea, type DamageType, type GeneratedBlueprint, type ItemInstance, type ToolKind, type WeaponStats } from '@alloy/item-gen';
-import { FORGE_ANVIL, NPCS, SEARCH_HEIGHT, SEARCH_RANGE, containerDef, terrainHeight } from '@alloy/world';
+import { FORGE_ANVIL, NPCS, SEARCH_HEIGHT, SEARCH_RANGE, WORKBENCH, containerDef, terrainHeight } from '@alloy/world';
 import { searchContainer } from './containers';
 import { NODE_RESPAWN_SECONDS, nodeDef, nodeStateForGather, nodeTraits, nodeYield, regrowNodes } from './nodes';
 import type { Session, SessionEvent } from './session';
 
 /** Interaction ranges in metres (what the browser offers the prompt at). */
-export const RANGE = { npc: 3, anvil: 2.8, node: 2.6 } as const;
+export const RANGE = { npc: 3, anvil: 2.8, node: 2.6, workbench: 2.2 } as const;
 
 /** A forge request as a client sends it: the authority fills in the maker and the time. */
 export type ClientForgeRequest = Omit<ForgeRequest, 'maker' | 'createdAt'>;
@@ -121,7 +121,9 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
       return r.ok ? { ok: true, events } : no(r.error, r.message, events);
     }
     case 'forge': {
-      if (!near(ctx, FORGE_ANVIL, RANGE.anvil)) return no('out_of_range', 'Move closer to the forge.');
+      // Crafting recipes are made at the workbench, everything else at the anvil.
+      const atBench = resolveBlueprint(s.data.inventory, a.req.blueprintId)?.branch === 'crafting';
+      if (atBench ? !near(ctx, WORKBENCH, RANGE.workbench) : !near(ctx, FORGE_ANVIL, RANGE.anvil)) return no('out_of_range', atBench ? 'Move closer to the workbench.' : 'Move closer to the forge.');
       if (!s.passed('commission')) return no('quest_gate', 'Speak with Master Smith Orla first.');
       const { value: r, events } = captureEvents(s, () => s.forge(a.req));
       return r.ok ? { ok: true, events, item: r.item } : no(r.error, r.message, events);
