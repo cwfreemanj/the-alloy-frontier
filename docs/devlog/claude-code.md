@@ -17,6 +17,15 @@ Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and g
 - **Not done / deferred:** Didn't build estimated stats on scrolls or the power curve: both need the creative director's yes. The perk list, the curve's numbers and the real set chance remain theirs.
 - **Verified:** npm run typecheck, npm test (294/294) and npm run build pass on this branch. No browser tests: there's no gameplay change apart from the set chance.
 
+## 2026-11-27 21:58 — Selling scrolls and titles (AF-022, AF-027)
+- **PR:** 45
+- **Asked for:** Neal: do the two small pieces next: selling scrolls to Bram and titles.
+- **Done:**
+  - AF-022: sellScroll (pays the scroll's worth, removes it, keeps it learned); a sellScroll action near Bram; a 'Sell blueprints' section in Bram's shop.
+  - AF-027: game-rules titles.ts (nine STAND-IN titles at branch levels 25, 50, 100), chooseTitle and shownTitle saved in progression.title; a title action; a Titles section on the Proficiencies screen; the avatar's optional ttl field. The server replaces ttl with the title it knows for signed-in players and strips it for guests; other players see it above the name.
+- **Not done / deferred:** Trading and giving scrolls between players (AF-023).
+- **Verified:** npm run typecheck pass; npm test 298/298 (4 new); npm run build pass; npm run test:e2e 25/25 including a new test (sell a scroll, show a title). In the browser: sold a learned scroll for 26 coins (learned kept), showed Journeyman Smith at Smithing 26.
+
 ## 2026-11-27 20:51 — The Crafting branch: the workbench (AF-021)
 - **PR:** 44
 - **Asked for:** Neal: start AF-021, the Crafting branch.

@@ -201,12 +201,12 @@ rates, perk strengths.
 | AF-019 | Password recovery | Needs an email service: new infrastructure, owner approval |
 | AF-020 | **The real blueprint generator**: `generateBlueprint`, the drop table, `RESOURCE_RARITY` | The creative director. Replaces the stand-in in `packages/item-gen/src/found.ts` |
 | AF-021 | **The Crafting branch**: the workbench in the forge, the first jewelry and cape recipes, Crafting perks | **BUILT** (#44): four recipes (two rings, a pendant, a cloak; STAND-IN values), Crafting XP and level gate, Jeweler and Tailor. Not yet: looks on the character, found Crafting blueprints |
-| AF-022 | **Selling scrolls** to Bram, at their worth | Small; the technical director |
+| AF-022 | **Selling scrolls** to Bram, at their worth | **BUILT** (#45): a "Sell blueprints" section in Bram's shop; learned blueprints stay learned |
 | AF-023 | **Trading and giving** scrolls (and later items) between players | After AF-022; server-checked ownership |
 | AF-024 | **Set bonuses** | After AF-021 and the creative director's set design |
 | AF-025 | **Quest-reward blueprints**, blueprints from **NPCs** (given or sold), and blueprints found in the open world | Quest steps, NPC offers and world pick-ups |
 | AF-026 | **Armor on the character, phase 2**: chest and leg pieces fitted to Maria and Exo | The creative director's area (fitting from the workshop's body measurements) |
-| AF-027 | **Titles** at a branch's top milestone, shown to other players | Protocol field; after AF-017 |
+| AF-027 | **Titles** at a branch's top milestone, shown to other players | **BUILT** (#45): earned at branch levels 25, 50 and 100 (STAND-IN names); one shown above the name; the server decides what others see |
 
 ---
 

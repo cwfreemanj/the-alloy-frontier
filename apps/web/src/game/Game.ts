@@ -26,8 +26,7 @@ import {
   type CombatContext,
   type CombatEvent,
   type Vec2,
-  PROFICIENCY_NAMES,
-} from '@alloy/game-rules';
+  PROFICIENCY_NAMES, shownTitle, titleById } from '@alloy/game-rules';
 import { cleanName, type AvatarState, type HitVerdict } from '@alloy/protocol';
 import { toolPower } from '@alloy/crafting';
 import { IMBUEMENTS, type ItemInstance, generateBlueprint } from '@alloy/item-gen';
@@ -512,6 +511,7 @@ export class Game {
       wpn: w ? { bp: w.blueprintId, spec: w.forge.specialization, imb: w.result.imbuements.includes('storm_arc'), rar: w.result.rarity, ...(w.blueprint?.look ? { lk: lookToNet(w.blueprint.look) } : {}) } : null,
       mdl: this.character,
       gr: this.wornGear(),
+      ...(shownTitle(this.session.data.progression) ? { ttl: shownTitle(this.session.data.progression)!.id } : {}),
     };
   }
 
@@ -865,6 +865,7 @@ export class Game {
       (scroll) => this.act({ k: 'scrap', scroll }),
       (perk) => this.act({ k: 'perk', perk }),
       (branch) => this.act({ k: 'perkRespec', branch }),
+      (title) => this.act({ k: 'title', title }),
     );
     this.setModal('inventory', p.el);
     this.panel = p;
@@ -908,7 +909,7 @@ export class Game {
   }
 
   openMerchant(): void {
-    const p = new MerchantPanel(this.session, () => this.closeModal(), (stock, qty) => this.act({ k: 'buy', stock, qty }));
+    const p = new MerchantPanel(this.session, () => this.closeModal(), (stock, qty) => this.act({ k: 'buy', stock, qty }), (scroll) => this.act({ k: 'sellScroll', scroll }));
     this.setModal('merchant', p.el);
     this.panel = p;
     void this.act({ k: 'event', ev: 'open_merchant' });
@@ -1709,7 +1710,8 @@ export class Game {
         this.hud.hideLabel(id);
         continue;
       }
-      const el = this.hud.label(id, () => h('div', { class: 'player-label' }, h('div', { class: 'nm' }, r.name), h('div', { class: 'bar' }, h('div', { class: 'fill' }))));
+      const el = this.hud.label(id, () => h('div', { class: 'player-label' }, h('div', { class: 'ttl' }), h('div', { class: 'nm' }, r.name), h('div', { class: 'bar' }, h('div', { class: 'fill' }))));
+      (el.querySelector('.ttl') as HTMLElement).textContent = titleById(r.state.ttl)?.name ?? '';
       const sp = this.hud.project(this.camera, r.position, 2.2, w, hgt);
       el.style.display = sp.visible ? '' : 'none';
       el.style.left = `${sp.x}px`;
