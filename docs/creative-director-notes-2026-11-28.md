@@ -11,10 +11,14 @@ where a decision is still open.
 - **D19:** set blueprints are rare. The stand-in now makes 1 found armor blueprint in 20 a set piece, down from
   about 1 in 3.
 
-**Still theirs to decide:**
-- Whether a blueprint shows estimated stats (§4).
-- The equipment power curve (§6).
-- How realistic gathering should be (§7).
+**Their answers to the three open questions (later on 28 Nov):**
+- **Estimated stats on scrolls: yes.** Built: a scroll shows "Estimated 24–31 damage" (§4).
+- **Materials and equipment paths: the plan sounds good.** Materials have three jobs: gate, scale, flavor. The
+  crafting branches (Smithing, Crafting, Alchemy) train the equipment paths; gathering doesn't. Every kind of
+  equipment is available to craft, and the crafts for each get more advanced as the branch levels (§6). The
+  curve's numbers are still a stand-in for them to set.
+- **Trading:** good, but not the main way to get materials; it's one option. Materials come mainly from
+  mining, woodcutting, quests and similar (§7).
 
 ---
 
@@ -101,8 +105,10 @@ damage". The range would run from the worst craft to the best craft at the level
   (AF-023).
 - **Against exact numbers:** a range keeps some gamble, and the maker's skill still matters.
 
-It's a small change: one shared function plus one line on the scroll. **Waiting for the creative director's
-yes.**
+**Answer: yes (28 Nov). Built:** each scroll in the inventory shows "Estimated low–high damage" (or defense),
+from the worst craft to the best at the level the blueprint needs, before rarity affixes and perks. One shared
+function, `estimateStats` in `packages/item-gen/src/estimate.ts`, uses the same formulas as the forge, and a test
+checks that real forged items fall inside the range.
 
 ## 5. D17 and D19: where blueprints come from, and how rare sets are
 
@@ -175,7 +181,10 @@ apart.
 - **Each branch unlocks a material tier every 10–15 levels**, so the branch's level and its equipment rise
   together. The perk milestones are every 10 levels (D22).
 
-**Next step:** if the creative director likes the shape, Claude writes it into `packages/item-gen` as one
+**Their answer (28 Nov):** the materials plan sounds good, and the crafting branches, not gathering, train the
+equipment paths. Every kind of equipment is available to craft, and each gets more advanced as its branch levels.
+
+**Next step:** with the shape agreed, Claude can write the curve into `packages/item-gen` as one
 function. Then every blueprint, standard or found, takes its base stats from the curve instead of hand-set
 numbers. The creative director sets the shares and the curve's numbers.
 
@@ -196,10 +205,11 @@ The goal is a world where players **need each other**: a miner sells to a smith,
 Keeping gathering apart from the branches does that. It also gives a player who only gathers a progression of
 their own: their root's level, and its perk at 50.
 
-The question for the creative director: **is trading between players the goal?**
-- **If yes:** keep this.
-- **If they'd rather have solo players self-sufficient:** gathering could give a small share of XP to its
-  branch, for example 10%.
+**Their answer (28 Nov):** trading is good, but **not the main route**: it's one more way to get materials.
+Gathering means collecting materials, and that happens mainly through mining, woodcutting, quests and similar.
+
+That's how the game works today, so nothing changes: gathering trains only its own proficiency, and gathering
+gives no XP to the branches.
 
 ---
 

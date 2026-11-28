@@ -40,7 +40,7 @@ import {
   milestones,
   perkById,
   respecFee, TITLES, shownTitle } from '@alloy/game-rules';
-import { RARITY_LABEL, RARITY_ORDER, blueprintOf, itemDisplayName, materialName, type ItemInstance, type WeaponFamily } from '@alloy/item-gen';
+import { RARITY_LABEL, RARITY_ORDER, blueprintOf, estimateStats, itemDisplayName, materialName, type ItemInstance, type WeaponFamily } from '@alloy/item-gen';
 import { characterStats, weaponDamageType, type Session } from '../state/Session';
 import { RARITY_COLORS } from '../entities/Weapons';
 import type { PlayerCharacterId } from '../entities/models/Characters';
@@ -443,13 +443,18 @@ export class CharacterWindow {
     for (const [id, bp] of scrolls) {
       const known = !!inv.learned?.[bp.id];
       const p = bp.piece;
-      const what = p.baseDefense !== undefined ? `${p.baseDefense} base defense` : `${p.baseDamage} base damage`;
+      // The range this blueprint makes at the level it needs, from the worst craft to the best.
+      const est = estimateStats(p, bp.requirement.level);
+      const branch = BRANCH_INFO[bp.requirement.branch]?.name ?? 'Smithing';
       rows.append(
         h(
           'div',
           { class: 'cs-brew cs-scroll', 'data-scroll': id },
           h('div', { class: 'row' }, h('b', { style: `color:${RARITY_COLORS[bp.rarity]}` }, bp.name), h('span', { class: 'spacer' }), h('span', { class: 'cs-note' }, `${RARITY_LABEL[bp.rarity]} · worth ${bp.worth} c`)),
-          h('div', { class: 'cs-note' }, `${what} · needs Smithing ${bp.requirement.level}${bp.set ? ` · ${bp.set.name} set (1 of ${bp.set.pieces})` : ''}`),
+          est
+            ? h('div', { class: 'cs-scroll-est', 'data-testid': `estimate-${id}`, title: `From the worst craft to the best at ${branch} ${est.level}, before rarity affixes and perks. Higher skill makes more.` }, `Estimated ${est.low}–${est.high} ${est.stat}`)
+            : null,
+          h('div', { class: 'cs-note' }, `Needs ${branch} ${bp.requirement.level}${bp.set ? ` · ${bp.set.name} set (1 of ${bp.set.pieces})` : ''}`),
           h('div', { class: 'cs-note', style: 'font-style:italic' }, bp.lore),
           h(
             'div',

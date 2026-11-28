@@ -42,7 +42,7 @@ game, with tests). Added here: **STAND-IN** (built so the rest can work, to be r
 | D14 | Raids | **Raids on Emberhold** ([raids.md](raids.md)): readiness from play, a 60 s warning from the watchtower, two waves and the Raider Captain, 5 minutes to win. A win pays a bonus; a loss leaves the Captain camped on the trail. Off on the live server until `RAIDS=1` is set. | BUILT (#34); rules CONFIRMED 27 Nov |
 | D15 | Forge families | The forge makes **maces (a second weapon family, blunt), shields, helmets, chestplates and platelegs**, iron and ironglass, beside the longswords ([forge-expansion.md](forge-expansion.md)). Armor gets **defense**, crafted like damage, and armor affixes. | BUILT (#36); numbers STAND-IN for the creative director |
 | D16 | Gear looks | **The creative director's Model Workshop generator** makes the 3D looks of forged gear, loaded on demand. Looks only: stats always come from the item rules. Mace in hand, shield on the forearm, helmet on the head; chest and leg pieces don't show yet. | BUILT (#36) |
-| D17 | Blueprints | **Found blueprints** ([blueprint-contract.md](blueprint-contract.md)): generated where they're found, with their own rarity, lore, materials, item or set piece, required proficiency and worth. Sources: quests, NPCs, enemies, chests and similar places (creative director, 28 Nov); enemies and containers are built. Whether a scroll shows estimated stats is open ([notes](creative-director-notes-2026-11-28.md) §4). | Game side BUILT (#39); generator STAND-IN; sources CONFIRMED 28 Nov |
+| D17 | Blueprints | **Found blueprints** ([blueprint-contract.md](blueprint-contract.md)): generated where they're found, with their own rarity, lore, materials, item or set piece, required proficiency and worth. Sources: quests, NPCs, enemies, chests and similar places (creative director, 28 Nov); enemies and containers are built. A scroll shows its estimated stats (D25). | Game side BUILT (#39); generator STAND-IN; sources CONFIRMED 28 Nov |
 | D18 | Learning | A found blueprint is **learned for good, and the scroll stays**, to sell, trade or give away. A duplicate says "You've already learned this blueprint." | CONFIRMED 27 Nov; BUILT (#39) |
 | D19 | Sets | **Set pieces are forged one at a time.** Each piece is its own blueprint, found on its own; pieces of a set share the set's id. **Set blueprints are rare** (creative director, 28 Nov): the stand-in makes 5% of found armor blueprints set pieces. | CONFIRMED 27–28 Nov; set bonuses later |
 | D20 | Standard patterns | **The fixed blueprints stay**, as the inherent blueprints learned with blacksmithing levels; finding blueprints opens the unique ones. | CONFIRMED 27 Nov |
@@ -50,6 +50,9 @@ game, with tests). Added here: **STAND-IN** (built so the rest can work, to be r
 | D22 | Perks | **A choice of two perks every 10 levels** of a branch; re-picked at Orla's for a fee that doubles. Answers AF-017's perks. Titles come at levels 25, 50 and 100 (#45). | CONFIRMED 28 Nov (creative director); BUILT (#42) |
 | D23 | Ownership | **Item generation (stats, blueprints, looks) is the creative director's area; mechanics are the technical director's** ([equipment-contract.md](equipment-contract.md), [blueprint-contract.md](blueprint-contract.md)). Where the game needed numbers first, they're marked STAND-IN for them to replace. | CONFIRMED |
 | D24 | Camera | **Lock-on is on Tab and T only** (the middle mouse button locked on by accident), and glitched mouse jumps are ignored. | BUILT (#40) |
+| D25 | Blueprint stats | **A scroll shows estimated stats**: the range of damage or defense it makes, from the worst craft to the best at the level it needs, before affixes and perks. | CONFIRMED 28 Nov (creative director); BUILT (#47) |
+| D26 | Equipment paths | **The crafting branches train the equipment paths; gathering doesn't.** Every kind of equipment is available to craft, and the crafts for each get more advanced as the branch levels. Materials have three jobs: their tier gates what can be made, their quality scales it, and special materials add a trait ([notes](creative-director-notes-2026-11-28.md) §6). | CONFIRMED 28 Nov (creative director); the power curve's numbers PROPOSED |
+| D27 | Gathering | **Gathering means collecting materials**, mainly by mining, woodcutting, quests and similar. **Trading is one more option, not the main route.** Gathering trains only its own proficiency. | CONFIRMED 28 Nov (creative director) |
 
 ---
 
@@ -218,8 +221,8 @@ rates, perk strengths.
   - **AF-012:** what a "day" is for the protection fee.
   - **The creative director's review** of the forge numbers and looks (D15, D16) and the blueprint contract
     (D17). The proficiency tree and perks (D21, D22) are confirmed.
-  - **Estimated stats on blueprint scrolls**, the **equipment power curve**, and **how gathering relates to the
-    branches**: see §8.
+  - **The equipment power curve's numbers** (D26): the shape is agreed; the numbers are the creative
+    director's.
   - **Cooking:** under Alchemy (as proposed) or Crafting?
   - **Branch names:** Smithing, Crafting and Alchemy, or names in the setting's voice?
   - **Meshy commercial licence** and **target hardware for 60 FPS**, as in v0.5.

@@ -583,3 +583,5 @@ select, input[type=number] { background: var(--panel-2); color: var(--text); bor
 /* Titles (AF-027) above other players' names */
 .player-label .ttl { font-size: 10px; letter-spacing: 0.08em; color: #ffcf8a; text-transform: uppercase; }
 .player-label .ttl:empty { display: none; }
+/* Estimated stats on a blueprint scroll */
+.cs-scroll-est { font-size: 12px; color: #ffcf8a; font-weight: 600; }
