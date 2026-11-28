@@ -557,6 +557,8 @@ test('found blueprints: learn a scroll in the inventory (it stays), then forge i
   await page.getByTestId(`learn-${scroll}`).click();
   await expect(page.getByTestId(`learn-${scroll}`)).toHaveText('Learned');
   await expect(page.locator(`[data-scroll="${scroll}"]`)).toBeVisible();
+  // The scroll shows the range of stats it makes (the creative director's yes, 28 Nov).
+  await expect(page.getByTestId(`estimate-${scroll}`)).toHaveText(/^Estimated \d+–\d+ (damage|defense)$/);
   await page.keyboard.press('Escape');
   // Forge it: it is listed under its category, marked Found.
   const bp = await page.evaluate(() => {

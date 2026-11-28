@@ -6,3 +6,4 @@ export * from './formulas';
 export * from './rating';
 export * from './generate';
 export * from './found';
+export * from './estimate';

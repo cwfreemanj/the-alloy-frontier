@@ -3,6 +3,13 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-28 11:05 — Estimated stats on blueprint scrolls; the creative director's answers
+- **PR:** 47
+- **Asked for:** Neal passed on the creative director's answers: yes on estimated stats for scrolls; the materials plan sounds good, and the crafting branches (not gathering) train the equipment paths; trading is one option for getting materials, not the main route.
+- **Done:** Added estimateStats (packages/item-gen/src/estimate.ts): the range of a blueprint's damage or defense at a skill level, from the worst craft to the best, using the forge's own formulas, before affixes and perks. Each scroll in the inventory now shows 'Estimated low–high damage/defense', and 'Needs <branch> <level>' names the blueprint's own branch. Recorded the answers as D25-D27 in GDD v0.6 and in the notes document.
+- **Not done / deferred:** The power curve itself isn't written into the code: the shape is agreed, the numbers are the creative director's. Bram's sell list doesn't show the estimate (the inventory does).
+- **Verified:** npm run typecheck; npm test 302/302 (4 new, including one that forges real items and checks they fall inside the range); npm run build; npm run test:e2e 25/25, with the found-blueprint test now checking the estimate's text. Didn't check by eye in the browser: port 5178 was taken by another project.
+
 ## 2026-11-28 10:16 — GDD v0.6 brought up to date
 - **PR:** 46
 - **Asked for:** Neal: updated GDD.
