@@ -580,3 +580,28 @@ test('found blueprints: learn a scroll in the inventory (it stays), then forge i
   expect(made).toBe(bp.id);
   expect(errors).toEqual([]);
 });
+
+test('perk choices: pick Weaponsmith on the Proficiencies screen, and the next sword carries it', async ({ page }) => {
+  const errors = await newGame(page);
+  type A = Record<string, (...x: unknown[]) => unknown>;
+  await page.keyboard.press('KeyI');
+  await page.getByRole('tab', { name: 'Proficiencies' }).click();
+  // A new smith starts at Smithing 10: the first choice is waiting.
+  await expect(page.getByTestId('perk-smithing-10')).toContainText('choose one');
+  await expect(page.getByTestId('perk-crafting-10')).toContainText('coming soon');
+  await page.locator('[data-perk="weaponsmith"]').click();
+  await expect(page.getByTestId('perk-smithing-10')).toContainText('Weaponsmith ✓');
+  await expect(page.getByTestId('perk-respec-smithing')).toContainText('50');
+  await page.keyboard.press('Escape');
+  const perks = await page.evaluate(() => {
+    const a = (window as unknown as { __alloy: A }).__alloy;
+    const s = a.session() as { data: { quest: { stepIndex: number }; inventory: { items: Record<string, { blueprintId: string; forge: { perks?: string[] } }> } }; forge: (r: unknown) => { ok: boolean } };
+    s.data.quest.stepIndex = 8;
+    for (const m of ['iron_ore', 'ironwood', 'binding_flux']) a.give(m, 20, 0.6);
+    a.teleport(-14, 13.5);
+    s.forge({ txId: 'e2e-perk', blueprintId: 'iron_longsword', mode: 'quick', bufferQuantity: 2 });
+    return Object.values(s.data.inventory.items).find((i) => i.blueprintId === 'iron_longsword')?.forge.perks ?? null;
+  });
+  expect(perks).toEqual(['weaponsmith']);
+  expect(errors).toEqual([]);
+});

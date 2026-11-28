@@ -180,6 +180,10 @@ function charAction(v: unknown): CharAction | null {
       return (ATTRIBUTE_IDS as readonly unknown[]).includes(v.attr) && int(v.n, 1, 100) ? { k: 'allocate', attr: v.attr as (typeof ATTRIBUTE_IDS)[number], n: v.n } : null;
     case 'respec':
       return { k: 'respec' };
+    case 'perk':
+      return str(v.perk, 32) ? { k: 'perk', perk: v.perk } : null;
+    case 'perkRespec':
+      return v.branch === 'smithing' || v.branch === 'crafting' || v.branch === 'alchemy' ? { k: 'perkRespec', branch: v.branch } : null;
     case 'brew':
       return str(v.recipe, 32) && int(v.qty, 1, 20) ? { k: 'brew', recipe: v.recipe, qty: v.qty } : null;
     case 'search':

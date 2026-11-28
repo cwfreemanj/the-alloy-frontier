@@ -106,6 +106,9 @@ export const ARMOR_AFFIXES: ArmorAffixDefinition[] = [
   { id: 'bulwark_resonance', name: 'Bulwark Resonance', description: '+15% defense and +20 max health', defense: 1.15, bonuses: { maxHealth: 20 }, mythicOnly: true },
 ];
 
+/** A perk multiplier, bounded (1 when absent or nonsense). */
+const perkMul = (m: number | undefined): number => (typeof m === 'number' && Number.isFinite(m) ? Math.max(1, Math.min(2, m)) : 1);
+
 /** Add one set of gear bonuses to another. */
 function addBonuses(a: GearBonuses, b: GearBonuses | undefined): GearBonuses {
   if (!b) return a;
@@ -138,6 +141,11 @@ export interface GenerationInput {
   fixedMaterialQuality?: number;
   /** A found blueprint's definition (its id is `blueprintId`). Copied into the item. */
   blueprint?: BlueprintDefinition;
+  /**
+   * The maker's perks (proficiency tree), as multipliers the authority worked out: damage (weapons),
+   * defense (armor) and a rarity bonus added to the roll's score. `perks` names them for the record.
+   */
+  bonus?: { damage?: number; defense?: number; rarity?: number; perks?: string[] };
 }
 
 function weightedQuality(mats: ConsumedMaterial[], filter: (m: ConsumedMaterial) => boolean): number | undefined {
@@ -219,11 +227,12 @@ export function generateItem(input: GenerationInput): ItemInstance {
   const roll = rng.next();
   const masteryTerm = Math.min(1, (sf - 1) / 1.2);
   let rarity: Rarity;
+  const rarityBonus = clamp01(input.bonus?.rarity ?? 0);
   if (mode === 'masterwork') {
-    rarity = rarityFromScore(0.45 * score + 0.2 * materialQuality + 0.2 * masteryTerm + 0.15 * roll);
+    rarity = rarityFromScore(0.45 * score + 0.2 * materialQuality + 0.2 * masteryTerm + 0.15 * roll + rarityBonus);
   } else if (mode === 'quick') {
     // Quick Forge: limited traits/customisation (GDD 4.4) -> capped at Uncommon.
-    rarity = minRarity(rarityFromScore(0.25 + 0.25 * materialQuality + 0.15 * masteryTerm + 0.15 * roll), 'uncommon');
+    rarity = minRarity(rarityFromScore(0.25 + 0.25 * materialQuality + 0.15 * masteryTerm + 0.15 * roll + rarityBonus), 'uncommon');
   } else {
     rarity = 'common';
   }
@@ -234,7 +243,7 @@ export function generateItem(input: GenerationInput): ItemInstance {
     const pool = ARMOR_AFFIXES.filter((a) => !a.mythicOnly || rarity === 'mythic');
     const defs = rng.shuffle(pool).slice(0, RARITY_AFFIX_COUNT[rarity]);
     if (rarity === 'mythic' && !defs.some((a) => a.id === 'bulwark_resonance')) defs[defs.length - 1] = ARMOR_AFFIXES.find((a) => a.id === 'bulwark_resonance')!;
-    let defense = formulaDamage(bp.baseDefense, sf, mf, bf, ff);
+    let defense = formulaDamage(bp.baseDefense, sf, mf, bf, ff) * perkMul(input.bonus?.defense);
     let bonuses: GearBonuses = {};
     for (const a of defs) {
       if (a.defense) defense *= a.defense;
@@ -266,6 +275,7 @@ export function generateItem(input: GenerationInput): ItemInstance {
     affixDefs[affixDefs.length - 1] = AFFIXES.find((a) => a.id === 'maker_resonance')!;
   }
   for (const a of affixDefs) stats = applyModifier(stats, a.mod);
+  stats = { ...stats, damage: stats.damage * perkMul(input.bonus?.damage) };
   const finalStats = finalizeStats(stats);
 
   // Material-born imbuement (GDD 4.15): needs a masterwork forge and conductive catalyst.
@@ -360,6 +370,7 @@ function seal(bp: BlueprintDefinition, input: GenerationInput, x: Sealed): ItemI
       temper,
       formulaDamage: fDamage,
       stages,
+      ...(input.bonus?.perks?.length ? { perks: [...input.bonus.perks] } : {}),
     },
     result: x.result,
     createdAt: input.createdAt,

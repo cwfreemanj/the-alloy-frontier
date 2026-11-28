@@ -1,8 +1,9 @@
 # Proficiency tree: proposal
 
 **Status: approved by the technical director on 2026-11-27, as written; the creative director reviews it (his
-changes, if any, come in through review). Step 1 of section 6 is built: Alchemy trains from brewing and
-strengthens potions, and the Proficiencies screen shows the three branches with their roots.** The creative
+changes, if any, come in through review). Steps 1 and 2 of section 6 are built: Alchemy trains from brewing and
+strengthens potions; the Proficiencies screen shows the branches with their roots; perk choices work
+(section 7).** The creative
 director suggested three branches (Smithing, Crafting, Alchemy); this proposal builds on that and on what
 the game already has. Sections 1–4 are the decisions to approve, each with a recommendation. Section 5 says
 how it connects to generated blueprints, and section 6 how it would be built and in what order.
@@ -123,3 +124,32 @@ Sets and trading come after the 18th. Sets build on Crafting and blueprints; tra
 - **Names:** "Smithing, Crafting, Alchemy", or something more in the setting's voice?
 - **Does Crafting cover cooking,** or does Alchemy (as proposed)?
 - **Should perks show on the character sheet** to other players, or only titles?
+
+## 7. Built: perk choices (step 2, 2026-11-27)
+
+**Rules:** `packages/game-rules/src/perks.ts` (`PERKS`, `PERK_EFFECTS`, `milestones`, `choosePerk`, `respecFee`,
+`clearPerks`). Choices are saved in `progression.perks` (optional in old saves).
+
+**Offered now.** The pairs differ from section 3's table so that every milestone offered has two perks that work
+today. Steady Hands is simplified to "masterwork forge quality +5%". The creative director can change any of it.
+
+| Level | Smithing | Alchemy |
+| --- | --- | --- |
+| 10 | **Weaponsmith:** forged weapons +5% damage · **Armorsmith:** forged armor and shields +8% defense | **Brewer:** potions you drink 15% stronger · **Distiller:** each brew makes one extra potion |
+| 20 | **Flux Saver:** recipes need 1 less flux · **Masterwork Eye:** a better chance of a rarer result | **Quick Hands:** potion cooldown 2 s shorter · **Herbal Lore:** +1 herb per pick |
+| 30 | **Ironglass Adept:** ironglass recipes 3 mastery levels sooner · **Steady Hands:** masterwork forge quality +5% | Cook or Enchanter (coming soon) |
+
+**Coming soon:**
+- **Crafting** perks (Jeweler, Tailor, Setwright, Engraver, Dyer, Salvager), which wait for the workbench.
+- **Alchemy 30** (Cook, Enchanter).
+- **The roots' level-50 perks.**
+- **Titles.**
+
+**How it works:**
+- **Choosing:** at each reached milestone the Proficiencies screen offers the two perks. A new smith starts at
+  Smithing 10, so the first choice is waiting from the start.
+- **Level-ups:** a level-up that opens a choice says so in a message.
+- **Re-picking** is done at Orla's: it clears that branch's choices for 50 coins, doubling each time, up to 6,400.
+- **The server decides:** it records choices and applies every effect.
+  - In the forge, the maker's perks come from the server's copy of the character, never from the request.
+  - Forged items record the perks that shaped them (`forge.perks`). Items made without perks are unchanged.

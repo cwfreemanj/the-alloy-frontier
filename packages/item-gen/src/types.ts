@@ -115,6 +115,8 @@ export interface ForgeRecord {
   /** Damage straight from the GDD 4.11 formula before specialization/affixes. */
   formulaDamage: number;
   stages: ForgeStageResult[];
+  /** The maker's perks that shaped this item (proficiency tree). Only present when there were some. */
+  perks?: string[];
 }
 
 export interface ItemResult extends WeaponStats {

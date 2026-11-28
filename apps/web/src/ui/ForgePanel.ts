@@ -27,8 +27,9 @@ import {
   slotOf,
   resolveBlueprint,
   learnedBlueprints,
+  minBufferFor,
 } from '@alloy/crafting';
-import { smithXpToNext } from '@alloy/game-rules';
+import { PERK_EFFECTS, chosenPerks, smithXpToNext } from '@alloy/game-rules';
 import {
   CRAFTABLE_BLUEPRINTS,
   type BlueprintDefinition,
@@ -149,12 +150,22 @@ export class ForgePanel {
 
   /** A blueprint this smith can use: a learned found blueprint, or a standard pattern. */
   private bp(id: string): BlueprintDefinition | undefined {
-    return resolveBlueprint(this.session.inventory, id);
+    const bp = resolveBlueprint(this.session.inventory, id);
+    return bp ? this.withPerks(bp) : undefined;
+  }
+
+  /** A blueprint as this smith sees it: Flux Saver lowers the flux needed, Ironglass Adept the mastery. */
+  private withPerks(bp: BlueprintDefinition): BlueprintDefinition {
+    const perks = chosenPerks(this.session.data.progression);
+    const glass = bp.materials.some((m) => m.materialId === 'ironglass');
+    const mastery = Math.max(0, bp.masteryRequirement - (glass && perks.includes('ironglass_adept') ? PERK_EFFECTS.ironglassLevels : 0));
+    const min = minBufferFor(bp.buffer.min, perks);
+    return mastery === bp.masteryRequirement && min === bp.buffer.min ? bp : { ...bp, masteryRequirement: mastery, buffer: { ...bp.buffer, min } };
   }
 
   /** Everything the forge lists: the standard patterns, then the found blueprints the smith has learned. */
   private allBlueprints(): BlueprintDefinition[] {
-    return [...CRAFTABLE_BLUEPRINTS, ...learnedBlueprints(this.session.inventory).map((b) => b.piece)];
+    return [...CRAFTABLE_BLUEPRINTS, ...learnedBlueprints(this.session.inventory).map((b) => b.piece)].map((b) => this.withPerks(b));
   }
 
   /** What is in the slot this blueprint's item would go in (the comparison for the projection). */
@@ -206,7 +217,7 @@ export class ForgePanel {
   }
 
   private preview(mastery = this.mastery, scoreOverride?: number, bufferOverride?: number) {
-    const req: ForgeRequest = { ...this.request(), maker: { id: 'preview', name: 'You', mastery }, createdAt: Date.now() };
+    const req: ForgeRequest = { ...this.request(), maker: { id: 'preview', name: 'You', mastery, perks: chosenPerks(this.session.data.progression) }, createdAt: Date.now() };
     if (bufferOverride !== undefined) req.bufferQuantity = bufferOverride;
     const score = scoreOverride ?? this.currentScore() ?? 0.75;
     return planForge(this.session.inventory, req, this.mode === 'masterwork' ? { previewScore: score } : {});
