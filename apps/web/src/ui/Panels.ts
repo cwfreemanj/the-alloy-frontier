@@ -1,7 +1,8 @@
 /** Merchant, dialogue, pause/settings, title and summary panels. */
 import { buildLabel } from '../buildInfo';
+import { RARITY_COLORS } from '../entities/Weapons';
 import { MERCHANT_STOCK, materialTotal, merchantPreview } from '@alloy/crafting';
-import { itemDisplayName, type ItemInstance } from '@alloy/item-gen';
+import { itemDisplayName, type ItemInstance, RARITY_LABEL } from '@alloy/item-gen';
 import { QUEST_EDGE_YOU_MAKE, smithXpToNext, weaponXpToNext } from '@alloy/game-rules';
 import type { Session } from '../state/Session';
 import type { CharacterSlot, CharacterSummary } from '../net/Accounts';
@@ -20,6 +21,8 @@ export class MerchantPanel {
     private onClose: () => void,
     /** Asks the authority to buy (server for accounts, this browser for guests). */
     private onBuy: (stockId: string, qty: number) => Promise<unknown>,
+    /** Sell a found blueprint scroll at its worth (AF-022). */
+    private onSellScroll: (scrollId: string) => Promise<unknown> = async () => {},
   ) {
     this.render();
   }
@@ -57,7 +60,26 @@ export class MerchantPanel {
       }
       body.append(row);
     }
-    this.el.append(h('div', { class: 'panel dialog', style: 'width:min(620px,94vw)' }, panelHead("Bram's Frontier Goods", this.onClose), body));
+    // Found blueprints: Bram buys scrolls at their worth (learned ones stay learned).
+    const scrolls = Object.entries(this.session.inventory.scrolls ?? {});
+    if (scrolls.length) {
+      const sell = h('div', { class: 'card', style: 'cursor:default', 'data-testid': 'sell-scrolls' }, h('b', null, 'Sell blueprints'), h('div', { class: 'small muted' }, '"Good plans fetch a fair price." Selling a scroll keeps what you learned from it.'));
+      for (const [id, bp] of scrolls) {
+        const known = !!this.session.inventory.learned?.[bp.id];
+        sell.append(
+          h(
+            'div',
+            { class: 'row', style: 'margin-top:6px;gap:8px' },
+            h('span', { style: `color:${RARITY_COLORS[bp.rarity]}` }, bp.name),
+            h('span', { class: 'small muted' }, `${RARITY_LABEL[bp.rarity]}${known ? ' · learned' : ''}`),
+            h('span', { class: 'spacer' }),
+            h('button', { class: 'btn small', 'data-testid': `sell-${id}`, onclick: () => void this.onSellScroll(id).then(() => this.render()) }, `Sell · ${bp.worth} c`),
+          ),
+        );
+      }
+      body.append(sell);
+    }
+    this.el.append(h('div', { class: 'panel dialog', style: 'width:min(620px,94vw);max-height:88vh;overflow:auto' }, panelHead("Bram's Frontier Goods", this.onClose), body));
   }
 }
 

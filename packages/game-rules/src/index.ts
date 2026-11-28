@@ -11,3 +11,4 @@ export * from './skills';
 export * from './adaptive';
 export * from './raid';
 export * from './perks';
+export * from './titles';

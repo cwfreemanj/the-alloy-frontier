@@ -580,3 +580,6 @@ select, input[type=number] { background: var(--panel-2); color: var(--text); bor
 .cs-perks .cs-perk { padding: 4px 0; border-top: 1px dashed rgba(255, 255, 255, 0.06); }
 .cs-perks .cs-perk.taken b { color: #b8f0c8; }
 .cs-perks .cs-perk.waiting b { color: var(--ember, #ff8a3d); }
+/* Titles (AF-027) above other players' names */
+.player-label .ttl { font-size: 10px; letter-spacing: 0.08em; color: #ffcf8a; text-transform: uppercase; }
+.player-label .ttl:empty { display: none; }

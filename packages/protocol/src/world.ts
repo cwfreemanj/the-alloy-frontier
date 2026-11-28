@@ -46,6 +46,11 @@ export interface AvatarState {
    * Optional: older clients omit it and ignore it.
    */
   gr?: { o?: string; or?: string; ol?: string; h?: string; hr?: string; hl?: string };
+  /**
+   * The title shown above the name (a title id). Optional. For signed-in players the server replaces it
+   * with the title it knows; guests can't show one.
+   */
+  ttl?: string;
 }
 
 export interface EnemyNetState {
@@ -171,7 +176,10 @@ function charAction(v: unknown): CharAction | null {
       return str(v.item, 128) ? { k: 'discard', item: v.item } : null;
     case 'learn':
     case 'scrap':
+    case 'sellScroll':
       return str(v.scroll, 64) ? { k: v.k, scroll: v.scroll } : null;
+    case 'title':
+      return v.title === null || (str(v.title, 32) && /^[a-z_]+$/.test(v.title as string)) ? { k: 'title', title: v.title as string | null } : null;
     case 'talk':
       return v.npc === 'orla' ? { k: 'talk', npc: 'orla' } : null;
     case 'event':
@@ -243,6 +251,7 @@ function avatar(v: unknown): v is AvatarState {
     num(s.mhp, 1e4) &&
     (w === null || (!!w && str(w.bp, 64) && str(w.spec, 32) && bool(w.imb) && str(w.rar, 16) && (w.lk === undefined || look(w.lk)))) &&
     (s.mdl === undefined || (str(s.mdl, 16) && /^[a-z]+$/.test(s.mdl))) &&
+    (s.ttl === undefined || (str(s.ttl, 32) && /^[a-z_]+$/.test(s.ttl))) &&
     gear(s.gr)
   );
 }

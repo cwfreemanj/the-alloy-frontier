@@ -29,6 +29,10 @@ export type CharAction =
   /** Found blueprints: learn a scroll (it stays), or throw one away. */
   | { k: 'learn'; scroll: string }
   | { k: 'scrap'; scroll: string }
+  /** Sell a scroll to Bram at its worth. */
+  | { k: 'sellScroll'; scroll: string }
+  /** Show a title above the name (null: none). */
+  | { k: 'title'; title: string | null }
   | { k: 'talk'; npc: 'orla' }
   | { k: 'event'; ev: 'open_merchant' }
   | { k: 'allocate'; attr: AttributeId; n: number }
@@ -147,6 +151,15 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
       // "You've already learned this blueprint." is an info toast, not a warning: pass on the last toast.
       const said = [...events].reverse().find((e) => e.type === 'toast') as { text?: string } | undefined;
       return ok ? { ok: true, events } : no('learn', said?.text ?? 'Could not learn that.', events);
+    }
+    case 'sellScroll': {
+      if (!near(ctx, NPCS.bram.pos, RANGE.npc)) return no('out_of_range', 'Move closer to the trader.');
+      const { value: ok, events } = captureEvents(s, () => s.sellScroll(a.scroll));
+      return ok ? { ok: true, events } : no('sellScroll', warnText(events, 'Could not sell that.'), events);
+    }
+    case 'title': {
+      const { value: ok, events } = captureEvents(s, () => s.chooseTitle(a.title));
+      return ok ? { ok: true, events } : no('title', warnText(events, 'Could not show that title.'), events);
     }
     case 'scrap': {
       const { value: ok, events } = captureEvents(s, () => s.discardScroll(a.scroll));
