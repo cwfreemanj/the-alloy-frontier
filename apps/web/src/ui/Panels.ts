@@ -111,7 +111,7 @@ export function controlsGrid(): HTMLElement {
     ['Q / C', 'Dodge (brief invulnerability)'],
     ['R', 'Guardbreaker (breaks guards, big stagger)'],
     ['G', 'Weapon ability (Storm Arc, if imbued)'],
-    ['Tab / MMB / T', 'Target lock'],
+    ['Tab / T', 'Target lock (again to release)'],
     ['E', 'Interact / gather'],
     ['I', 'Character, inventory, proficiencies, skills (Q / E switch)'],
     ['Esc / P', 'Pause menu'],

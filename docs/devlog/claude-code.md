@@ -3,6 +3,15 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-27 19:22 — Camera turning on its own while moving
+- **PR:** 40
+- **Asked for:** Neal: the camera sometimes changes direction randomly while moving.
+- **Done:**
+  - Cause 1: lock-on was also bound to the middle mouse button. Pressing the scroll wheel (to zoom) locked onto the nearest enemy within 20 m, and while locked the camera keeps turning toward it as you move (movement follows the camera) until it dies or you're 26 m away. Removed the middle button; lock-on stays on Tab and T; the controls list says so.
+  - Cause 2: mouse-look applied every pointer-lock movement as-is. Chrome on Windows sometimes reports one huge jump, and the first movement after the lock is granted can be a jump from the cursor's old place: either snapped the camera in one frame. New MouseFilter (apps/web/src/core/mouse.ts) ignores the first movement after a lock and any single event over 300 px; fast flicks (many smaller events) are kept.
+- **Not done / deferred:** Couldn't reproduce the random turn on demand, so both fixes are aimed at the likely causes; not checked by hand with a real mouse in a browser (pointer lock can't be driven by the test browser). If it still happens, note whether an enemy was near (lock-on reticle) or not (mouse).
+- **Verified:** npm run typecheck pass; npm test 276/276 (3 new: filter and binding); npm run build pass; npm run test:e2e 22/22.
+
 ## 2026-11-27 16:53 — Found blueprints: the game side, with a stand-in generator
 - **PR:** 39
 - **Asked for:** Neal: start the game side of the blueprint contract, against a stand-in generator.

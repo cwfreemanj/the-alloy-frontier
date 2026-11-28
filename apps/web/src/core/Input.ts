@@ -2,6 +2,7 @@
  * Keyboard/mouse input abstraction with remappable bindings (GDD 6.1).
  * Gameplay code asks for actions, never raw keys.
  */
+import { MouseFilter } from './mouse';
 
 export type Action =
   | 'forward'
@@ -52,7 +53,9 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   skill4: ['Digit4'],
   potion1: ['Digit5'],
   potion2: ['Digit6'],
-  lock: ['Tab', 'Mouse1', 'KeyT'],
+  // Not the middle mouse button: pressing the scroll wheel to zoom locked on by accident, and the
+  // camera then kept turning toward that enemy while the player moved.
+  lock: ['Tab', 'KeyT'],
   interact: ['KeyE'],
   inventory: ['KeyI'],
   camLeft: ['ArrowLeft'],
@@ -81,6 +84,7 @@ export class Input {
   private down = new Set<string>();
   private pressedThisFrame = new Set<string>();
   mouseDX = 0;
+  private readonly mouseFilter = new MouseFilter();
   mouseDY = 0;
   wheel = 0;
   enabled = true;
@@ -111,8 +115,11 @@ export class Input {
     canvas.addEventListener('auxclick', (e) => e.preventDefault());
     window.addEventListener('mousemove', (e) => {
       if (!this.pointerLocked) return;
-      this.mouseDX += e.movementX;
-      this.mouseDY += e.movementY;
+      // Drop glitched jumps (see mouse.ts): they snapped the camera to a new direction.
+      const m = this.mouseFilter.accept(e.movementX, e.movementY);
+      if (!m) return;
+      this.mouseDX += m[0];
+      this.mouseDY += m[1];
     });
     canvas.addEventListener(
       'wheel',
@@ -124,6 +131,7 @@ export class Input {
     );
     document.addEventListener('pointerlockchange', () => {
       this.pointerLocked = document.pointerLockElement === this.canvas;
+      if (this.pointerLocked) this.mouseFilter.locked();
       // The browser grants a lock asynchronously. If a menu opened (exitPointerLock) before the
       // grant arrived, the late lock would capture the mouse over that menu: every click would
       // go to the game canvas instead. Release it.
