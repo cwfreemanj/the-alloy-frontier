@@ -28,13 +28,18 @@ import {
   ALCHEMY_QUALITY_PER_LEVEL,
   BRANCH_INFO,
   branchLevel,
-  nextMilestone,
   proficiencyLevel,
   type CraftBranch,
   smithXpToNext,
   weaponXpToNext,
   type AttributeId,
   type GatheringProficiency,
+  CRAFT_BRANCHES,
+  chosenAt,
+  chosenPerks,
+  milestones,
+  perkById,
+  respecFee,
 } from '@alloy/game-rules';
 import { RARITY_LABEL, RARITY_ORDER, blueprintOf, itemDisplayName, materialName, type ItemInstance, type WeaponFamily } from '@alloy/item-gen';
 import { characterStats, weaponDamageType, type Session } from '../state/Session';
@@ -155,6 +160,9 @@ export class CharacterWindow {
     /** Found blueprints: learn a scroll (it stays), or throw it away. */
     private onLearn: (scroll: string) => Promise<unknown> = async () => {},
     private onScrap: (scroll: string) => Promise<unknown> = async () => {},
+    /** Proficiency tree: choose a perk; re-pick a branch's perks (at Orla's). */
+    private onPerk: (perk: string) => Promise<unknown> = async () => {},
+    private onPerkRespec: (branch: CraftBranch) => Promise<unknown> = async () => {},
   ) {
     this.selected = session.inventory.equipped.weapon ?? session.inventory.itemOrder[0] ?? null;
     window.addEventListener('keydown', this.onKey);
@@ -611,7 +619,7 @@ export class CharacterWindow {
     const sNext = smithXpToNext(sm.mastery);
     const rootNote = (b: CraftBranch) => {
       const root = BRANCH_INFO[b].root;
-      return `Root: ${PROF_INFO[root].name} ${proficiencyLevel(p, root)} · perk choice at level ${nextMilestone(branchLevel(p, b))} (coming soon)`;
+      return `Root: ${PROF_INFO[root].name} ${proficiencyLevel(p, root)}.`;
     };
     const al = p.professions.alchemy ?? { level: 1, xp: 0 };
     const alNext = proficiencyXpToNext(al.level);
@@ -648,9 +656,72 @@ export class CharacterWindow {
     return h(
       'div',
       { class: 'cs-cols cs-cols-two' },
-      panel('Combat proficiencies', 'weapon', h('div', { class: 'cs-list' }, ...combat), untrained.length ? h('div', { class: 'cs-note', style: 'margin-top:10px' }, `Not trained yet: ${untrained.join(', ')}.`) : null),
+      panel(
+        'Combat proficiencies',
+        'weapon',
+        h('div', { class: 'cs-list' }, ...combat),
+        untrained.length ? h('div', { class: 'cs-note', style: 'margin-top:10px' }, `Not trained yet: ${untrained.join(', ')}.`) : null,
+        sub('Perks'),
+        this.perks(),
+      ),
       panel('Crafting & gathering', 'smithing', sub('Branches'), h('div', { class: 'cs-list' }, ...crafting), sub('Gathering (the roots)'), h('div', { class: 'cs-list' }, ...gathering)),
     );
+  }
+
+  /**
+   * Perk choices (proficiency tree): every 10th level of a branch offers two perks. Taken, waiting,
+   * upcoming and "coming soon" milestones, and re-picking at Orla's.
+   */
+  private perks(): HTMLElement {
+    const p = this.session.data.progression;
+    const out = h('div', { class: 'cs-list cs-perks' });
+    for (const b of CRAFT_BRANCHES) {
+      const level = branchLevel(p, b);
+      const rows: HTMLElement[] = [];
+      for (const m of milestones(b)) {
+        const chosen = chosenAt(p, b, m.level);
+        const names = m.perks.map((x) => x.name).join(' or ');
+        if (chosen) {
+          const perk = perkById(chosen)!;
+          rows.push(h('div', { class: 'cs-perk taken', 'data-testid': `perk-${b}-${m.level}` }, h('b', null, `Level ${m.level}: ${perk.name} ✓`), h('div', { class: 'cs-note' }, perk.description)));
+        } else if (!m.ready) {
+          rows.push(h('div', { class: 'cs-perk soon cs-note', 'data-testid': `perk-${b}-${m.level}` }, `Level ${m.level}: ${names} (coming soon)`));
+        } else if (level >= m.level) {
+          rows.push(
+            h(
+              'div',
+              { class: 'cs-perk waiting', 'data-testid': `perk-${b}-${m.level}` },
+              h('b', null, `Level ${m.level}: choose one`),
+              h(
+                'div',
+                { class: 'row', style: 'gap:6px;margin-top:4px;flex-wrap:wrap' },
+                ...m.perks.map((x) => h('button', { class: 'cs-btn small primary', title: x.description, 'data-perk': x.id, onclick: () => void this.onPerk(x.id).then(() => this.render()) }, x.name)),
+              ),
+              h('div', { class: 'cs-note' }, m.perks.map((x) => `${x.name}: ${x.description}`).join(' · ')),
+            ),
+          );
+        } else {
+          rows.push(h('div', { class: 'cs-perk cs-note', 'data-testid': `perk-${b}-${m.level}` }, `Level ${m.level}: ${names}`));
+        }
+      }
+      const taken = chosenPerks(p).some((id) => perkById(id)?.branch === b);
+      out.append(
+        h(
+          'div',
+          { class: 'cs-brew', 'data-branch': b },
+          h(
+            'div',
+            null,
+            h('div', { class: 'row' }, h('b', null, `${BRANCH_INFO[b].name} perks`), h('span', { class: 'spacer' }), h('span', { class: 'cs-prof-level' }, `level ${level}`)),
+            ...rows,
+            taken
+              ? h('div', { class: 'row', style: 'margin-top:4px' }, h('span', { class: 'spacer' }), h('button', { class: 'cs-btn small', 'data-testid': `perk-respec-${b}`, title: 'Talk to Orla at the forge to re-pick', onclick: () => void this.onPerkRespec(b).then(() => this.render()) }, `Re-pick at Orla's (${respecFee(p, b)} c)`))
+              : null,
+          ),
+        ),
+      );
+    }
+    return out;
   }
 
   // ---------------- Skills ----------------

@@ -576,3 +576,7 @@ select, input[type=number] { background: var(--panel-2); color: var(--text); bor
 .hud-name { color: #ffd9a0; font-weight: 700; margin-right: 4px; }
 /* Toasts move down while the raid banner shows, so neither covers the other. */
 .hud:has(.raid-banner.show) .toasts { top: 124px; }
+/* Perk choices (proficiency tree) */
+.cs-perks .cs-perk { padding: 4px 0; border-top: 1px dashed rgba(255, 255, 255, 0.06); }
+.cs-perks .cs-perk.taken b { color: #b8f0c8; }
+.cs-perks .cs-perk.waiting b { color: var(--ember, #ff8a3d); }

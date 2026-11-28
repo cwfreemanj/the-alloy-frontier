@@ -42,7 +42,17 @@ import {
   type ProficiencyId,
   ALCHEMY_QUALITY_PER_LEVEL,
   ALCHEMY_XP_PER_POTION,
+  BRANCH_INFO,
+  PERK_EFFECTS,
   branchLevel,
+  choosePerk,
+  chosenPerks,
+  clearPerks,
+  hasPerk,
+  pendingChoices,
+  perkById,
+  respecFee,
+  type CraftBranch,
   isWeaponFamily,
   attributeBonuses,
   attributeTotals,
@@ -338,7 +348,8 @@ export class Session {
   }
 
   forge(req: Omit<ForgeRequest, 'maker' | 'createdAt'>): ReturnType<typeof executeForge> {
-    const full: ForgeRequest = { ...req, maker: { id: PLAYER_ID, name: PLAYER_NAME, mastery: this.smithMastery }, createdAt: Date.now() };
+    // The maker, perks included, comes from this character, never from the request.
+    const full: ForgeRequest = { ...req, maker: { id: PLAYER_ID, name: PLAYER_NAME, mastery: this.smithMastery, perks: chosenPerks(this.data.progression) }, createdAt: Date.now() };
     const r = executeForge(this.data.inventory, full);
     if (!r.ok) {
       this.emit({ type: 'toast', text: r.message, tone: 'warn' });
@@ -352,6 +363,7 @@ export class Session {
     const g = addSmithXp(this.data.progression, xp);
     this.data.progression = g.state;
     if (g.levelsGained > 0) this.emit({ type: 'progress', kind: 'smith', levels: g.levelsGained });
+    if (g.levelsGained > 0) this.announcePerkChoices('smithing');
     this.gainAttributes(ATTRIBUTE_XP.forge());
     this.emit({ type: 'toast', text: `+${xp} blacksmithing XP`, tone: 'good' });
     this.emit({ type: 'inventory' });
@@ -502,11 +514,12 @@ export class Session {
   brew(recipe: string, qty: number): { ok: true } | { ok: false; error: string; message: string } {
     // Alchemy (docs/proficiency-tree.md): each level above 1 makes stronger potions; brewing trains it.
     const level = branchLevel(this.data.progression, 'alchemy');
-    const r = brewInventory(this.data.inventory, recipe, qty, ALCHEMY_QUALITY_PER_LEVEL * (level - 1));
+    const extra = hasPerk(this.data.progression, 'distiller') ? PERK_EFFECTS.distillerExtra : 0;
+    const r = brewInventory(this.data.inventory, recipe, qty, ALCHEMY_QUALITY_PER_LEVEL * (level - 1), extra);
     if (!r.ok) return r;
     this.setInventory(r.inventory);
     this.gainProficiency('alchemy', ALCHEMY_XP_PER_POTION * qty);
-    this.emit({ type: 'toast', text: `Brewed ${qty} ${BREWS[recipe as keyof typeof BREWS].name}${qty > 1 ? 's' : ''} (quality ${Math.round(r.quality * 100)}%) · +${ALCHEMY_XP_PER_POTION * qty} Alchemy XP`, tone: 'good' });
+    this.emit({ type: 'toast', text: `Brewed ${r.made} ${BREWS[recipe as keyof typeof BREWS].name}${r.made > 1 ? 's' : ''} (quality ${Math.round(r.quality * 100)}%)${extra ? ' · Distiller +1' : ''} · +${ALCHEMY_XP_PER_POTION * qty} Alchemy XP`, tone: 'good' });
     return { ok: true };
   }
 
@@ -521,8 +534,11 @@ export class Session {
     const r = consumeInventory(this.data.inventory, id);
     if (!r.ok) return r;
     this.setInventory(r.inventory);
-    this.data.player.potionReadyAt = this.data.playTime + POTION_COOLDOWN;
-    this.emit({ type: 'consumed', item: id, heal: r.effect.heal, stamina: r.effect.stamina });
+    // Quick Hands: a shorter cooldown. Brewer: stronger potions.
+    const p = this.data.progression;
+    this.data.player.potionReadyAt = this.data.playTime + POTION_COOLDOWN - (hasPerk(p, 'quick_hands') ? PERK_EFFECTS.quickHandsSeconds : 0);
+    const k = hasPerk(p, 'brewer') ? PERK_EFFECTS.brewerStrength : 1;
+    this.emit({ type: 'consumed', item: id, heal: Math.round(r.effect.heal * k), stamina: Math.round(r.effect.stamina * k) });
     return { ok: true };
   }
 
@@ -530,6 +546,45 @@ export class Session {
   gainProficiency(id: ProficiencyId, xp: number): void {
     const levels = addProficiencyXp(this.data.progression, id, xp);
     if (levels > 0) this.emit({ type: 'progress', kind: 'proficiency', proficiency: id, levels });
+    if (levels > 0 && (id === 'alchemy' || id === 'crafting')) this.announcePerkChoices(id);
+  }
+
+  /** Tell the player a perk choice is waiting in a branch (after a level-up). */
+  private announcePerkChoices(branch: CraftBranch): void {
+    const waiting = pendingChoices(this.data.progression).filter((c) => c.branch === branch);
+    if (waiting.length) this.emit({ type: 'toast', text: `A ${BRANCH_INFO[branch].name} perk choice is waiting (I → Proficiencies).`, tone: 'good' });
+  }
+
+  /** Choose a perk at a reached milestone. */
+  choosePerk(id: string): boolean {
+    const r = choosePerk(this.data.progression, id);
+    if (!r.ok) {
+      this.emit({ type: 'toast', text: r.message, tone: 'warn' });
+      return false;
+    }
+    this.emit({ type: 'stats' });
+    this.emit({ type: 'toast', text: `Perk chosen: ${r.perk.name}. ${r.perk.description}`, tone: 'good' });
+    return true;
+  }
+
+  /** Re-pick a branch's perks: costs coins (doubling each time); the choices open again. */
+  respecPerks(branch: CraftBranch): boolean {
+    const p = this.data.progression;
+    if (!chosenPerks(p).some((id) => perkById(id)?.branch === branch)) {
+      this.emit({ type: 'toast', text: `No ${BRANCH_INFO[branch].name} perks to re-pick.`, tone: 'warn' });
+      return false;
+    }
+    const fee = respecFee(p, branch);
+    if (this.data.inventory.coins < fee) {
+      this.emit({ type: 'toast', text: `Re-picking ${BRANCH_INFO[branch].name} perks costs ${fee} coins.`, tone: 'warn' });
+      return false;
+    }
+    this.data.inventory = { ...this.data.inventory, coins: this.data.inventory.coins - fee };
+    clearPerks(p, branch);
+    this.emit({ type: 'inventory' });
+    this.emit({ type: 'stats' });
+    this.emit({ type: 'toast', text: `Orla resets your ${BRANCH_INFO[branch].name} perks for ${fee} coins. Choose again.`, tone: 'good' });
+    return true;
   }
 
   gainAdventurer(xp: number): void {

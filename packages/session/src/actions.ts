@@ -6,7 +6,7 @@
  * only ever send the action (an intent), never its result.
  */
 import { EQUIP_SLOTS, type EquipSlot, type ForgeRequest } from '@alloy/crafting';
-import { ATTACKS, ATTRIBUTE_IDS, SKILLS, isSkill, GATHER_PROFICIENCY_XP, PROFICIENCY_YIELD_BONUS, proficiencyFor, proficiencyLevel, damageTypeOf, mitigate, resistanceMultiplier, ATTRIBUTE_XP, ENEMIES, scaledArchetype, computeOutgoingHit, critContest, staggerContest, type AttackDefinition, type AttributeId, type AttributeLevels, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2 } from '@alloy/game-rules';
+import { ATTACKS, ATTRIBUTE_IDS, SKILLS, isSkill, GATHER_PROFICIENCY_XP, PROFICIENCY_YIELD_BONUS, proficiencyFor, proficiencyLevel, damageTypeOf, mitigate, resistanceMultiplier, ATTRIBUTE_XP, ENEMIES, scaledArchetype, computeOutgoingHit, critContest, staggerContest, type AttackDefinition, type AttributeId, type AttributeLevels, weaponMasteryDamageBonus, weaponXpForHit, type AttackId, type Vec2, PERK_EFFECTS, hasPerk } from '@alloy/game-rules';
 import { BLUEPRINT_DROP, Rng, blueprintOf, generateBlueprint, materialName, type BlueprintArea, type DamageType, type GeneratedBlueprint, type ItemInstance, type ToolKind, type WeaponStats } from '@alloy/item-gen';
 import { FORGE_ANVIL, NPCS, SEARCH_HEIGHT, SEARCH_RANGE, containerDef, terrainHeight } from '@alloy/world';
 import { searchContainer } from './containers';
@@ -33,6 +33,9 @@ export type CharAction =
   | { k: 'event'; ev: 'open_merchant' }
   | { k: 'allocate'; attr: AttributeId; n: number }
   | { k: 'respec' }
+  /** Proficiency tree: choose a perk at a reached milestone; re-pick a branch's perks at Orla's. */
+  | { k: 'perk'; perk: string }
+  | { k: 'perkRespec'; branch: 'smithing' | 'crafting' | 'alchemy' }
   | { k: 'skillbar'; slot: number; skill: string | null }
   | { k: 'brew'; recipe: string; qty: number }
   | { k: 'consume'; item: string }
@@ -94,7 +97,9 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
       const prof = proficiencyFor(def.material);
       const chance = 0.25 * (power - 1) + PROFICIENCY_YIELD_BONUS * (proficiencyLevel(s.data.progression, prof) - 1);
       const bonus = new Rng(`tool:${def.id}:${rt.gathers}`).next() < chance ? 1 : 0;
-      const qty = nodeYield(def, rt.gathers) + bonus;
+      // Herbal Lore: one more herb each pick.
+      const lore = def.material === 'emberleaf' && hasPerk(s.data.progression, 'herbal_lore') ? PERK_EFFECTS.herbalLoreExtra : 0;
+      const qty = nodeYield(def, rt.gathers) + bonus + lore;
       const t = nodeTraits(def);
       const { value: ok, events } = captureEvents(s, () => {
         if (!s.gather(def.id, def.material, qty, t.quality, t.traits)) return false;
@@ -181,6 +186,15 @@ export function applyAction(s: Session, a: CharAction, ctx: ActionContext): Acti
     case 'skillbar': {
       const { value: r, events } = captureEvents(s, () => s.setSkillBar(a.slot, a.skill));
       return r.ok ? { ok: true, events } : no(r.error, r.message, events);
+    }
+    case 'perk': {
+      const { value: ok, events } = captureEvents(s, () => s.choosePerk(a.perk));
+      return ok ? { ok: true, events } : no('perk', warnText(events, 'Could not choose that perk.'), events);
+    }
+    case 'perkRespec': {
+      if (!near(ctx, NPCS.orla.pos, RANGE.npc)) return no('out_of_range', 'Orla re-picks perks at the forge: go and see her.');
+      const { value: ok, events } = captureEvents(s, () => s.respecPerks(a.branch));
+      return ok ? { ok: true, events } : no('perkRespec', warnText(events, 'Could not re-pick those perks.'), events);
     }
     case 'respec': {
       const { events } = captureEvents(s, () => {

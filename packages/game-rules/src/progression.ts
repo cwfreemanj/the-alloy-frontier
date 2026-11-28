@@ -18,6 +18,10 @@ export interface ProgressionState {
   allocated?: AttributeLevels;
   /** Skill bar (keys 1-4): learned skill ids or null. Optional in older saves. */
   skillBar?: Array<string | null>;
+  /** Perk chosen at each branch milestone, keyed "branch:level" (perks.ts). Optional in older saves. */
+  perks?: Record<string, string>;
+  /** Times each branch's perks were re-picked (the fee doubles). */
+  perkRespecs?: Partial<Record<CraftBranch, number>>;
 }
 
 export const WEAPON_MASTERY_MAX = 30;
