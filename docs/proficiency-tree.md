@@ -1,6 +1,8 @@
 # Proficiency tree: proposal
 
-**Status: proposal, waiting for approval from both directors.** Nothing here is built yet. The creative
+**Status: approved by the technical director on 2026-11-27, as written; the creative director reviews it (his
+changes, if any, come in through review). Step 1 of section 6 is built: Alchemy trains from brewing and
+strengthens potions, and the Proficiencies screen shows the three branches with their roots.** The creative
 director suggested three branches (Smithing, Crafting, Alchemy); this proposal builds on that and on what
 the game already has. Sections 1–4 are the decisions to approve, each with a recommendation. Section 5 says
 how it connects to generated blueprints, and section 6 how it would be built and in what order.

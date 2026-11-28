@@ -30,7 +30,8 @@ export function consumableEffect(id: ConsumableId, quality: number): { heal: num
 }
 
 /** Brew `qty` of a recipe: consumes the best herbs first; the result's quality is their average. */
-export function brew(inv: InventoryState, recipeId: string, qty: number): { ok: true; inventory: InventoryState; quality: number } | Fail {
+/** qualityBonus: added to the herbs' quality (the brewer's Alchemy level), up to 1. */
+export function brew(inv: InventoryState, recipeId: string, qty: number, qualityBonus = 0): { ok: true; inventory: InventoryState; quality: number } | Fail {
   const r = (BREWS as Record<string, BrewRecipe | undefined>)[recipeId];
   if (!r) return fail('unknown_recipe', 'Unknown recipe.');
   if (!Number.isInteger(qty) || qty < 1 || qty > 20) return fail('invalid_quantity', 'Invalid quantity.');
@@ -46,7 +47,8 @@ export function brew(inv: InventoryState, recipeId: string, qty: number): { ok: 
     }
     applyConsumption(draft, plan);
   }
-  const quality = Math.round((n ? q / n : 0.5) * 1000) / 1000;
+  const bonus = Number.isFinite(qualityBonus) ? Math.max(0, Math.min(1, qualityBonus)) : 0;
+  const quality = Math.round(Math.min(1, (n ? q / n : 0.5) + bonus) * 1000) / 1000;
   const added = addMaterial(draft, { materialId: r.output, quantity: qty, quality, origin: 'brewed' });
   if (!added.ok) return added;
   return { ok: true, inventory: added.inventory, quality };

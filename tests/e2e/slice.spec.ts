@@ -291,7 +291,10 @@ test('character window: tabs, attributes that grow by use, derived stats', async
   await expect(win).toHaveAttribute('data-tab', 'inventory');
   await page.keyboard.press('KeyE'); // next screen
   await expect(win).toHaveAttribute('data-tab', 'proficiencies');
-  await expect(page.getByTestId('skill-smith')).toContainText('Blacksmithing');
+  // The proficiency tree: three branches (Smithing is blacksmithing mastery), each with its gathering root.
+  await expect(page.getByTestId('branch-smithing')).toContainText('Smithing');
+  await expect(page.getByTestId('branch-alchemy')).toContainText('Root: Herbalism');
+  await expect(page.getByTestId('branch-crafting')).toContainText('Crafting');
   await expect(page.getByTestId('skill-longsword')).toContainText('Longsword mastery');
   await expect(page.getByTestId('prof-mining')).toContainText('Mining');
   await page.getByTestId('tab-skills').click();

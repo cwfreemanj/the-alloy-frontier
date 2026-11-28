@@ -39,7 +39,10 @@ import {
   normalizeSkillBar,
   type SkillDef,
   addProficiencyXp,
-  type GatheringProficiency,
+  type ProficiencyId,
+  ALCHEMY_QUALITY_PER_LEVEL,
+  ALCHEMY_XP_PER_POTION,
+  branchLevel,
   isWeaponFamily,
   attributeBonuses,
   attributeTotals,
@@ -63,8 +66,6 @@ import {
 } from '@alloy/game-rules';
 import { RARITY_LABEL, materialName, type GeneratedBlueprint, type ItemInstance, type MaterialId, type ToolKind, type WeaponFamily } from '@alloy/item-gen';
 
-/** Herbalism XP per potion brewed. */
-export const BREW_XP = 3;
 export const PLAYER_ID = 'player-01';
 export const PLAYER_NAME = 'You';
 
@@ -81,7 +82,7 @@ export type SessionEvent =
   | { type: 'skillbar' }
   /** A potion was used: the browser applies the heal / stamina (health is client-owned). */
   | { type: 'consumed'; item: string; heal: number; stamina: number }
-  | { type: 'progress'; kind: 'weapon' | 'smith' | 'adventurer' | 'attribute' | 'proficiency'; levels: number; attr?: AttributeId; family?: WeaponFamily; proficiency?: GatheringProficiency }
+  | { type: 'progress'; kind: 'weapon' | 'smith' | 'adventurer' | 'attribute' | 'proficiency'; levels: number; attr?: AttributeId; family?: WeaponFamily; proficiency?: ProficiencyId }
   | { type: 'quest_step'; title: string; next: string | null }
   | { type: 'quest_complete' }
   | { type: 'toast'; text: string; tone?: 'info' | 'good' | 'warn' }
@@ -499,11 +500,13 @@ export class Session {
 
   /** Brew herbs into potions (trains Herbalism). */
   brew(recipe: string, qty: number): { ok: true } | { ok: false; error: string; message: string } {
-    const r = brewInventory(this.data.inventory, recipe, qty);
+    // Alchemy (docs/proficiency-tree.md): each level above 1 makes stronger potions; brewing trains it.
+    const level = branchLevel(this.data.progression, 'alchemy');
+    const r = brewInventory(this.data.inventory, recipe, qty, ALCHEMY_QUALITY_PER_LEVEL * (level - 1));
     if (!r.ok) return r;
     this.setInventory(r.inventory);
-    this.gainProficiency('herbalism', BREW_XP * qty);
-    this.emit({ type: 'toast', text: `Brewed ${qty} ${BREWS[recipe as keyof typeof BREWS].name}${qty > 1 ? 's' : ''} (quality ${Math.round(r.quality * 100)}%)`, tone: 'good' });
+    this.gainProficiency('alchemy', ALCHEMY_XP_PER_POTION * qty);
+    this.emit({ type: 'toast', text: `Brewed ${qty} ${BREWS[recipe as keyof typeof BREWS].name}${qty > 1 ? 's' : ''} (quality ${Math.round(r.quality * 100)}%) · +${ALCHEMY_XP_PER_POTION * qty} Alchemy XP`, tone: 'good' });
     return { ok: true };
   }
 
@@ -523,8 +526,8 @@ export class Session {
     return { ok: true };
   }
 
-  /** Gathering proficiency XP (mining, woodcutting, herbalism). */
-  gainProficiency(id: GatheringProficiency, xp: number): void {
+  /** Proficiency XP: gathering (mining, woodcutting, herbalism) or a leveled branch (crafting, alchemy). */
+  gainProficiency(id: ProficiencyId, xp: number): void {
     const levels = addProficiencyXp(this.data.progression, id, xp);
     if (levels > 0) this.emit({ type: 'progress', kind: 'proficiency', proficiency: id, levels });
   }

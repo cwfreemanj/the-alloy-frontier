@@ -404,6 +404,19 @@ describe('herbs and potions', () => {
     expect(s.data.progression.professions.herbalism?.xp).toBeGreaterThan(0);
   });
 
+  it('trains Alchemy by brewing (not Herbalism), and a higher Alchemy level brews stronger potions', () => {
+    const s = fresh();
+    s.gather('test', 'emberleaf', 20, 0.5, {});
+    expect(applyAction(s, { k: 'brew', recipe: 'healing_salve', qty: 2 }, { pos: null }).ok).toBe(true);
+    expect(s.data.progression.professions.alchemy?.xp).toBeGreaterThan(0);
+    expect(s.data.progression.professions.herbalism).toBeUndefined();
+    const q = (id: string) => s.data.inventory.lots.filter((l) => l.materialId === id).map((l) => l.quality);
+    expect(q('healing_salve')).toEqual([0.5]);
+    s.data.progression.professions.alchemy = { level: 51, xp: 0 };
+    expect(applyAction(s, { k: 'brew', recipe: 'stamina_tonic', qty: 1 }, { pos: null }).ok).toBe(true);
+    expect(q('stamina_tonic')).toEqual([0.7]); // 0.5 herbs + 50 levels x 0.004
+  });
+
   it('brews and uses potions through actions, one potion per cooldown', () => {
     const s = fresh();
     s.gather('test', 'emberleaf', 6, 0.7, {});

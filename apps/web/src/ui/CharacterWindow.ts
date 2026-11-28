@@ -25,6 +25,12 @@ import {
   adventurerXpToNext,
   attributeXpToNext,
   proficiencyXpToNext,
+  ALCHEMY_QUALITY_PER_LEVEL,
+  BRANCH_INFO,
+  branchLevel,
+  nextMilestone,
+  proficiencyLevel,
+  type CraftBranch,
   smithXpToNext,
   weaponXpToNext,
   type AttributeId,
@@ -81,7 +87,7 @@ const ATTACK_INFO: Record<string, { icon: string; text: string }> = {
 const PROF_INFO: Record<GatheringProficiency, { name: string; icon: string; grows: string }> = {
   mining: { name: 'Mining', icon: 'mining', grows: 'Grows from mining ore and ironglass.' },
   woodcutting: { name: 'Woodcutting', icon: 'woodcutting', grows: 'Grows from cutting ironwood.' },
-  herbalism: { name: 'Herbalism', icon: 'herbalism', grows: 'Grows from gathering herbs (none grow in Emberhold yet).' },
+  herbalism: { name: 'Herbalism', icon: 'herbalism', grows: 'Grows from picking herbs (Emberleaf grows along the trail).' },
 };
 const MIN_GRID_CELLS = 30;
 
@@ -599,9 +605,31 @@ export class CharacterWindow {
     });
     const untrained = families.filter((f) => !trained(f)).map((f) => WEAPON_FAMILIES[f].name);
 
+    // The proficiency tree (docs/proficiency-tree.md): three branches, each rooted in a gathering
+    // proficiency. Perk choices at every 10 levels come in the next step.
     const sm = p.professions.blacksmithing;
     const sNext = smithXpToNext(sm.mastery);
-    const crafting = [row('skill-smith', 'smithing', 'Blacksmithing', String(sm.mastery), bar(sm.xp, sNext, `${Math.floor(sm.xp)} / ${sNext}`), 'Grows from forging. Higher mastery makes better weapons.')];
+    const rootNote = (b: CraftBranch) => {
+      const root = BRANCH_INFO[b].root;
+      return `Root: ${PROF_INFO[root].name} ${proficiencyLevel(p, root)} · perk choice at level ${nextMilestone(branchLevel(p, b))} (coming soon)`;
+    };
+    const al = p.professions.alchemy ?? { level: 1, xp: 0 };
+    const alNext = proficiencyXpToNext(al.level);
+    const alMax = al.level >= PROFICIENCY_MAX;
+    const cr = p.professions.crafting ?? { level: 1, xp: 0 };
+    const crNext = proficiencyXpToNext(cr.level);
+    const crafting = [
+      row('branch-smithing', 'smithing', 'Smithing', String(sm.mastery), bar(sm.xp, sNext, `${Math.floor(sm.xp)} / ${sNext}`), `${BRANCH_INFO.smithing.covers}. Grows from forging; higher mastery makes better weapons and armor. ${rootNote('smithing')}`),
+      row('branch-crafting', 'ring', 'Crafting', `${cr.level} / ${PROFICIENCY_MAX}`, bar(cr.xp, crNext, `${Math.floor(cr.xp)} / ${crNext}`), `${BRANCH_INFO.crafting.covers}. Opens with the workbench and found blueprints. ${rootNote('crafting')}`),
+      row(
+        'branch-alchemy',
+        'flask',
+        'Alchemy',
+        `${al.level} / ${PROFICIENCY_MAX}`,
+        bar(al.xp, alNext, alMax ? 'MAX' : `${Math.floor(al.xp)} / ${alNext}`, alMax),
+        `${BRANCH_INFO.alchemy.covers}. Grows from brewing; potions you brew are +${(ALCHEMY_QUALITY_PER_LEVEL * 100 * (al.level - 1)).toFixed(1)}% quality. ${rootNote('alchemy')}`,
+      ),
+    ];
 
     const gathering = GATHERING_PROFICIENCIES.map((id) => {
       const g = p.professions[id] ?? { level: 1, xp: 0 };
@@ -621,7 +649,7 @@ export class CharacterWindow {
       'div',
       { class: 'cs-cols cs-cols-two' },
       panel('Combat proficiencies', 'weapon', h('div', { class: 'cs-list' }, ...combat), untrained.length ? h('div', { class: 'cs-note', style: 'margin-top:10px' }, `Not trained yet: ${untrained.join(', ')}.`) : null),
-      panel('Crafting & gathering', 'smithing', sub('Crafting'), h('div', { class: 'cs-list' }, ...crafting), sub('Gathering'), h('div', { class: 'cs-list' }, ...gathering)),
+      panel('Crafting & gathering', 'smithing', sub('Branches'), h('div', { class: 'cs-list' }, ...crafting), sub('Gathering (the roots)'), h('div', { class: 'cs-list' }, ...gathering)),
     );
   }
 

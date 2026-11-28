@@ -3,6 +3,16 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-27 19:57 — Proficiency tree, step 1: three branches and Alchemy
+- **PR:** 41
+- **Asked for:** Neal approved the proficiency tree proposal as written (the creative director reviews later) and asked to move forward.
+- **Done:**
+  - Rules (game-rules progression.ts): CRAFT_BRANCHES (Smithing = blacksmithing mastery; Crafting and Alchemy 1-100), BRANCH_INFO with roots (mining, woodcutting, herbalism), branchLevel, nextMilestone (every 10), PROFICIENCY_NAMES; professions now hold crafting and alchemy (optional in old saves).
+  - Brewing trains Alchemy (6 XP a potion) instead of Herbalism; each Alchemy level above 1 adds 0.004 potion quality (brew's qualityBonus). Herbalism now grows only from picking herbs.
+  - Proficiencies screen: Branches (Smithing, Crafting, Alchemy) with level, XP, effect, root and next perk milestone; Gathering (the roots). Level-up toast for proficiencies. Approval recorded in proficiency-tree.md; Neal's item removed from NEEDED.md, the creative director's changed to a review.
+- **Not done / deferred:** Perk choices (step 2), the Crafting workbench and recipes, titles. Crafting shows at level 1 with no way to train it yet.
+- **Verified:** npm run typecheck pass; npm test 280/280 (4 new); npm run build pass. npm run test:e2e: 21 passed, 1 failed as expected (the character-window test looked for the old 'Blacksmithing' row); updated it to the three branches and it passed on its own. Checked in the browser: 5 salves brewed took Alchemy to level 2; the screen shows the branches and roots.
+
 ## 2026-11-27 19:22 — Camera turning on its own while moving
 - **PR:** 40
 - **Asked for:** Neal: the camera sometimes changes direction randomly while moving.
