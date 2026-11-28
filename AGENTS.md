@@ -31,7 +31,8 @@ A browser 3D action RPG / small MMO prototype ("The First Forge" vertical slice)
 ### Who owns what
 
 - **Neal** owns the backend: the server, accounts, persistence, protocol and authority.
-- **His partner** owns models, animation and world art.
+- **His partner** (cwfreemanj, the creative director) owns models, animation and world art. **They use they/them
+  pronouns:** use them in every document, log entry and message.
 - Keep changes inside your task's area. See the area table in `CONTRIBUTING.md`.
 - `apps/web/src/game/Game.ts` is shared and busy: keep edits there small.
 

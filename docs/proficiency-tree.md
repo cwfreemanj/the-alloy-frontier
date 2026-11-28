@@ -1,6 +1,6 @@
 # Proficiency tree: proposal
 
-**Status: approved by the technical director on 2026-11-27, as written; the creative director reviews it (his
+**Status: approved by the technical director on 2026-11-27, as written; the creative director reviews it (their
 changes, if any, come in through review). Steps 1 and 2 of section 6 are built: Alchemy trains from brewing and
 strengthens potions; the Proficiencies screen shows the branches with their roots; perk choices work
 (section 7); the Crafting branch has its workbench, first recipes and level-10 perks (AF-021).** The creative
