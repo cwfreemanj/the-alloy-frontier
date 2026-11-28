@@ -3,6 +3,13 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-28 10:16 — GDD v0.6 brought up to date
+- **PR:** 46
+- **Asked for:** Neal: updated GDD.
+- **Done:** GDD v0.6 now covers the Crafting branch (#44), titles and selling scrolls (#45, marked waiting to merge) and the creative director's notes (#46): where the project stands, the D22 titles note, the Crafting row of the tree and its perks, what the game contains, balance records for accessories, titles, selling scrolls and set chance, and AF-017. The AF-022 and AF-027 rows are left to #45, so the two PRs merge cleanly.
+- **Not done / deferred:** No version bump to v0.7: the changes are additions to v0.6.
+- **Verified:** Docs only. Checked that #45's GDD changes merge with this branch's without conflict (git merge-file).
+
 ## 2026-11-28 08:10 — The creative director's notes on GDD v0.6, and their pronouns
 - **PR:** 46
 - **Asked for:** Neal passed on the creative director's notes on GDD v0.6, their question about the raids, and their request that documents use their they/them pronouns.

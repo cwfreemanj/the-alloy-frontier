@@ -1,7 +1,7 @@
 # Alloy Frontier: Game Design Document v0.6
 
 **Crafting depth, raids and the proficiency tree.** An update to [GDD v0.5](GDD-v0.5.md) (25 Nov 2026), written
-27 Nov 2026.
+27 Nov 2026, updated 28 Nov 2026 (the Crafting branch, titles, selling scrolls, and the creative director's notes).
 
 v0.5 recorded the vertical slice and listed the next tickets. Since then the team has built the first raid, a
 wider forge, found blueprints and the proficiency tree. This document records those results, the design
@@ -19,7 +19,7 @@ game, with tests). Added here: **STAND-IN** (built so the rest can work, to be r
 - **M4 (quality gate):** still in progress ([M4.md](M4.md)). The technical director has signed off builds and
   measured performance (27 Nov). Still needed: the creative director's performance report and sign-off, the
   three human playthroughs, then the `v0.1.0` tag.
-- **Since v0.5, built and live:** pull requests #30 to #42.
+- **Since v0.5, built and live:** pull requests #30 to #44, with #45 and #46 waiting to merge.
 
 | Area | What | PR |
 | --- | --- | --- |
@@ -27,7 +27,10 @@ game, with tests). Added here: **STAND-IN** (built so the rest can work, to be r
 | World | Saved world state (AF-013); raids on Emberhold (AF-011) | #31, #34 |
 | Crafting | The forge makes a mace, shields, helmets, chestplates and platelegs; gear looks from the Model Workshop | #36 |
 | Blueprints | The blueprint contract, and found blueprints (drops, scrolls, learning, forging) with a stand-in generator | #38, #39 |
-| Proficiencies | The proficiency tree: three branches with Alchemy; perk choices | #37, #41, #42 |
+| Proficiencies | The proficiency tree: three branches with Alchemy; perk choices; titles | #37, #41, #42, #45 |
+| Crafting branch | The workbench: two rings, a pendant and a cloak; Crafting XP; the Jeweler and Tailor perks | #44 |
+| Trade | Selling found blueprint scrolls to Bram | #45 |
+| Design | Answers to the creative director's notes on this document (§8) | #46 |
 | Fixes | Forge clicks blocked by a late mouse capture; Bram's shop unreadable; the camera turning on its own | #32, #35, #40 |
 
 ---
@@ -44,7 +47,7 @@ game, with tests). Added here: **STAND-IN** (built so the rest can work, to be r
 | D19 | Sets | **Set pieces are forged one at a time.** Each piece is its own blueprint, found on its own; pieces of a set share the set's id. **Set blueprints are rare** (creative director, 28 Nov): the stand-in makes 5% of found armor blueprints set pieces. | CONFIRMED 27–28 Nov; set bonuses later |
 | D20 | Standard patterns | **The fixed blueprints stay**, as the inherent blueprints learned with blacksmithing levels; finding blueprints opens the unique ones. | CONFIRMED 27 Nov |
 | D21 | Proficiency tree | **Three branches** ([proficiency-tree.md](proficiency-tree.md)): **Smithing** (weapons and armor), **Crafting** (jewelry, capes, cosmetics, sets) and **Alchemy** (potions, food, enchanting), each rooted in a gathering proficiency (mining, woodcutting, herbalism). Updates D7. Next: a base level curve for equipment power ([notes](creative-director-notes-2026-11-28.md) §6). | CONFIRMED by both (27 and 28 Nov); steps 1–2 BUILT |
-| D22 | Perks | **A choice of two perks every 10 levels** of a branch; re-picked at Orla's for a fee that doubles. Answers AF-017's perks; titles come later. | CONFIRMED 28 Nov (creative director); BUILT (#42) |
+| D22 | Perks | **A choice of two perks every 10 levels** of a branch; re-picked at Orla's for a fee that doubles. Answers AF-017's perks. Titles come at levels 25, 50 and 100 (#45). | CONFIRMED 28 Nov (creative director); BUILT (#42) |
 | D23 | Ownership | **Item generation (stats, blueprints, looks) is the creative director's area; mechanics are the technical director's** ([equipment-contract.md](equipment-contract.md), [blueprint-contract.md](blueprint-contract.md)). Where the game needed numbers first, they're marked STAND-IN for them to replace. | CONFIRMED |
 | D24 | Camera | **Lock-on is on Tab and T only** (the middle mouse button locked on by accident), and glitched mouse jumps are ignored. | BUILT (#40) |
 
@@ -79,10 +82,10 @@ Proposed as they voted, with gathering as the roots ([proficiency-tree.md](profi
 | Branch | Covers | Trained by | Root | Built |
 | --- | --- | --- | --- | --- |
 | **Smithing** | Weapons and armor | Forging | Mining | Yes (blacksmithing mastery, renamed) |
-| **Crafting** | Jewelry, capes, cosmetics, sets | The workbench (to build) | Woodcutting | Level only; nothing trains it yet |
+| **Crafting** | Jewelry, capes, cosmetics, sets | The workbench | Woodcutting | Yes (#44): each piece gives Crafting XP; higher Crafting makes stronger bonuses |
 | **Alchemy** | Potions, food, enchanting | Brewing | Herbalism | Yes: brewing gives XP; each level makes stronger potions |
 
-Perk choices are built for Smithing and Alchemy (§5). The perk list is their call.
+Perk choices are built for all three branches (§5). The perk list is their call.
 
 ### 3.3 Before the 18th
 
@@ -92,8 +95,8 @@ Perk choices are built for Smithing and Alchemy (§5). The perk list is their ca
 | Perk choices | **Done** (#42) |
 | Generated blueprints: game side, drops, scrolls, forging | **Done** (#39), against the stand-in |
 | **Their generator, drop table and resource rarity tree** | **Next, their side** |
-| The Crafting branch: workbench and first jewelry and cape recipes | Next, after blueprints |
-| Titles; selling scrolls to Bram | Next, small |
+| The Crafting branch: workbench and first jewelry and cape recipes | **Done** (#44) |
+| Titles; selling scrolls to Bram | **Done** (#45, waiting to merge) |
 | Set bonuses, trading | After the 18th (as planned) |
 
 ---
@@ -107,7 +110,11 @@ Perk choices are built for Smithing and Alchemy (§5). The perk list is their ca
 - **The forge screen** has five tabs (Swords, Maces, Shields, Helmets, Body). Armor shows defense and is compared
   with the piece already in its slot.
 - **Found blueprints:** scrolls from enemies and containers; a Blueprints section in the inventory.
-- **Proficiencies screen:** the three branches with their roots and perk milestones.
+- **Proficiencies screen:** the three branches with their roots, perk milestones and titles.
+- **The workbench** in the forge: rings, a necklace and a cape, made with Crafting.
+- **Accessories:** two ring slots, a neck slot and a cape slot; their bonuses add to the character's stats.
+- **Titles** (#45): one earned title shown above the name to other players.
+- **Bram buys blueprint scrolls** (#45) at their worth; a learned blueprint stays learned.
 - **Raids:** the watchtower horn, two waves, the Raider Captain, a banner with the countdown, the Captain's camp
   after a loss.
 - **Shared looks:** other players see your mace, shield and helmet, found ones included.
@@ -139,8 +146,25 @@ All in `packages/`, covered by unit tests. **STAND-IN** values are the creative 
 Armor affixes: +8% defense, +12 max health, +10 max stamina, +1 Vitality, +1 Endurance; at mythic, +15% defense
 and +20 max health.
 
+**Accessories** (STAND-IN, `packages/item-gen/src/blueprints.ts`): made at the workbench, Quick only. Base
+bonuses scale with Crafting level as damage does with Smithing.
+
+| Piece | Crafting level | Base |
+| --- | --- | --- |
+| Iron Signet Band (ring) | 1 | +1 Strength |
+| Ironglass Focus Ring | 5 | +1 Dexterity, +5 max stamina |
+| Ember Pendant (necklace) | 3 | +10 max health |
+| Emberleaf Weave Cloak (cape) | 1 | 3 defense, +8 max stamina |
+
+**Titles** (STAND-IN names, `packages/game-rules/src/titles.ts`, #45): Smithing: Journeyman Smith, Forgewright,
+Master Smith. Crafting: Artisan, Artificer, Master Crafter. Alchemy: Apothecary, Alchemist, Master Alchemist. At
+levels 25, 50 and 100.
+
+**Selling scrolls** (#45): Bram pays a scroll's worth.
+
 **Found blueprints** (STAND-IN, `packages/item-gen/src/found.ts`)
 - **Drop chances:** enemies 5%, elites 50%, chests 30%, trail caches 20%, barrels 2%.
+- **Set pieces:** 5% of found armor blueprints (`SET_CHANCE`; set blueprints are rare, D19).
 - **Rarity** rises with the area's level (and a little in chests). Each rarity tier above Common adds +5% damage
   or +6% defense, +3 required mastery, and more materials.
 
@@ -148,11 +172,11 @@ and +20 max health.
 - **Alchemy:** 6 XP per potion brewed; +0.4% potion quality per level above 1 (+40% at 100).
 - **Perks offered now:**
 
-| Level | Smithing | Alchemy |
-| --- | --- | --- |
-| 10 | Weaponsmith: forged weapons +5% damage · Armorsmith: forged armor +8% defense | Brewer: potions 15% stronger · Distiller: +1 potion per brew |
-| 20 | Flux Saver: 1 less flux · Masterwork Eye: rarer results more often | Quick Hands: potion cooldown −2 s · Herbal Lore: +1 herb per pick |
-| 30 | Ironglass Adept: ironglass recipes 3 levels sooner · Steady Hands: masterwork quality +5% | Cook / Enchanter (coming soon) |
+| Level | Smithing | Crafting | Alchemy |
+| --- | --- | --- | --- |
+| 10 | Weaponsmith: forged weapons +5% damage · Armorsmith: forged armor +8% defense | Jeweler: rings and necklaces roll one extra affix · Tailor: capes +5 max stamina | Brewer: potions 15% stronger · Distiller: +1 potion per brew |
+| 20 | Flux Saver: 1 less flux · Masterwork Eye: rarer results more often | Setwright / Engraver (coming soon) | Quick Hands: potion cooldown −2 s · Herbal Lore: +1 herb per pick |
+| 30 | Ironglass Adept: ironglass recipes 3 levels sooner · Steady Hands: masterwork quality +5% | Dyer / Salvager (coming soon) | Cook / Enchanter (coming soon) |
 
 - **Re-picking:** 50 coins, doubling each time (at most 6,400).
 
@@ -172,7 +196,7 @@ rates, perk strengths.
 | AF-014 | Performance pass | Waits on the creative director's performance report |
 | AF-015 | Enterable cottages | The creative director's agreement (their models) |
 | AF-016 | Emberwake goal | Design |
-| AF-017 | Perks and titles | **Perks BUILT** (#42); titles to build |
+| AF-017 | Perks and titles | **Perks BUILT** (#42, #44); **titles BUILT** (#45) |
 | AF-018 | Movesets and ranged attacks | The creative director's weapons and animations. The mace exists; it uses the sword's moves |
 | AF-019 | Password recovery | Needs an email service: new infrastructure, owner approval |
 | AF-020 | **The real blueprint generator**: `generateBlueprint`, the drop table, `RESOURCE_RARITY` | The creative director. Replaces the stand-in in `packages/item-gen/src/found.ts` |
