@@ -11,7 +11,7 @@ export interface ProgressionState {
   /** Mastery per weapon family. Longsword always exists (older saves only have it). */
   weaponMastery: { longsword: { level: number; xp: number } } & Partial<Record<WeaponFamily, { level: number; xp: number }>>;
   /** Open-ended profession mastery (1-100 foundational ranks, continued growth proposed). */
-  professions: { blacksmithing: { mastery: number; xp: number } } & Partial<Record<GatheringProficiency, { level: number; xp: number }>>;
+  professions: { blacksmithing: { mastery: number; xp: number } } & Partial<Record<ProficiencyId, { level: number; xp: number }>>;
   /** Grow-by-use attributes. Optional: saves from before attributes have none (filled on load). */
   attributes?: AttributeState;
   /** Stat points spent per attribute. Unspent points are derived from the adventurer rank. */
@@ -25,6 +25,37 @@ export const WEAPON_MASTERY_MAX = 30;
 /** Gathering proficiencies: improve by gathering (mining ore and ironglass, cutting ironwood, picking herbs). */
 export const GATHERING_PROFICIENCIES = ['mining', 'woodcutting', 'herbalism'] as const;
 export type GatheringProficiency = (typeof GATHERING_PROFICIENCIES)[number];
+
+/**
+ * The proficiency tree (docs/proficiency-tree.md, approved 2026-11-27): three crafting branches, each
+ * with a gathering proficiency as its root. Smithing is blacksmithing mastery (open-ended); Crafting and
+ * Alchemy have their own 1-100 level, like the gathering proficiencies.
+ */
+export const CRAFT_BRANCHES = ['smithing', 'crafting', 'alchemy'] as const;
+export type CraftBranch = (typeof CRAFT_BRANCHES)[number];
+/** Branches with their own level (Smithing uses blacksmithing mastery). */
+export type LeveledBranch = Exclude<CraftBranch, 'smithing'>;
+/** Everything kept in `professions` as { level, xp }. */
+export type ProficiencyId = GatheringProficiency | LeveledBranch;
+
+export const BRANCH_INFO: Record<CraftBranch, { name: string; root: GatheringProficiency; covers: string; trainedBy: string }> = {
+  smithing: { name: 'Smithing', root: 'mining', covers: 'Weapons and armor', trainedBy: 'Forging at the anvil' },
+  crafting: { name: 'Crafting', root: 'woodcutting', covers: 'Jewelry, capes, cosmetics and sets', trainedBy: 'Crafting at the workbench (coming with found blueprints)' },
+  alchemy: { name: 'Alchemy', root: 'herbalism', covers: 'Potions, food and enchanting', trainedBy: 'Brewing' },
+};
+export const PROFICIENCY_NAMES: Record<ProficiencyId, string> = { mining: 'Mining', woodcutting: 'Woodcutting', herbalism: 'Herbalism', crafting: 'Crafting', alchemy: 'Alchemy' };
+/** A perk choice every this many levels in a branch (the choices come in the next step). */
+export const BRANCH_MILESTONE = 10;
+export const nextMilestone = (level: number): number => (Math.floor(Math.max(0, level) / BRANCH_MILESTONE) + 1) * BRANCH_MILESTONE;
+/** Alchemy XP per potion brewed. */
+export const ALCHEMY_XP_PER_POTION = 6;
+/** Potion quality added per Alchemy level above 1 (+0.4 at level 100). */
+export const ALCHEMY_QUALITY_PER_LEVEL = 0.004;
+
+/** A branch's level: blacksmithing mastery for Smithing, else the branch's own level. */
+export function branchLevel(p: ProgressionState, b: CraftBranch): number {
+  return b === 'smithing' ? p.professions.blacksmithing.mastery : (p.professions[b]?.level ?? 1);
+}
 export const PROFICIENCY_MAX = 100;
 export const proficiencyXpToNext = (level: number) => 20 + 6 * level;
 /** XP for one gather. */
@@ -37,8 +68,8 @@ export function proficiencyFor(material: string): GatheringProficiency {
   return material === 'ironwood' ? 'woodcutting' : material === 'emberleaf' ? 'herbalism' : 'mining';
 }
 
-/** Add XP to a gathering proficiency in place. Returns the levels gained. */
-export function addProficiencyXp(p: ProgressionState, id: GatheringProficiency, xp: number): number {
+/** Add XP to a gathering proficiency or a leveled branch, in place. Returns the levels gained. */
+export function addProficiencyXp(p: ProgressionState, id: ProficiencyId, xp: number): number {
   if (!Number.isFinite(xp) || xp <= 0) return 0;
   const s = (p.professions[id] ??= { level: 1, xp: 0 });
   if (s.level >= PROFICIENCY_MAX) return 0;
@@ -53,7 +84,7 @@ export function addProficiencyXp(p: ProgressionState, id: GatheringProficiency, 
   return levels;
 }
 
-export const proficiencyLevel = (p: ProgressionState, id: GatheringProficiency) => p.professions[id]?.level ?? 1;
+export const proficiencyLevel = (p: ProgressionState, id: ProficiencyId) => p.professions[id]?.level ?? 1;
 export const ADVENTURER_RANK_MAX = 50;
 /** PROTOTYPE DECISION: the player starts as an apprentice smith (mastery 10). */
 export const STARTING_SMITH_MASTERY = 10;

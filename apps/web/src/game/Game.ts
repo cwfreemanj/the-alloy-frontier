@@ -26,6 +26,7 @@ import {
   type CombatContext,
   type CombatEvent,
   type Vec2,
+  PROFICIENCY_NAMES,
 } from '@alloy/game-rules';
 import { cleanName, type AvatarState, type HitVerdict } from '@alloy/protocol';
 import { toolPower } from '@alloy/crafting';
@@ -630,6 +631,7 @@ export class Game {
           }
           if (e.kind === 'weapon') this.hud.toast(`${WEAPON_FAMILIES[e.family ?? 'longsword'].name} mastery ${this.session.masteryOf(e.family ?? 'longsword')} (+${e.levels})`, 'good');
           if (e.kind === 'smith') this.hud.toast(`Blacksmithing mastery ${this.session.smithMastery}`, 'good');
+          if (e.kind === 'proficiency' && e.proficiency) this.hud.toast(`${PROFICIENCY_NAMES[e.proficiency]} ${this.session.data.progression.professions[e.proficiency]?.level ?? 1}`, 'good');
           if (e.kind === 'adventurer') this.hud.toast(`Adventurer rank ${this.session.data.progression.adventurer.rank} · +${STAT_POINTS_PER_RANK * e.levels} stat points (O)`, 'good');
           if (e.kind === 'attribute' && e.attr) {
             this.hud.toast(`${ATTRIBUTES[e.attr].name} ${this.session.attributes[e.attr].level}`, 'good');
