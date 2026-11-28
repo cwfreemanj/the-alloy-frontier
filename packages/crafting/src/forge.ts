@@ -36,6 +36,7 @@ import {
   type InventoryState,
   resolveBlueprint,
 } from './inventory';
+import { PERK_EFFECTS } from '@alloy/game-rules';
 import { HEAT_LEVELS, createHammerBoard, evaluateHammerEvidence, type HammerBoard, type HammerEvaluation, type Strike } from './puzzle';
 
 export interface ForgeRequest {
@@ -48,7 +49,8 @@ export interface ForgeRequest {
   temper?: TemperStrategy;
   /** Masterwork evidence: the authority replays this, it never trusts a client score. */
   evidence?: { heat: HeatLevel; strikes: Strike[] };
-  maker: { id: string; name: string; mastery: number };
+  /** Supplied by the authority, never the client: perks are the maker's chosen perks (proficiency tree). */
+  maker: { id: string; name: string; mastery: number; perks?: string[] };
   createdAt: number;
 }
 
@@ -62,6 +64,22 @@ export interface ForgePlan {
 
 export type PlanResult = { ok: true; plan: ForgePlan } | Fail;
 export type ForgeResult = { ok: true; inventory: InventoryState; item: ItemInstance; duplicate: boolean; plan?: ForgePlan } | Fail;
+
+/** The least flux a recipe takes for this maker (Flux Saver needs one less). */
+export function minBufferFor(min: number, perks: readonly string[] | undefined): number {
+  return Math.max(0, min - (perks?.includes('flux_saver') ? PERK_EFFECTS.fluxSaved : 0));
+}
+
+/** What the maker's perks add to the item (only the ones that apply to it). */
+function perkBonus(perks: Set<string>, armor: boolean): { bonus?: { damage?: number; defense?: number; rarity?: number; perks: string[] } } {
+  const used: string[] = [];
+  const bonus: { damage?: number; defense?: number; rarity?: number } = {};
+  if (!armor && perks.has('weaponsmith')) (bonus.damage = PERK_EFFECTS.weaponsmithDamage), used.push('weaponsmith');
+  if (armor && perks.has('armorsmith')) (bonus.defense = PERK_EFFECTS.armorsmithDefense), used.push('armorsmith');
+  if (perks.has('masterwork_eye')) (bonus.rarity = PERK_EFFECTS.masterworkEyeRarity), used.push('masterwork_eye');
+  if (perks.has('steady_hands')) used.push('steady_hands');
+  return used.length ? { bonus: { ...bonus, perks: used } } : {};
+}
 
 /** Puzzle board for the NEXT forge in this inventory. Derived from authority state, not client choice. */
 export function boardFor(inv: InventoryState, blueprintId: string): HammerBoard {
@@ -88,12 +106,17 @@ export function planForge(inv: InventoryState, req: ForgeRequest, opts: { previe
   if (!bp.modes.includes(req.mode)) return fail('mode_not_allowed', `${bp.name} cannot be made with this mode`);
   const mastery = req.maker?.mastery;
   if (!Number.isFinite(mastery) || mastery < 0 || mastery > LIMITS.maxMastery) return fail('invalid_mastery', 'Invalid mastery');
-  if (mastery < bp.masteryRequirement) {
-    return fail('mastery_too_low', `${bp.name} requires blacksmithing mastery ${bp.masteryRequirement}`);
+  // The maker's perks (proficiency tree): checked here, where the forge happens, from the authority's copy.
+  const perks = new Set(Array.isArray(req.maker?.perks) ? req.maker.perks : []);
+  const glass = bp.materials.some((m) => m.materialId === 'ironglass');
+  const needed = Math.max(0, bp.masteryRequirement - (glass && perks.has('ironglass_adept') ? PERK_EFFECTS.ironglassLevels : 0));
+  if (mastery < needed) {
+    return fail('mastery_too_low', `${bp.name} requires blacksmithing mastery ${needed}`);
   }
+  const minBuffer = minBufferFor(bp.buffer.min, req.maker?.perks);
   const buffer = req.bufferQuantity;
-  if (!Number.isInteger(buffer) || buffer < bp.buffer.min || buffer > LIMITS.maxBufferQuantity) {
-    return fail('invalid_buffer', `Buffer must be a whole number between ${bp.buffer.min} and ${LIMITS.maxBufferQuantity}`);
+  if (!Number.isInteger(buffer) || buffer < minBuffer || buffer > LIMITS.maxBufferQuantity) {
+    return fail('invalid_buffer', `Buffer must be a whole number between ${minBuffer} and ${LIMITS.maxBufferQuantity}`);
   }
   const spec: Specialization = req.mode === 'masterwork' ? (req.specialization ?? 'balanced') : 'balanced';
   if (!Object.prototype.hasOwnProperty.call(SPECIALIZATIONS, spec) || !bp.allowedSpecializations.includes(spec)) {
@@ -142,6 +165,8 @@ export function planForge(inv: InventoryState, req: ForgeRequest, opts: { previe
     stages.push({ stage: 'tempering', label: TEMPERS[temper].name, detail: TEMPERS[temper].description });
   }
 
+  if (req.mode === 'masterwork' && perks.has('steady_hands')) score = Math.min(1, score + PERK_EFFECTS.steadyHandsScore);
+
   const seed = itemSeedFor(inv, bp.id);
   let item: ItemInstance;
   try {
@@ -151,6 +176,7 @@ export function planForge(inv: InventoryState, req: ForgeRequest, opts: { previe
       blueprintId: bp.id,
       // A learned found blueprint isn't in the standard table: hand its definition over.
       blueprint: bp,
+      ...perkBonus(perks, bp.baseDefense !== undefined),
       source: req.mode === 'quick' ? 'quick_forge' : 'masterwork_forge',
       mode: req.mode,
       materials: consumed,

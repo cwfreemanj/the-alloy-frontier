@@ -862,6 +862,8 @@ export class Game {
       (item) => this.usePotion(item),
       (scroll) => this.act({ k: 'learn', scroll }),
       (scroll) => this.act({ k: 'scrap', scroll }),
+      (perk) => this.act({ k: 'perk', perk }),
+      (branch) => this.act({ k: 'perkRespec', branch }),
     );
     this.setModal('inventory', p.el);
     this.panel = p;

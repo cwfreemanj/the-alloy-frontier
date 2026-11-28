@@ -12,6 +12,16 @@ Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and g
 - **Not done / deferred:** Perk choices are described as built in #42, which isn't merged yet: merge #42 first. Trading, quest-reward and world-pickup blueprints, and his resource rarity tree are listed as not built or waiting.
 - **Verified:** Numbers checked against the code (raid.ts, found.ts, blueprints, perks). npm run typecheck, npm test (280/280 on main, without #42) and npm run build pass.
 
+## 2026-11-27 20:12 — Proficiency tree, step 2: perk choices
+- **PR:** 42
+- **Asked for:** Neal: start step 2 of the proficiency tree (perk choices).
+- **Done:**
+  - Rules (game-rules perks.ts): PERKS (two per milestone, every 10 levels; not-ready ones shown as coming soon), PERK_EFFECTS, milestones, choosePerk, pendingChoices, respecFee (50, doubling, cap 6400), clearPerks; saved in progression.perks.
+  - Effects where things happen, applied by the server: forge (Weaponsmith +5% damage, Armorsmith +8% defense, Flux Saver -1 flux, Masterwork Eye rarer rolls, Ironglass Adept -3 mastery for ironglass, Steady Hands +5% masterwork quality; maker perks come from the server's character; items record forge.perks only when present), brewing (Distiller +1), potions (Brewer x1.15, Quick Hands -2 s), gathering (Herbal Lore +1 herb).
+  - Actions perk and perkRespec (Orla only); Proficiencies screen shows milestones (taken, waiting with two buttons, upcoming, coming soon) and Re-pick at Orla's; the forge screen shows perk-adjusted flux and mastery and previews with perks. Recorded the offered pairs in proficiency-tree.md section 7.
+- **Not done / deferred:** Crafting perks, Alchemy 30, the roots' level-50 perks and titles: their systems don't exist yet. Pairs at Smithing 20/30 and Alchemy 20 differ from the proposal so every offered milestone has two working perks.
+- **Verified:** npm run typecheck pass; npm test 289/289 (9 new: rules, forge effects, server actions, effects and client-claimed perks ignored); npm run build pass; npm run test:e2e 23/23 including a new perk test. Checked in the browser: Weaponsmith chosen on the screen, shown as taken, re-pick offered for 50 c.
+
 ## 2026-11-27 19:57 — Proficiency tree, step 1: three branches and Alchemy
 - **PR:** 41
 - **Asked for:** Neal approved the proficiency tree proposal as written (the creative director reviews later) and asked to move forward.
