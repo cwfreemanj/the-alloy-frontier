@@ -27,8 +27,7 @@ import {
   grantItem,
   materialTotals,
   type ForgeRequest,
-  type InventoryState,
-} from '@alloy/crafting';
+  type InventoryState, sellScroll } from '@alloy/crafting';
 import {
   QUEST_EDGE_YOU_MAKE,
   ATTRIBUTE_XP,
@@ -72,8 +71,7 @@ import {
   createProgression,
   createQuestState,
   currentStep,
-  type QuestEvent,
-} from '@alloy/game-rules';
+  type QuestEvent, chooseTitle } from '@alloy/game-rules';
 import { RARITY_LABEL, materialName, type GeneratedBlueprint, type ItemInstance, type MaterialId, type ToolKind, type WeaponFamily } from '@alloy/item-gen';
 
 export const PLAYER_ID = 'player-01';
@@ -450,6 +448,30 @@ export class Session {
     }
     this.setInventory(r.inventory);
     this.emit({ type: 'toast', text: `Learned ${r.blueprint.name}. It is in the forge now.`, tone: 'good' });
+    return true;
+  }
+
+  /** Sell a scroll to Bram at its worth (a learned blueprint stays learned). */
+  sellScroll(scrollId: string): boolean {
+    const r = sellScroll(this.data.inventory, scrollId);
+    if (!r.ok) {
+      this.emit({ type: 'toast', text: r.message, tone: 'warn' });
+      return false;
+    }
+    this.setInventory(r.inventory);
+    this.emit({ type: 'toast', text: `Sold ${r.name} to Bram for ${r.coins} coins.`, tone: 'good' });
+    return true;
+  }
+
+  /** Show a title above the name (null: none). */
+  chooseTitle(id: string | null): boolean {
+    const r = chooseTitle(this.data.progression, id);
+    if (!r.ok) {
+      this.emit({ type: 'toast', text: r.message, tone: 'warn' });
+      return false;
+    }
+    this.emit({ type: 'stats' });
+    this.emit({ type: 'toast', text: r.title ? `Your title is now ${r.title.name}.` : 'No title shown.', tone: 'good' });
     return true;
   }
 

@@ -153,3 +153,19 @@ today. Steady Hands is simplified to "masterwork forge quality +5%". The creativ
 - **The server decides:** it records choices and applies every effect.
   - In the forge, the maker's perks come from the server's copy of the character, never from the request.
   - Forged items record the perks that shaped them (`forge.perks`). Items made without perks are unchanged.
+
+## 8. Built: titles (AF-027, 2026-11-27)
+
+Rules in `packages/game-rules/src/titles.ts`. STARTER names, for the creative director to change.
+
+| Branch | Level 25 | Level 50 | Level 100 |
+| --- | --- | --- | --- |
+| Smithing | Journeyman Smith | Forgewright | Master Smith |
+| Crafting | Artisan | Artificer | Master Crafter |
+| Alchemy | Apothecary | Alchemist | Master Alchemist |
+
+- **Choosing:** the player picks one earned title (or none) on the Proficiencies screen. It shows above their name
+  to other players.
+- **The server decides** what others see. For a signed-in player, the server uses the title it knows; a title a
+  client claims is ignored. Guests can't show one.
+

@@ -39,8 +39,7 @@ import {
   chosenPerks,
   milestones,
   perkById,
-  respecFee,
-} from '@alloy/game-rules';
+  respecFee, TITLES, shownTitle } from '@alloy/game-rules';
 import { RARITY_LABEL, RARITY_ORDER, blueprintOf, itemDisplayName, materialName, type ItemInstance, type WeaponFamily } from '@alloy/item-gen';
 import { characterStats, weaponDamageType, type Session } from '../state/Session';
 import { RARITY_COLORS } from '../entities/Weapons';
@@ -163,6 +162,8 @@ export class CharacterWindow {
     /** Proficiency tree: choose a perk; re-pick a branch's perks (at Orla's). */
     private onPerk: (perk: string) => Promise<unknown> = async () => {},
     private onPerkRespec: (branch: CraftBranch) => Promise<unknown> = async () => {},
+    /** Show a title above the name (null: none). */
+    private onTitle: (title: string | null) => Promise<unknown> = async () => {},
   ) {
     this.selected = session.inventory.equipped.weapon ?? session.inventory.itemOrder[0] ?? null;
     window.addEventListener('keydown', this.onKey);
@@ -663,9 +664,34 @@ export class CharacterWindow {
         untrained.length ? h('div', { class: 'cs-note', style: 'margin-top:10px' }, `Not trained yet: ${untrained.join(', ')}.`) : null,
         sub('Perks'),
         this.perks(),
+        sub('Titles'),
+        this.titles(),
       ),
       panel('Crafting & gathering', 'smithing', sub('Branches'), h('div', { class: 'cs-list' }, ...crafting), sub('Gathering (the roots)'), h('div', { class: 'cs-list' }, ...gathering)),
     );
+  }
+
+  /** Titles (AF-027): earned at branch levels; one is shown above your name to other players. */
+  private titles(): HTMLElement {
+    const p = this.session.data.progression;
+    const shown = shownTitle(p);
+    const out = h('div', { class: 'cs-list', 'data-testid': 'titles' });
+    out.append(h('div', { class: 'cs-note' }, shown ? `Shown above your name: ${shown.name}.` : 'No title shown. Earn one by raising a branch to level 25, 50 or 100.'));
+    for (const t of TITLES) {
+      const earned = branchLevel(p, t.branch) >= t.level;
+      const on = shown?.id === t.id;
+      out.append(
+        h(
+          'div',
+          { class: 'row', style: 'gap:8px', 'data-title': t.id },
+          h('b', { class: earned ? '' : 'cs-note' }, t.name),
+          h('span', { class: 'cs-note' }, `${BRANCH_INFO[t.branch].name} ${t.level}`),
+          h('span', { class: 'spacer' }),
+          earned ? h('button', { class: `cs-btn small ${on ? '' : 'primary'}`, 'data-testid': `title-${t.id}`, onclick: () => void this.onTitle(on ? null : t.id).then(() => this.render()) }, on ? 'Hide' : 'Show') : null,
+        ),
+      );
+    }
+    return out;
   }
 
   /**

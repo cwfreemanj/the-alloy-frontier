@@ -22,6 +22,8 @@ export interface ProgressionState {
   perks?: Record<string, string>;
   /** Times each branch's perks were re-picked (the fee doubles). */
   perkRespecs?: Partial<Record<CraftBranch, number>>;
+  /** The title shown above the name (titles.ts), or null. Optional in older saves. */
+  title?: string | null;
 }
 
 export const WEAPON_MASTERY_MAX = 30;

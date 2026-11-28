@@ -634,3 +634,31 @@ test('the workbench: press E at it, craft a ring, equip it; Crafting XP rises', 
   expect(after.xp).toBeGreaterThan(0);
   expect(errors).toEqual([]);
 });
+
+test('sell a blueprint scroll to Bram, and show a title earned at Smithing 25', async ({ page }) => {
+  const errors = await newGame(page);
+  type A = Record<string, (...x: unknown[]) => unknown>;
+  const scroll = (await page.evaluate(() => {
+    const a = (window as unknown as { __alloy: A }).__alloy;
+    const id = a.blueprint('trail', 'e2e-sell', 3);
+    a.teleport(11, 6.5);
+    (a.game as unknown as { openMerchant: () => void }).openMerchant();
+    return id;
+  })) as string;
+  const coins = () => page.evaluate(() => ((window as unknown as { __alloy: A }).__alloy.session() as { data: { inventory: { coins: number } } }).data.inventory.coins);
+  const before = await coins();
+  await page.getByTestId(`sell-${scroll}`).click();
+  await expect.poll(coins).toBeGreaterThan(before);
+  await expect(page.getByTestId(`sell-${scroll}`)).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  // A title: earned at Smithing 25, shown from the Proficiencies screen.
+  await page.evaluate(() => {
+    ((window as unknown as { __alloy: A }).__alloy.session() as { data: { progression: { professions: { blacksmithing: { mastery: number } } } } }).data.progression.professions.blacksmithing.mastery = 25;
+  });
+  await page.keyboard.press('KeyI');
+  await page.getByRole('tab', { name: 'Proficiencies' }).click();
+  await page.getByTestId('title-journeyman_smith').click();
+  await expect(page.getByTestId('titles')).toContainText('Shown above your name: Journeyman Smith');
+  await expect(page.getByTestId('title-forgewright')).toHaveCount(0); // not earned yet
+  expect(errors).toEqual([]);
+});

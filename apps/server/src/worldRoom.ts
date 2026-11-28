@@ -7,7 +7,7 @@
  * (computed from the server-side weapon). Client-owned: the player's own movement
  * (sanity-checked), and a guest's character (kept in their browser).
  */
-import { ATTACKS, CAPTAIN_FLUX, checkMove, finisherMultiplier, heightOk, dist2, forwardPoint, inArc, inCircle, isNear, newMoveGuard, resetMoveGuard, type AttackId, type MoveGuard, type Vec2 } from '@alloy/game-rules';
+import { ATTACKS, CAPTAIN_FLUX, checkMove, finisherMultiplier, heightOk, dist2, forwardPoint, inArc, inCircle, isNear, newMoveGuard, resetMoveGuard, type AttackId, type MoveGuard, type Vec2, shownTitle } from '@alloy/game-rules';
 import { WORLD_LIMITS, WORLD_PROTOCOL, parseWorldClientMsg, type AvatarState, type CharAction, type EnemyNetState, type WorldPlayerInfo, type WorldServerMsg } from '@alloy/protocol';
 import { GATHER_SECONDS, RANGE_SLACK, applyAction, damageAgainst, playerHit, rewardHit, rewardHitTaken, rewardKill, rewardRaid } from '@alloy/session';
 import type { CharacterHost, LiveCharacter } from './characters';
@@ -188,6 +188,10 @@ export class WorldRoom {
       const first = me.state === null;
       const wasDead = me.state?.ph === 'dead';
       if (!this.allowTeleport) msg.s = this.guardMove(me, msg.s, wasDead, t);
+      // Titles are earned: others see the server's choice for a signed-in player, and none for a guest.
+      const ttl = me.char ? shownTitle(me.char.session.data.progression)?.id : undefined;
+      msg.s = { ...msg.s, ...(ttl ? { ttl } : {}) };
+      if (!ttl) delete msg.s.ttl;
       me.state = msg.s;
       if (me.char) this.trackAvatar(me.char, msg.s, wasDead);
       // Players appear to others once they are actually in the world (not on the title screen).

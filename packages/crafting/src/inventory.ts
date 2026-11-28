@@ -208,6 +208,17 @@ export function learnScroll(inv: InventoryState, scrollId: string): { ok: true; 
   return { ok: true, inventory: draft, blueprint: bp };
 }
 
+/** Sell a scroll to a merchant at its worth (learned blueprints stay learned). */
+export function sellScroll(inv: InventoryState, scrollId: string): { ok: true; inventory: InventoryState; coins: number; name: string } | Fail {
+  const bp = typeof scrollId === 'string' && inv.scrolls && Object.prototype.hasOwnProperty.call(inv.scrolls, scrollId) ? inv.scrolls[scrollId] : undefined;
+  if (!bp) return fail('unknown_scroll', 'You don’t have that blueprint.');
+  const draft = cloneInventory(inv);
+  delete draft.scrolls![scrollId];
+  const coins = Math.max(0, Math.floor(bp.worth));
+  draft.coins += coins;
+  return { ok: true, inventory: draft, coins, name: bp.name };
+}
+
 /** Throw a scroll away (learned blueprints stay learned). */
 export function discardScroll(inv: InventoryState, scrollId: string): { ok: true; inventory: InventoryState } | Fail {
   if (typeof scrollId !== 'string' || !inv.scrolls || !Object.prototype.hasOwnProperty.call(inv.scrolls, scrollId)) return fail('unknown_scroll', 'You don’t have that blueprint.');
