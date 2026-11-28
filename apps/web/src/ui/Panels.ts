@@ -450,7 +450,7 @@ export function titleScreen(opts: TitleOptions): HTMLElement {
       chars.length ? h('div', { class: 'char-row' }, h('span', { class: 'small muted' }, 'Choose your character'), h('div', { class: 'char-cards', role: 'radiogroup', 'aria-label': 'Character' }, ...cards)) : null,
       accountBlock,
       guestBlock,
-      h('div', { class: 'foot' }, `Prototype ${buildLabel()} · GDD v0.5 · Click the view to capture the mouse, Esc to release`),
+      h('div', { class: 'foot' }, `Prototype ${buildLabel()} · GDD v0.6 · Click the view to capture the mouse, Esc to release`),
     ),
   );
 }

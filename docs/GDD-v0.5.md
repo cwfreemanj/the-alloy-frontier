@@ -1,5 +1,8 @@
 # Alloy Frontier: Game Design Document v0.5
 
+> **Updated by [GDD v0.6](GDD-v0.6.md)** (27 Nov 2026): raids, the wider forge, found blueprints and the
+> proficiency tree. This document stays as the record of v0.5.
+
 **Implementation results and next tickets.** An update to *MMORPG GDD v0.4: Browser-First
 Development Blueprint* (21 Nov 2026).
 

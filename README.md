@@ -10,7 +10,7 @@ fight with it). Built with TypeScript, Three.js and Vite; a small Node server ru
 
 The First Forge vertical slice has passed GDD gates A–D (combat, crafting, network, integrated
 quest) and is at **M4, quality acceptance**: see [docs/M4.md](docs/M4.md) for what's left, and
-[docs/GDD-v0.5.md](docs/GDD-v0.5.md) for what's built and the next tickets. Playtesters:
+[docs/GDD-v0.6.md](docs/GDD-v0.6.md) for what's built and the next tickets. Playtesters:
 [docs/PLAYTEST.md](docs/PLAYTEST.md).
 
 ## Play / run locally

@@ -3,6 +3,15 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-27 20:16 — GDD v0.6
+- **PR:** 43
+- **Asked for:** Neal: confirm the creative director's blueprint and proficiency points are answered and built, and update the GDD to the newest version so he can be sent the latest design.
+- **Done:**
+  - docs/GDD-v0.6.md: where the project stands (PRs #30-#42), decisions D14-D24 (raids, forge families, gear looks, found blueprints, learning and scrolls, sets, standard patterns, proficiency tree, perks, ownership, camera), a point-by-point status of his blueprint design and proficiency vote, what the game contains now, balance records (raids, armor and mace, blueprint drops, Alchemy, perks), updated tickets (AF-020 to AF-027) and open decisions.
+  - README and the title screen point to v0.6; v0.5 notes it was updated by v0.6.
+- **Not done / deferred:** Perk choices are described as built in #42, which isn't merged yet: merge #42 first. Trading, quest-reward and world-pickup blueprints, and his resource rarity tree are listed as not built or waiting.
+- **Verified:** Numbers checked against the code (raid.ts, found.ts, blueprints, perks). npm run typecheck, npm test (280/280 on main, without #42) and npm run build pass.
+
 ## 2026-11-27 19:57 — Proficiency tree, step 1: three branches and Alchemy
 - **PR:** 41
 - **Asked for:** Neal approved the proficiency tree proposal as written (the creative director reviews later) and asked to move forward.
