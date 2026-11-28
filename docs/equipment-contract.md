@@ -109,3 +109,18 @@ the forge, equipping and the looks could be built and tested.
 - **The quest** counts only weapons for its forging and equipping steps.
 
 **Generated blueprints** (found, dropped, traded) have their own contract: [blueprint-contract.md](blueprint-contract.md).
+
+## Accessories and the Crafting branch (AF-021, 2026-11-27)
+
+Also STARTER VALUES for the item-generation owner.
+- **Families:** `AccessoryFamily` = `ring`, `necklace`, `cape`. Slots: `ring` (either ring slot), `neck`, `cape`.
+- **`branch: 'crafting'`** (blueprint): made at the **workbench**, at the character's **Crafting** level, Quick only.
+  Omitted means Smithing, at the anvil.
+- **`baseBonuses`** (blueprint): max health, max stamina and attributes, scaled by craftsmanship like defense
+  (attributes stay whole, at least their base). A cape can also have a small `baseDefense`. Accessories roll the
+  armor affixes.
+- **Recipes:** Iron Signet Band (+1 Strength), Ironglass Focus Ring (+1 Dexterity, +5 stamina; Crafting 5), Ember
+  Pendant (+10 health; Crafting 3), Emberleaf Weave Cloak (3 defense, +8 stamina). The cloak is woven from Emberleaf
+  until a fibre material exists.
+- **Perks:** Jeweler (rings and necklaces roll one extra affix), Tailor (capes +5 max stamina).
+

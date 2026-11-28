@@ -27,15 +27,15 @@ export const STATS: StatDef[] = [
 
 /** Armor and shields: what they protect and give (forge expansion). */
 export const ARMOR_STATS: StatDef[] = [
-  { label: 'Defense', icon: 'defense', help: 'Armor while worn: all equipped defense adds up, and 100 defense halves a hit.', get: (i) => i.result.defense ?? 0, fmt: (v) => v.toFixed(0), dp: 0 },
+  { label: 'Defense', icon: 'defense', help: 'Armor while worn: all equipped defense adds up, and 100 defense halves a hit.', get: (i) => i.result.defense ?? 0, fmt: (v) => (v ? v.toFixed(0) : '—'), dp: 0 },
   { label: 'Max health', icon: 'health', help: 'Extra maximum health while worn.', get: (i) => i.result.bonuses?.maxHealth ?? 0, fmt: (v) => (v ? `+${v.toFixed(0)}` : '—'), dp: 0 },
   { label: 'Max stamina', icon: 'stamina', help: 'Extra maximum stamina while worn.', get: (i) => i.result.bonuses?.maxStamina ?? 0, fmt: (v) => (v ? `+${v.toFixed(0)}` : '—'), dp: 0 },
   { label: 'Attributes', icon: 'vitality', help: 'Attribute points this piece adds while worn.', get: (i) => Object.values(i.result.bonuses?.attributes ?? {}).reduce((a, b) => a + b, 0), fmt: (v) => (v ? `+${v.toFixed(0)}` : '—'), dp: 0 },
   { label: 'Equipment rating', icon: 'rating', help: 'One number for the whole piece: higher is better overall.', get: (i) => i.result.rating, fmt: (v) => v.toFixed(0), dp: 0 },
 ];
 
-/** Whether an item is armor or a shield (it has defense instead of damage). */
-export const isArmorItem = (i: ItemInstance): boolean => i.result.defense !== undefined;
+/** Whether an item is worn for protection or bonuses (armor, shields, accessories) rather than a weapon. */
+export const isArmorItem = (i: ItemInstance): boolean => i.result.defense !== undefined || i.result.bonuses !== undefined || (blueprintOf(i)?.baseBonuses !== undefined);
 
 export function deltaCell(cur: number, base: number | null, lowerBetter = false, dp = 0): HTMLElement {
   if (base === null) return h('td', { class: 'dim' }, '—');

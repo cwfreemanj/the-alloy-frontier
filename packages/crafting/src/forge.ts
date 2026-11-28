@@ -71,9 +71,16 @@ export function minBufferFor(min: number, perks: readonly string[] | undefined):
 }
 
 /** What the maker's perks add to the item (only the ones that apply to it). */
-function perkBonus(perks: Set<string>, armor: boolean): { bonus?: { damage?: number; defense?: number; rarity?: number; perks: string[] } } {
+function perkBonus(perks: Set<string>, bp: BlueprintDefinition): { bonus?: { damage?: number; defense?: number; rarity?: number; affixes?: number; maxStamina?: number; perks: string[] } } {
   const used: string[] = [];
-  const bonus: { damage?: number; defense?: number; rarity?: number } = {};
+  const bonus: { damage?: number; defense?: number; rarity?: number; affixes?: number; maxStamina?: number } = {};
+  // Crafting perks apply to what the workbench makes; Smithing perks to what the anvil makes.
+  if (bp.branch === 'crafting') {
+    if ((bp.family === 'ring' || bp.family === 'necklace') && perks.has('jeweler')) (bonus.affixes = PERK_EFFECTS.jewelerAffixes), used.push('jeweler');
+    if (bp.family === 'cape' && perks.has('tailor')) (bonus.maxStamina = PERK_EFFECTS.tailorStamina), used.push('tailor');
+    return used.length ? { bonus: { ...bonus, perks: used } } : {};
+  }
+  const armor = bp.baseDefense !== undefined;
   if (!armor && perks.has('weaponsmith')) (bonus.damage = PERK_EFFECTS.weaponsmithDamage), used.push('weaponsmith');
   if (armor && perks.has('armorsmith')) (bonus.defense = PERK_EFFECTS.armorsmithDefense), used.push('armorsmith');
   if (perks.has('masterwork_eye')) (bonus.rarity = PERK_EFFECTS.masterworkEyeRarity), used.push('masterwork_eye');
@@ -111,7 +118,7 @@ export function planForge(inv: InventoryState, req: ForgeRequest, opts: { previe
   const glass = bp.materials.some((m) => m.materialId === 'ironglass');
   const needed = Math.max(0, bp.masteryRequirement - (glass && perks.has('ironglass_adept') ? PERK_EFFECTS.ironglassLevels : 0));
   if (mastery < needed) {
-    return fail('mastery_too_low', `${bp.name} requires blacksmithing mastery ${needed}`);
+    return fail('mastery_too_low', `${bp.name} requires ${bp.branch === 'crafting' ? 'Crafting' : 'blacksmithing mastery'} ${needed}`);
   }
   const minBuffer = minBufferFor(bp.buffer.min, req.maker?.perks);
   const buffer = req.bufferQuantity;
@@ -176,7 +183,7 @@ export function planForge(inv: InventoryState, req: ForgeRequest, opts: { previe
       blueprintId: bp.id,
       // A learned found blueprint isn't in the standard table: hand its definition over.
       blueprint: bp,
-      ...perkBonus(perks, bp.baseDefense !== undefined),
+      ...perkBonus(perks, bp),
       source: req.mode === 'quick' ? 'quick_forge' : 'masterwork_forge',
       mode: req.mode,
       materials: consumed,

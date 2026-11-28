@@ -588,7 +588,8 @@ test('perk choices: pick Weaponsmith on the Proficiencies screen, and the next s
   await page.getByRole('tab', { name: 'Proficiencies' }).click();
   // A new smith starts at Smithing 10: the first choice is waiting.
   await expect(page.getByTestId('perk-smithing-10')).toContainText('choose one');
-  await expect(page.getByTestId('perk-crafting-10')).toContainText('coming soon');
+  await expect(page.getByTestId('perk-crafting-10')).toContainText('Jeweler or Tailor');
+  await expect(page.getByTestId('perk-crafting-20')).toContainText('coming soon');
   await page.locator('[data-perk="weaponsmith"]').click();
   await expect(page.getByTestId('perk-smithing-10')).toContainText('Weaponsmith ✓');
   await expect(page.getByTestId('perk-respec-smithing')).toContainText('50');
@@ -603,5 +604,33 @@ test('perk choices: pick Weaponsmith on the Proficiencies screen, and the next s
     return Object.values(s.data.inventory.items).find((i) => i.blueprintId === 'iron_longsword')?.forge.perks ?? null;
   });
   expect(perks).toEqual(['weaponsmith']);
+  expect(errors).toEqual([]);
+});
+
+test('the workbench: press E at it, craft a ring, equip it; Crafting XP rises', async ({ page }) => {
+  const errors = await newGame(page);
+  type A = Record<string, (...x: unknown[]) => unknown>;
+  await page.evaluate(() => {
+    const a = (window as unknown as { __alloy: A }).__alloy;
+    const s = a.session() as { data: { quest: { stepIndex: number } } };
+    s.data.quest.stepIndex = 8;
+    for (const m of ['iron_ore', 'ironglass', 'binding_flux', 'emberleaf', 'ironwood']) a.give(m, 10, 0.6);
+    a.teleport(-18.86, 13.33);
+  });
+  await expect(page.getByTestId('prompt')).toContainText('Use the workbench');
+  await page.keyboard.press('KeyE');
+  await expect.poll(async () => (await state(page)).modal).toBe('workbench');
+  await expect(page.locator('[data-recipe]')).toHaveCount(4);
+  await expect(page.locator('[data-recipe="ironglass_ring"]')).toContainText('Crafting 5'); // locked at level 1
+  await page.getByTestId('craft-iron_band').click();
+  await expect(page.getByTestId('crafted')).toContainText('Iron Signet Band');
+  await page.getByTestId('equip-crafted').click();
+  await expect(page.getByTestId('equip-crafted')).toHaveText('Equipped');
+  const after = await page.evaluate(() => {
+    const s = ((window as unknown as { __alloy: A }).__alloy.session() as { data: { inventory: { equipped: Record<string, string | null>; items: Record<string, { family: string }> }; progression: { professions: { crafting?: { xp: number } } } } }).data;
+    return { ring: s.inventory.items[s.inventory.equipped.ring1 ?? '']?.family ?? null, xp: s.progression.professions.crafting?.xp ?? 0 };
+  });
+  expect(after.ring).toBe('ring');
+  expect(after.xp).toBeGreaterThan(0);
   expect(errors).toEqual([]);
 });

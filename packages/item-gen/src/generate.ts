@@ -109,6 +109,17 @@ export const ARMOR_AFFIXES: ArmorAffixDefinition[] = [
 /** A perk multiplier, bounded (1 when absent or nonsense). */
 const perkMul = (m: number | undefined): number => (typeof m === 'number' && Number.isFinite(m) ? Math.max(1, Math.min(2, m)) : 1);
 
+/** An accessory's base bonuses, scaled by craftsmanship (attributes stay whole numbers, at least their base). */
+function scaleBonuses(b: GearBonuses | undefined, k: number): GearBonuses {
+  if (!b) return {};
+  const f = Number.isFinite(k) ? Math.max(0.5, Math.min(4, k)) : 1;
+  const out: GearBonuses = {};
+  if (b.maxHealth) out.maxHealth = Math.round(b.maxHealth * f);
+  if (b.maxStamina) out.maxStamina = Math.round(b.maxStamina * f);
+  if (b.attributes) out.attributes = Object.fromEntries(Object.entries(b.attributes).map(([a, v]) => [a, Math.max(v, Math.floor(v * f))]));
+  return out;
+}
+
 /** Add one set of gear bonuses to another. */
 function addBonuses(a: GearBonuses, b: GearBonuses | undefined): GearBonuses {
   if (!b) return a;
@@ -145,7 +156,7 @@ export interface GenerationInput {
    * The maker's perks (proficiency tree), as multipliers the authority worked out: damage (weapons),
    * defense (armor) and a rarity bonus added to the roll's score. `perks` names them for the record.
    */
-  bonus?: { damage?: number; defense?: number; rarity?: number; perks?: string[] };
+  bonus?: { damage?: number; defense?: number; rarity?: number; perks?: string[]; affixes?: number; maxStamina?: number };
 }
 
 function weightedQuality(mats: ConsumedMaterial[], filter: (m: ConsumedMaterial) => boolean): number | undefined {
@@ -239,17 +250,22 @@ export function generateItem(input: GenerationInput): ItemInstance {
 
   // Armor and shields: defense scales with craftsmanship as a weapon's damage does; their weapon stats
   // stay neutral (only the main-hand item attacks), and they roll armor affixes instead.
-  if (bp.baseDefense !== undefined) {
+  // Accessories (Crafting) work the same way, with base bonuses scaled by craftsmanship.
+  if (bp.baseDefense !== undefined || bp.baseBonuses !== undefined) {
     const pool = ARMOR_AFFIXES.filter((a) => !a.mythicOnly || rarity === 'mythic');
-    const defs = rng.shuffle(pool).slice(0, RARITY_AFFIX_COUNT[rarity]);
+    const extra = Math.max(0, Math.min(2, Math.floor(input.bonus?.affixes ?? 0)));
+    const defs = rng.shuffle(pool).slice(0, RARITY_AFFIX_COUNT[rarity] + extra);
     if (rarity === 'mythic' && !defs.some((a) => a.id === 'bulwark_resonance')) defs[defs.length - 1] = ARMOR_AFFIXES.find((a) => a.id === 'bulwark_resonance')!;
-    let defense = formulaDamage(bp.baseDefense, sf, mf, bf, ff) * perkMul(input.bonus?.defense);
-    let bonuses: GearBonuses = {};
+    const craft = sf * mf * bf * ff;
+    let defense = bp.baseDefense ? formulaDamage(bp.baseDefense, sf, mf, bf, ff) * perkMul(input.bonus?.defense) : 0;
+    let bonuses: GearBonuses = scaleBonuses(bp.baseBonuses, craft);
+    const stamina = Math.max(0, Math.min(100, Math.floor(input.bonus?.maxStamina ?? 0)));
+    if (stamina) bonuses = addBonuses(bonuses, { maxStamina: stamina });
     for (const a of defs) {
       if (a.defense) defense *= a.defense;
       bonuses = addBonuses(bonuses, a.bonuses);
     }
-    defense = Math.max(1, Math.min(LIMITS.maxStat, Math.round(defense)));
+    defense = bp.baseDefense ? Math.max(1, Math.min(LIMITS.maxStat, Math.round(defense))) : 0;
     const neutral = finalizeStats({ damage: 1, attackSpeed: 1, stagger: 0, staminaCostMultiplier: 1, critChance: 0 });
     return seal(bp, input, {
       mode,
@@ -265,7 +281,7 @@ export function generateItem(input: GenerationInput): ItemInstance {
       stages: [...(input.stages ?? [])],
       materialQuality,
       bufferQty,
-      result: { ...neutral, rating: armorRating(defense, bonuses), rarity, affixes: defs.map(({ id, name, description }) => ({ id, name, description })), imbuements: [], defense, ...(Object.keys(bonuses).length ? { bonuses } : {}) },
+      result: { ...neutral, rating: armorRating(defense, bonuses), rarity, affixes: defs.map(({ id, name, description }) => ({ id, name, description })), imbuements: [], ...(bp.baseDefense !== undefined ? { defense } : {}), ...(Object.keys(bonuses).length ? { bonuses } : {}) },
     });
   }
 

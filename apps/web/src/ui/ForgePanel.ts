@@ -121,7 +121,7 @@ export class ForgePanel {
       /* storage unavailable: keep tips on */
     }
     // Open on swords (the quest's blade), on the first one the smith can make.
-    const swords = CRAFTABLE_BLUEPRINTS.filter((b) => categoryOf(b).id === 'swords');
+    const swords = CRAFTABLE_BLUEPRINTS.filter((b) => b.family === 'longsword');
     const first = swords.find((b) => this.canAfford(b.id)) ?? swords[0] ?? CRAFTABLE_BLUEPRINTS[0];
     this.selectBlueprint(first.id);
     if (this.session.passed('quick_forge') && !this.session.passed('masterwork')) this.mode = 'masterwork';
@@ -165,7 +165,8 @@ export class ForgePanel {
 
   /** Everything the forge lists: the standard patterns, then the found blueprints the smith has learned. */
   private allBlueprints(): BlueprintDefinition[] {
-    return [...CRAFTABLE_BLUEPRINTS, ...learnedBlueprints(this.session.inventory).map((b) => b.piece)].map((b) => this.withPerks(b));
+    // The anvil makes Smithing recipes; Crafting ones are made at the workbench.
+    return [...CRAFTABLE_BLUEPRINTS, ...learnedBlueprints(this.session.inventory).map((b) => b.piece)].filter((b) => (b.branch ?? 'smithing') === 'smithing').map((b) => this.withPerks(b));
   }
 
   /** What is in the slot this blueprint's item would go in (the comparison for the projection). */

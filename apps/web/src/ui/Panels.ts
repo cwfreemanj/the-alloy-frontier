@@ -9,7 +9,7 @@ import { CHARACTER_NAME_MAX, CHARACTER_NAME_MIN, checkCharacterName } from '@all
 import { clear, h } from './dom';
 import { drawSword, itemHeader, provenanceText, statTable, traitsBlock } from './ItemView';
 
-const panelHead = (title: string, onClose: () => void, extra?: Node) =>
+export const panelHead = (title: string, onClose: () => void, extra?: Node) =>
   h('div', { class: 'panel-head' }, h('h2', null, title), extra ?? null, h('button', { class: 'close-x', onclick: onClose, 'aria-label': 'Close', title: 'Close (Esc)' }, '✕'));
 
 // ---------------- Merchant ----------------

@@ -3,6 +3,16 @@
 Detailed record of the work Claude did on Alloy Frontier. Newest first. Times are US Eastern. How to write entries: [README.md](README.md).
 Entries up to PR #29 (2026-11-25 14:41) were backfilled from pull requests and git history; later entries are written as the work happens.
 
+## 2026-11-27 20:51 — The Crafting branch: the workbench (AF-021)
+- **PR:** 44
+- **Asked for:** Neal: start AF-021, the Crafting branch.
+- **Done:**
+  - item-gen: AccessoryFamily (ring, necklace, cape); blueprint branch ('crafting' = workbench) and baseBonuses scaled by craftsmanship; four STAND-IN recipes (Iron Signet Band, Ironglass Focus Ring, Ember Pendant, Emberleaf Weave Cloak); accessories roll armor affixes.
+  - Rules: Crafting recipes need the workbench (WORKBENCH, by the forge's right wall) and the Crafting level; they train Crafting, not Smithing. Jeweler (+1 affix on rings and necklaces) and Tailor (+5 stamina on capes) are real, so Crafting's level-10 choice is offered; Smithing perks don't apply at the workbench.
+  - Workbench screen (E at the workbench): recipes with requirements, a preview against what's worn, Craft, Equip. The forge lists Smithing recipes only. Accessories show the armor stat table (defense, health, stamina, attributes). The workbench spot is clear of the sword rack's Examine prompt.
+- **Not done / deferred:** No looks on the character for rings, necklaces or capes (capes need the workshop's cloth); no found Crafting blueprints yet (the stand-in generator makes Smithing ones); Crafting 20/30 perks still coming.
+- **Verified:** npm run typecheck pass; npm test 294/294 (5 new); npm run build pass. npm run test:e2e: 23 passed, 1 failed as expected (the perk test said Crafting 10 was coming soon); updated it, and it and the new workbench test pass. In the browser: E at the workbench opened it, crafted and equipped an Iron Signet Band (+1 Strength, Padded +12 health), +25 Crafting XP, Smithing unchanged.
+
 ## 2026-11-27 20:16 — GDD v0.6
 - **PR:** 43
 - **Asked for:** Neal: confirm the creative director's blueprint and proficiency points are answered and built, and update the GDD to the newest version so he can be sent the latest design.

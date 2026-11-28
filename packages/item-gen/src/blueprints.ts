@@ -1,4 +1,4 @@
-import type { DamageType, EquipInfo, ForgeMode, ItemFamily, MaterialId, Specialization } from './types';
+import type { DamageType, EquipInfo, ForgeMode, GearBonuses, ItemFamily, MaterialId, Specialization } from './types';
 
 export interface MaterialRequirement {
   materialId: MaterialId;
@@ -35,6 +35,13 @@ export interface BlueprintDefinition {
    * damage (smith, materials, flux, forge); the item's weapon stats stay neutral.
    */
   baseDefense?: number;
+  /**
+   * Accessories (Crafting): bonuses before craftsmanship, scaled like defense. With them, an item is made
+   * at the workbench, not the anvil (see `branch`).
+   */
+  baseBonuses?: GearBonuses;
+  /** The proficiency branch that makes it (docs/proficiency-tree.md). Omitted: Smithing, at the anvil. */
+  branch?: 'smithing' | 'crafting';
   /** Colours for 2D drawings (forge preview, icons). */
   visual: { blade: string; edge: string; guard: string; grip: string; length: number; glow?: string };
   /**
@@ -434,6 +441,106 @@ export const BLUEPRINTS: Record<string, BlueprintDefinition> = {
     masteryXp: { quick: 45, masterwork: 80 },
     visual: { blade: '#5f7f8c', edge: '#9ff3ff', guard: '#30353b', grip: '#22262b', length: 1, glow: '#3fe0ff' },
     look: { type: 'legs', shape: 'lamellar', blend: 'quarry_glass' },
+  },
+  // ---- The Crafting branch (AF-021): accessories made at the workbench. STARTER VALUES for the
+  // item-generation owner (docs/equipment-contract.md). Capes are woven from Emberleaf fibre until a
+  // fibre material exists.
+  iron_band: {
+    id: 'iron_band',
+    name: 'Iron Signet Band',
+    family: 'ring',
+    equip: { slot: 'ring' },
+    branch: 'crafting',
+    tier: 'Worked iron',
+    description: 'A plain iron band stamped with the Compact sign.',
+    baseDamage: 1,
+    baseAttackSpeed: 1,
+    baseStagger: 0,
+    baseStaminaMultiplier: 1,
+    baseBonuses: { attributes: { strength: 1 } },
+    materials: [{ materialId: 'iron_ore', quantity: 2 }],
+    buffer: { materialId: 'binding_flux', min: 1, standardBatch: 1 },
+    masteryRequirement: 1,
+    craftable: true,
+    modes: ['quick'],
+    allowedSpecializations: ['balanced'],
+    potentialImbuements: [],
+    masteryXp: { quick: 25, masterwork: 25 },
+    visual: { blade: '#8f969c', edge: '#d7dde2', guard: '#6b4a2e', grip: '#3b2a1d', length: 1 },
+    look: { type: 'ring', shape: 'signet', blend: 'emberhold_smithy' },
+  },
+  ironglass_ring: {
+    id: 'ironglass_ring',
+    name: 'Ironglass Focus Ring',
+    family: 'ring',
+    equip: { slot: 'ring' },
+    branch: 'crafting',
+    tier: 'Ironglass setting',
+    description: 'An ironglass shard set in iron; it steadies the hand.',
+    baseDamage: 1,
+    baseAttackSpeed: 1,
+    baseStagger: 0,
+    baseStaminaMultiplier: 1,
+    baseBonuses: { attributes: { dexterity: 1 }, maxStamina: 5 },
+    materials: [{ materialId: 'ironglass', quantity: 2 }, { materialId: 'iron_ore', quantity: 1 }],
+    buffer: { materialId: 'binding_flux', min: 1, standardBatch: 1 },
+    masteryRequirement: 5,
+    craftable: true,
+    modes: ['quick'],
+    allowedSpecializations: ['balanced'],
+    potentialImbuements: [],
+    masteryXp: { quick: 35, masterwork: 35 },
+    visual: { blade: '#5f7f8c', edge: '#9ff3ff', guard: '#30353b', grip: '#22262b', length: 1, glow: '#3fe0ff' },
+    look: { type: 'ring', shape: 'setting', blend: 'quarry_glass' },
+  },
+  ember_pendant: {
+    id: 'ember_pendant',
+    name: 'Ember Pendant',
+    family: 'necklace',
+    equip: { slot: 'neck' },
+    branch: 'crafting',
+    tier: 'Worked iron',
+    description: 'A warm iron pendant around an ironglass bead.',
+    baseDamage: 1,
+    baseAttackSpeed: 1,
+    baseStagger: 0,
+    baseStaminaMultiplier: 1,
+    baseBonuses: { maxHealth: 10 },
+    materials: [{ materialId: 'iron_ore', quantity: 2 }, { materialId: 'ironglass', quantity: 1 }],
+    buffer: { materialId: 'binding_flux', min: 1, standardBatch: 1 },
+    masteryRequirement: 3,
+    craftable: true,
+    modes: ['quick'],
+    allowedSpecializations: ['balanced'],
+    potentialImbuements: [],
+    masteryXp: { quick: 30, masterwork: 30 },
+    visual: { blade: '#8f969c', edge: '#ffb347', guard: '#6b4a2e', grip: '#3b2a1d', length: 1 },
+    look: { type: 'necklace', shape: 'gem', blend: 'emberhold_smithy' },
+  },
+  emberleaf_cloak: {
+    id: 'emberleaf_cloak',
+    name: 'Emberleaf Weave Cloak',
+    family: 'cape',
+    equip: { slot: 'cape' },
+    branch: 'crafting',
+    tier: 'Woven fibre',
+    description: 'Emberleaf fibre woven tight on an ironwood toggle.',
+    baseDamage: 1,
+    baseAttackSpeed: 1,
+    baseStagger: 0,
+    baseStaminaMultiplier: 1,
+    baseDefense: 3,
+    baseBonuses: { maxStamina: 8 },
+    materials: [{ materialId: 'emberleaf', quantity: 4 }, { materialId: 'ironwood', quantity: 1 }],
+    buffer: { materialId: 'binding_flux', min: 1, standardBatch: 1 },
+    masteryRequirement: 1,
+    craftable: true,
+    modes: ['quick'],
+    allowedSpecializations: ['balanced'],
+    potentialImbuements: [],
+    masteryXp: { quick: 25, masterwork: 25 },
+    visual: { blade: '#6a4a2a', edge: '#c06030', guard: '#3b2a1d', grip: '#3b2a1d', length: 1 },
+    look: { type: 'cape', shape: 'cloak', blend: 'ironwood_ranger' },
   },
 };
 

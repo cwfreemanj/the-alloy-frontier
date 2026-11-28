@@ -176,7 +176,7 @@ rates, perk strengths.
 | AF-018 | Movesets and ranged attacks | The creative director's weapons and animations. The mace exists; it uses the sword's moves |
 | AF-019 | Password recovery | Needs an email service: new infrastructure, owner approval |
 | AF-020 | **The real blueprint generator**: `generateBlueprint`, the drop table, `RESOURCE_RARITY` | The creative director. Replaces the stand-in in `packages/item-gen/src/found.ts` |
-| AF-021 | **The Crafting branch**: the workbench in the forge, the first jewelry and cape recipes, Crafting perks | After AF-020; looks from the Model Workshop (it makes rings, necklaces, capes) |
+| AF-021 | **The Crafting branch**: the workbench in the forge, the first jewelry and cape recipes, Crafting perks | **BUILT** (#44): four recipes (two rings, a pendant, a cloak; STAND-IN values), Crafting XP and level gate, Jeweler and Tailor. Not yet: looks on the character, found Crafting blueprints |
 | AF-022 | **Selling scrolls** to Bram, at their worth | Small; the technical director |
 | AF-023 | **Trading and giving** scrolls (and later items) between players | After AF-022; server-checked ownership |
 | AF-024 | **Set bonuses** | After AF-021 and the creative director's set design |
